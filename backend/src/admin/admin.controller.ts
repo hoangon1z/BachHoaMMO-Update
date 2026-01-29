@@ -1,0 +1,339 @@
+import { Controller, Get, Post, Put, Delete, Param, Query, Body, UseGuards, Request, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
+import { AdminService } from './admin.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
+@Controller('admin')
+@UseGuards(JwtAuthGuard)
+export class AdminController {
+  constructor(private adminService: AdminService) {}
+
+  /**
+   * Get dashboard statistics
+   * GET /admin/dashboard
+   */
+  @Get('dashboard')
+  async getDashboard(@Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getDashboardStats();
+  }
+
+  /**
+   * Get pending recharge requests
+   * GET /admin/recharges/pending
+   */
+  @Get('recharges/pending')
+  async getPendingRecharges(@Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getPendingRecharges();
+  }
+
+  /**
+   * Approve recharge request
+   * POST /admin/recharges/:id/approve
+   */
+  @Post('recharges/:id/approve')
+  async approveRecharge(@Param('id') id: string, @Request() req) {
+    return this.adminService.approveRecharge(id, req.user.id);
+  }
+
+  /**
+   * Reject recharge request
+   * POST /admin/recharges/:id/reject
+   */
+  @Post('recharges/:id/reject')
+  async rejectRecharge(@Param('id') id: string, @Request() req) {
+    return this.adminService.rejectRecharge(id, req.user.id);
+  }
+
+  /**
+   * Get all transactions
+   * GET /admin/transactions?type=DEPOSIT&status=PENDING&limit=50&offset=0
+   */
+  @Get('transactions')
+  async getAllTransactions(
+    @Query('type') type?: string,
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Request() req?,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getAllTransactions({
+      type,
+      status,
+      limit: limit ? parseInt(limit) : undefined,
+      offset: offset ? parseInt(offset) : undefined,
+    });
+  }
+
+  /**
+   * Get all escrows
+   * GET /admin/escrows?status=HOLDING
+   */
+  @Get('escrows')
+  async getAllEscrows(@Query('status') status?: string, @Request() req?) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getAllEscrows(status);
+  }
+
+  /**
+   * Get releasable escrows
+   * GET /admin/escrows/releasable
+   */
+  @Get('escrows/releasable')
+  async getReleasableEscrows(@Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getReleasableEscrows();
+  }
+
+  /**
+   * Release escrow manually
+   * POST /admin/escrows/:id/release
+   */
+  @Post('escrows/:id/release')
+  async releaseEscrow(@Param('id') id: string, @Request() req) {
+    return this.adminService.releaseEscrow(id, req.user.id);
+  }
+
+  /**
+   * Get all users
+   * GET /admin/users?role=BUYER&limit=50&offset=0
+   */
+  @Get('users')
+  async getAllUsers(
+    @Query('role') role?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Request() req?,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getAllUsers({
+      role,
+      limit: limit ? parseInt(limit) : undefined,
+      offset: offset ? parseInt(offset) : undefined,
+    });
+  }
+
+  /**
+   * Get user detail by ID (includes password hash for admin)
+   * GET /admin/users/:id
+   */
+  @Get('users/:id')
+  async getUserDetail(@Param('id') id: string, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getUserDetail(id);
+  }
+
+  /**
+   * Update user information and permissions
+   * PUT /admin/users/:id
+   */
+  @Put('users/:id')
+  async updateUser(
+    @Param('id') id: string,
+    @Body() body: {
+      name?: string;
+      email?: string;
+      password?: string;
+      role?: string;
+      isSeller?: boolean;
+      balance?: number;
+      phone?: string;
+      address?: string;
+    },
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.updateUser(id, body);
+  }
+
+  /**
+   * Reset user password
+   * POST /admin/users/:id/reset-password
+   */
+  @Post('users/:id/reset-password')
+  async resetUserPassword(
+    @Param('id') id: string,
+    @Body('newPassword') newPassword: string,
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.resetUserPassword(id, newPassword);
+  }
+
+  /**
+   * Get all orders
+   * GET /admin/orders?status=PENDING&limit=50&offset=0
+   */
+  @Get('orders')
+  async getAllOrders(
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Request() req?,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getAllOrders({
+      status,
+      limit: limit ? parseInt(limit) : undefined,
+      offset: offset ? parseInt(offset) : undefined,
+    });
+  }
+
+  // ==================== FILE UPLOAD ====================
+
+  @Post('upload/banner')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/banners',
+        filename: (req, file, callback) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname);
+          callback(null, `banner-${uniqueSuffix}${ext}`);
+        },
+      }),
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+      fileFilter: (req, file, callback) => {
+        if (!file.mimetype.match(/^image\/(jpeg|jpg|png|gif|webp)$/)) {
+          return callback(new Error('Only image files are allowed!'), false);
+        }
+        callback(null, true);
+      },
+    }),
+  )
+  async uploadBannerImage(@UploadedFile() file: any, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    
+    if (!file) {
+      return { success: false, message: 'No file uploaded' };
+    }
+
+    return {
+      success: true,
+      url: `/uploads/banners/${file.filename}`,
+      filename: file.filename,
+    };
+  }
+
+  // ==================== BANNER MANAGEMENT ====================
+
+  @Get('banners/active')
+  async getActiveBanners() {
+    // Public endpoint - no auth required
+    return this.adminService.getActiveBanners();
+  }
+
+  @Get('banners')
+  async getBanners(@Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getBanners();
+  }
+
+  @Post('banners')
+  async createBanner(@Body() body: any, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.createBanner(body);
+  }
+
+  @Put('banners/:id')
+  async updateBanner(@Param('id') id: string, @Body() body: any, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.updateBanner(id, body);
+  }
+
+  @Delete('banners/:id')
+  async deleteBanner(@Param('id') id: string, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.deleteBanner(id);
+  }
+
+  // ==================== CATEGORY MANAGEMENT ====================
+
+  @Get('categories')
+  async getCategories(@Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getCategories();
+  }
+
+  @Post('categories')
+  async createCategory(@Body() body: any, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.createCategory(body);
+  }
+
+  @Put('categories/:id')
+  async updateCategory(@Param('id') id: string, @Body() body: any, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.updateCategory(id, body);
+  }
+
+  @Delete('categories/:id')
+  async deleteCategory(@Param('id') id: string, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.deleteCategory(id);
+  }
+
+  // ==================== PRODUCT MANAGEMENT ====================
+
+  @Get('products')
+  async getProducts(
+    @Query('status') status?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Request() req?,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getProducts({
+      status,
+      categoryId,
+      limit: limit ? parseInt(limit) : undefined,
+      offset: offset ? parseInt(offset) : undefined,
+    });
+  }
+
+  @Put('products/:id/status')
+  async updateProductStatus(
+    @Param('id') id: string,
+    @Body('status') status: string,
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.updateProductStatus(id, status);
+  }
+
+  @Delete('products/:id')
+  async deleteProduct(@Param('id') id: string, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.deleteProduct(id);
+  }
+
+  // ==================== SELLER MANAGEMENT ====================
+
+  @Get('sellers')
+  async getSellers(
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Request() req?,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getSellers({
+      limit: limit ? parseInt(limit) : undefined,
+      offset: offset ? parseInt(offset) : undefined,
+    });
+  }
+
+  @Put('sellers/:id/status')
+  async updateSellerStatus(
+    @Param('id') id: string,
+    @Body() body: { isSeller?: boolean; role?: string },
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.updateSellerStatus(id, body);
+  }
+}

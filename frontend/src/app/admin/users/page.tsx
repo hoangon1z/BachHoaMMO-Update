@@ -1,0 +1,265 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useAuthStore } from '@/store/authStore';
+import { Users, ShoppingBag, User as UserIcon, Mail, Calendar, Wallet, Shield } from 'lucide-react';
+import Link from 'next/link';
+import { PageHeader, StatsCard, FilterBar, DataTable, EmptyState, StatusBadge, Pagination } from '@/components/admin';
+import { Button } from '@/components/ui/button';
+
+interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  isSeller: boolean;
+  balance: number;
+  createdAt: string;
+}
+
+export default function UsersManagementPage() {
+  const { user } = useAuthStore();
+  const [users, setUsers] = useState<User[]>([]);
+  const [filterRole, setFilterRole] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    if (user) {
+      fetchUsers();
+    }
+  }, [user, filterRole]);
+
+  const fetchUsers = async () => {
+    setIsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams();
+      if (filterRole) params.append('role', filterRole);
+      
+      const response = await fetch(`/api/admin/users?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setUsers(data.users);
+      }
+    } catch (error) {
+      console.error('Failed to fetch users:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getRoleBadge = (role: string, isSeller: boolean) => {
+    if (role === 'ADMIN') {
+      return (
+        <StatusBadge variant="warning" icon={<Shield className="w-3 h-3" />}>
+          Admin
+        </StatusBadge>
+      );
+    }
+    if (isSeller) {
+      return (
+        <StatusBadge variant="success" icon={<ShoppingBag className="w-3 h-3" />}>
+          Seller
+        </StatusBadge>
+      );
+    }
+    return (
+      <StatusBadge variant="info" icon={<UserIcon className="w-3 h-3" />}>
+        Buyer
+      </StatusBadge>
+    );
+  };
+
+  const filteredUsers = users.filter(u => 
+    u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    u.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+  const paginatedUsers = filteredUsers.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  const columns = [
+    {
+      key: 'user',
+      title: 'Người dùng',
+      render: (u: User) => (
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-amber-500 flex items-center justify-center text-gray-900 font-bold">
+            {u.name.charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900">{u.name}</p>
+            <p className="text-xs text-gray-500">ID: {u.id.slice(0, 8)}...</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'email',
+      title: 'Email',
+      render: (u: User) => (
+        <div className="flex items-center gap-2 text-gray-600">
+          <Mail className="w-4 h-4 text-gray-400" />
+          <span className="text-sm">{u.email}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'role',
+      title: 'Vai trò',
+      align: 'center' as const,
+      render: (u: User) => getRoleBadge(u.role, u.isSeller),
+    },
+    {
+      key: 'balance',
+      title: 'Số dư',
+      align: 'right' as const,
+      sortable: true,
+      render: (u: User) => (
+        <div className="flex items-center justify-end gap-2">
+          <Wallet className="w-4 h-4 text-green-500" />
+          <span className="font-semibold text-green-600">
+            {u.balance.toLocaleString('vi-VN')}đ
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'createdAt',
+      title: 'Ngày tạo',
+      sortable: true,
+      render: (u: User) => (
+        <div className="flex items-center gap-2 text-gray-500 text-sm">
+          <Calendar className="w-4 h-4" />
+          {new Date(u.createdAt).toLocaleDateString('vi-VN')}
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      title: 'Thao tác',
+      align: 'center' as const,
+      render: (u: User) => (
+        <Link href={`/admin/users/${u.id}`}>
+          <Button size="sm" variant="outline" className="hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200">
+            Xem chi tiết
+          </Button>
+        </Link>
+      ),
+    },
+  ];
+
+  const stats = {
+    total: users.length,
+    admins: users.filter(u => u.role === 'ADMIN').length,
+    sellers: users.filter(u => u.isSeller).length,
+    buyers: users.filter(u => !u.isSeller && u.role !== 'ADMIN').length,
+  };
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Quản lý người dùng"
+        description="Xem và quản lý tất cả người dùng trong hệ thống"
+        icon={<Users className="w-6 h-6" />}
+        breadcrumbs={[{ label: 'Người dùng' }]}
+      />
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatsCard
+          title="Tổng người dùng"
+          value={stats.total}
+          icon={<Users className="w-5 h-5" />}
+          color="blue"
+        />
+        <StatsCard
+          title="Admins"
+          value={stats.admins}
+          icon={<Shield className="w-5 h-5" />}
+          color="amber"
+        />
+        <StatsCard
+          title="Sellers"
+          value={stats.sellers}
+          icon={<ShoppingBag className="w-5 h-5" />}
+          color="green"
+        />
+        <StatsCard
+          title="Buyers"
+          value={stats.buyers}
+          icon={<UserIcon className="w-5 h-5" />}
+          color="gray"
+        />
+      </div>
+
+      {/* Filters */}
+      <FilterBar
+        searchValue={searchQuery}
+        onSearchChange={(value) => {
+          setSearchQuery(value);
+          setCurrentPage(1);
+        }}
+        searchPlaceholder="Tìm kiếm theo tên hoặc email..."
+        filters={[
+          {
+            key: 'role',
+            label: 'Tất cả vai trò',
+            value: filterRole,
+            options: [
+              { value: 'ADMIN', label: 'Admin' },
+              { value: 'BUYER', label: 'Buyer' },
+            ],
+            onChange: (value) => {
+              setFilterRole(value);
+              setCurrentPage(1);
+            },
+          },
+        ]}
+        showClearButton
+        onClearFilters={() => {
+          setFilterRole('');
+          setSearchQuery('');
+          setCurrentPage(1);
+        }}
+      />
+
+      {/* Table */}
+      <DataTable
+        data={paginatedUsers}
+        columns={columns}
+        keyExtractor={(u) => u.id}
+        isLoading={isLoading}
+        emptyState={
+          <EmptyState
+            icon={<Users className="w-10 h-10 text-gray-400" />}
+            title="Không tìm thấy người dùng"
+            description="Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm"
+          />
+        }
+      />
+
+      {/* Pagination */}
+      {!isLoading && filteredUsers.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredUsers.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+        />
+      )}
+    </div>
+  );
+}

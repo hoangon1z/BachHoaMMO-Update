@@ -1,0 +1,498 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String?
+  role      String   @default("BUYER") // BUYER, SELLER, ADMIN
+  isSeller  Boolean  @default(false)
+  avatar    String?
+  phone     String?
+  address   String?
+  balance   Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 2FA & Password Reset
+  twoFactorEnabled  Boolean  @default(false)
+  twoFactorCode     String?
+  twoFactorExpires  DateTime?
+  resetOtp          String?
+  resetOtpExpires   DateTime?
+
+  // Relations
+  products           Product[]
+  orders             Order[]            @relation("BuyerOrders")
+  sales              Order[]            @relation("SellerOrders")
+  cart               CartItem[]
+  sellerProfile      SellerProfile?
+  transactions       Transaction[]
+  escrowsAsBuyer     Escrow[]           @relation("BuyerEscrow")
+  escrowsAsSeller    Escrow[]           @relation("SellerEscrow")
+  complaintsAsBuyer  Complaint[]        @relation("BuyerComplaints")
+  complaintsAsSeller Complaint[]        @relation("SellerComplaints")
+  complaintMessages  ComplaintMessage[]
+  sellerWithdrawals  SellerWithdrawal[]
+  boughtInventory    ProductInventory[] @relation("BoughtInventory")
+  auctionBids        AuctionBid[]
+  notifications      Notification[]
+
+  @@map("users")
+}
+
+model SellerProfile {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shopName        String
+  shopDescription String?
+  shopLogo        String?
+  rating          Float    @default(0)
+  totalSales      Int      @default(0)
+  commission      Float    @default(10) // Phần trăm hoa hồng
+  isVerified      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("seller_profiles")
+}
+
+model Category {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  slug        String     @unique
+  description String?
+  icon        String?
+  image       String?
+  parentId    String?
+  parent      Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[] @relation("CategoryHierarchy")
+  products    Product[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("categories")
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  price       Float
+  salePrice   Float?
+  stock       Int      @default(0)
+  status      String   @default("ACTIVE") // ACTIVE, INACTIVE, OUT_OF_STOCK
+  images      String // JSON array of image URLs
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+  sellerId    String
+  seller      User     @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  commission  Float    @default(5) // Phần trăm hoa hồng sàn (1-100%)
+  views       Int      @default(0)
+  sales       Int      @default(0)
+  rating      Float    @default(0)
+  tags        String? // JSON array of tags
+  attributes  String? // JSON object for custom attributes
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Digital product fields
+  isDigital         Boolean          @default(true) // Sản phẩm số
+  accountTemplateId String?          // Template định dạng tài khoản
+  accountTemplate   AccountTemplate? @relation("ProductTemplate", fields: [accountTemplateId], references: [id])
+  autoDelivery      Boolean          @default(true) // Tự động giao hàng khi mua
+
+  // Product Variants
+  hasVariants Boolean          @default(false) // Có phân loại hay không
+  variants    ProductVariant[]
+
+  // Relations
+  orderItems OrderItem[]
+  cartItems  CartItem[]
+  inventory  ProductInventory[]
+
+  @@map("products")
+}
+
+// Phân loại sản phẩm (VD: 1 tháng, 2 tháng, 1 năm)
+model ProductVariant {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name        String   // "1 tháng", "2 tháng", "1 năm"
+  price       Float
+  salePrice   Float?
+  stock       Int      @default(0)
+  position    Int      @default(0)  // Thứ tự hiển thị
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  inventory   ProductInventory[]
+  cartItems   CartItem[]
+  orderItems  OrderItem[]
+
+  @@map("product_variants")
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, productId, variantId])
+  @@map("cart_items")
+}
+
+model Order {
+  id              String   @id @default(uuid())
+  orderNumber     String   @unique
+  buyerId         String
+  buyer           User     @relation("BuyerOrders", fields: [buyerId], references: [id])
+  sellerId        String
+  seller          User     @relation("SellerOrders", fields: [sellerId], references: [id])
+  status          String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, CANCELLED, REFUNDED, DISPUTED
+  subtotal        Float
+  commission      Float
+  total           Float
+  shippingAddress String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Digital delivery tracking
+  deliveredAt     DateTime? // Thời điểm giao hàng hoàn tất
+  confirmedAt     DateTime? // Thời điểm buyer xác nhận nhận hàng
+  disputeDeadline DateTime? // Hạn cuối khiếu nại
+
+  // Relations
+  items      OrderItem[]
+  escrow     Escrow?
+  complaints Complaint[]
+  deliveries OrderDelivery[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  variantId   String?
+  variant     ProductVariant? @relation(fields: [variantId], references: [id])
+  variantName String?  // Lưu tên variant tại thời điểm mua
+  quantity  Int
+  price     Float
+  total     Float
+  createdAt DateTime @default(now())
+
+  // Digital delivery tracking
+  deliveredQuantity Int @default(0) // Số lượng đã giao
+
+  // Relations
+  deliveries OrderDelivery[]
+
+  @@map("order_items")
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String // DEPOSIT, WITHDRAW, PURCHASE, REFUND, EARNING
+  amount      Float
+  status      String   @default("PENDING") // PENDING, COMPLETED, REJECTED
+  description String
+  orderId     String? // Link to order if transaction is for purchase
+  metadata    String? // JSON for additional data (bank info, etc)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("transactions")
+}
+
+model Escrow {
+  id         String    @id @default(uuid())
+  orderId    String    @unique
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  buyerId    String
+  buyer      User      @relation("BuyerEscrow", fields: [buyerId], references: [id])
+  sellerId   String
+  seller     User      @relation("SellerEscrow", fields: [sellerId], references: [id])
+  amount     Float
+  status     String    @default("HOLDING") // HOLDING, RELEASED, REFUNDED
+  holdUntil  DateTime // Release date (3 days from order)
+  releasedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@map("escrows")
+}
+
+model Complaint {
+  id          String    @id @default(uuid())
+  orderId     String
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  buyerId     String
+  buyer       User      @relation("BuyerComplaints", fields: [buyerId], references: [id])
+  sellerId    String
+  seller      User      @relation("SellerComplaints", fields: [sellerId], references: [id])
+  type        String    // PRODUCT_ISSUE, NOT_RECEIVED, WRONG_ITEM, REFUND_REQUEST, OTHER
+  title       String
+  description String
+  status      String    @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CLOSED
+  resolution  String?   // Resolution description
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  messages    ComplaintMessage[]
+
+  @@map("complaints")
+}
+
+model ComplaintMessage {
+  id          String    @id @default(uuid())
+  complaintId String
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  senderId    String
+  sender      User      @relation(fields: [senderId], references: [id])
+  message     String
+  attachments String?   // JSON array of attachment URLs
+  createdAt   DateTime  @default(now())
+
+  @@map("complaint_messages")
+}
+
+model SellerWithdrawal {
+  id            String    @id @default(uuid())
+  sellerId      String
+  seller        User      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  amount        Float
+  fee           Float     @default(0)
+  netAmount     Float     // amount - fee
+  bankName      String
+  bankAccount   String
+  bankHolder    String
+  status        String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, REJECTED
+  rejectedReason String?
+  processedAt   DateTime?
+  completedAt   DateTime?
+  transactionId String?   // Reference to Transaction record
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("seller_withdrawals")
+}
+
+model Banner {
+  id          String   @id @default(uuid())
+  title       String
+  subtitle    String?
+  description String?
+  image       String   // Image URL
+  link        String   // Navigation link
+  gradient    String?  // CSS gradient class
+  icon        String?  // Emoji or icon name
+  discount    String?  // Discount badge text
+  price       String?  // Display price
+  originalPrice String? // Original price (strikethrough)
+  position    Int      @default(0) // Display order
+  isActive    Boolean  @default(true)
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("banners")
+}
+
+// ============================================
+// DIGITAL PRODUCT INVENTORY SYSTEM
+// ============================================
+
+// Template định dạng cho từng loại tài khoản
+model AccountTemplate {
+  id          String   @id @default(uuid())
+  name        String   @unique // "Facebook", "Netflix", "Gmail", "Steam Key"...
+  slug        String   @unique
+  format      String   // "username|password|2fa|gmail|cookie"
+  fields      String   // JSON array: ["username", "password", "2fa", "gmail", "cookie"]
+  fieldLabels String?  // JSON object: {"username": "Tên đăng nhập", "password": "Mật khẩu"...}
+  description String?
+  icon        String?  // Icon/emoji for display
+  disputeWindow Int    @default(24) // Số giờ cho phép khiếu nại
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  products    Product[] @relation("ProductTemplate")
+
+  @@map("account_templates")
+}
+
+// Kho tài khoản của sản phẩm (mỗi dòng = 1 tài khoản)
+// InventoryStatus: AVAILABLE, RESERVED, SOLD, DISABLED
+model ProductInventory {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId   String?
+  variant     ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  accountData String   // Dữ liệu tài khoản (encrypted or plain)
+  hash        String   // Hash để chống trùng lặp/gian lận
+  status      String   @default("AVAILABLE") // AVAILABLE, RESERVED, SOLD, DISABLED
+  
+  // Khi bán
+  soldAt      DateTime?
+  soldToId    String?
+  soldTo      User?    @relation("BoughtInventory", fields: [soldToId], references: [id])
+  orderId     String?
+  orderItemId String?
+  
+  // Tracking
+  reservedAt    DateTime? // Thời điểm reserve (checkout)
+  reserveExpiry DateTime? // Hết hạn reserve
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  delivery    OrderDelivery?
+
+  @@unique([productId, hash]) // Không cho phép trùng hash trong cùng product
+  @@index([productId, status])
+  @@index([variantId, status])
+  @@index([hash])
+  @@map("product_inventory")
+}
+
+// Lưu tài khoản đã giao cho buyer trong order
+model OrderDelivery {
+  id            String           @id @default(uuid())
+  orderId       String
+  order         Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItemId   String
+  orderItem     OrderItem        @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  inventoryId   String           @unique
+  inventory     ProductInventory @relation(fields: [inventoryId], references: [id])
+  
+  // Copy dữ liệu tại thời điểm giao (để lưu trữ bằng chứng)
+  accountData   String
+  
+  // Tracking
+  deliveredAt   DateTime         @default(now())
+  viewedAt      DateTime?        // Lần đầu buyer xem
+  viewCount     Int              @default(0) // Số lần xem
+  
+  createdAt     DateTime         @default(now())
+
+  @@index([orderId])
+  @@index([orderItemId])
+  @@map("order_deliveries")
+}
+
+// Blacklist tài khoản đã bị báo cáo/có vấn đề
+model AccountBlacklist {
+  id          String   @id @default(uuid())
+  hash        String   @unique // Hash của tài khoản
+  reason      String   // Lý do blacklist
+  reportedBy  String?  // User ID người báo cáo
+  productId   String?  // Product ID liên quan
+  orderId     String?  // Order ID liên quan
+  createdAt   DateTime @default(now())
+
+  @@map("account_blacklist")
+}
+
+// ============================================
+// SYSTEM SETTINGS & AUCTION SYSTEM
+// ============================================
+
+// Cài đặt hệ thống (admin có thể chỉnh)
+model SystemSettings {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+// Phiên đấu giá hàng tuần
+model Auction {
+  id          String   @id @default(uuid())
+  weekNumber  Int      // Số tuần trong năm
+  year        Int
+  startTime   DateTime
+  endTime     DateTime
+  status      String   @default("ACTIVE") // ACTIVE, ENDED, CANCELLED
+  createdAt   DateTime @default(now())
+
+  bids        AuctionBid[]
+
+  @@unique([weekNumber, year])
+  @@map("auctions")
+}
+
+// Lượt đấu giá của seller
+model AuctionBid {
+  id          String   @id @default(uuid())
+  auctionId   String
+  auction     Auction  @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+  sellerId    String
+  seller      User     @relation(fields: [sellerId], references: [id])
+  position    Int      // 1, 2, hoặc 3
+  amount      Float
+  status      String   @default("ACTIVE") // ACTIVE, OUTBID, WON, LOST
+  heldAmount  Float    @default(0) // Số tiền tạm giữ từ ví seller
+  createdAt   DateTime @default(now())
+
+  @@index([auctionId, position])
+  @@index([sellerId])
+  @@map("auction_bids")
+}
+
+// ============================================
+// NOTIFICATION SYSTEM
+// ============================================
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // WELCOME, ADMIN, ORDER, COMPLAINT, SYSTEM, PROMOTION
+  title     String
+  message   String
+  link      String?  // Optional link to redirect
+  icon      String?  // Optional icon name
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}

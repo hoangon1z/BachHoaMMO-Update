@@ -1,0 +1,420 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { 
+  ShoppingBag, 
+  Search, 
+  Eye,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Package,
+  User
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+
+interface Order {
+  id: string;
+  orderNumber: string;
+  status: string;
+  total: number;
+  subtotal: number;
+  commission: number;
+  createdAt: string;
+  buyer: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  items: {
+    id: string;
+    quantity: number;
+    price: number;
+    product: {
+      id: string;
+      title: string;
+      images: string;
+    };
+  }[];
+}
+
+export default function SellerOrdersPage() {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    fetchOrders();
+  }, [pagination.page, statusFilter]);
+
+  const fetchOrders = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+      });
+      if (statusFilter) params.append('status', statusFilter);
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || '/api'}/seller/orders?${params}`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setOrders(data.orders);
+        setPagination(prev => ({ ...prev, ...data.pagination }));
+      }
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdateStatus = async (orderId: string, newStatus: string) => {
+    setIsUpdating(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || '/api'}/seller/orders/${orderId}/status`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
+
+      if (response.ok) {
+        fetchOrders();
+        setSelectedOrder(null);
+      } else {
+        const error = await response.json();
+        alert(error.message || 'Có lỗi xảy ra');
+      }
+    } catch (error) {
+      console.error('Error updating order:', error);
+      alert('Có lỗi xảy ra');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'PENDING':
+        return <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-medium rounded-full flex items-center gap-1"><Clock className="w-3 h-3" /> Chờ xử lý</span>;
+      case 'PROCESSING':
+        return <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full flex items-center gap-1"><Package className="w-3 h-3" /> Đang xử lý</span>;
+      case 'COMPLETED':
+        return <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Hoàn thành</span>;
+      case 'CANCELLED':
+        return <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full flex items-center gap-1"><XCircle className="w-3 h-3" /> Đã hủy</span>;
+      case 'REFUNDED':
+        return <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-full">Hoàn tiền</span>;
+      default:
+        return <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-full">{status}</span>;
+    }
+  };
+
+  const formatDate = (date: string) => {
+    return new Date(date).toLocaleString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  return (
+    <div className="p-4 lg:p-6 space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Quản lý đơn hàng</h1>
+        <p className="text-gray-600">Xem và xử lý các đơn hàng từ khách hàng</p>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: 'Chờ xử lý', value: orders.filter(o => o.status === 'PENDING').length, color: 'yellow' },
+          { label: 'Đang xử lý', value: orders.filter(o => o.status === 'PROCESSING').length, color: 'blue' },
+          { label: 'Hoàn thành', value: orders.filter(o => o.status === 'COMPLETED').length, color: 'green' },
+          { label: 'Đã hủy', value: orders.filter(o => o.status === 'CANCELLED').length, color: 'red' },
+        ].map((stat, i) => (
+          <div key={i} className={`bg-${stat.color}-50 rounded-xl p-4 border border-${stat.color}-200`}>
+            <p className={`text-2xl font-bold text-${stat.color}-600`}>{stat.value}</p>
+            <p className="text-sm text-gray-600">{stat.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPagination(prev => ({ ...prev, page: 1 }));
+            }}
+            className="h-10 px-3 border border-gray-200 rounded-lg text-sm"
+          >
+            <option value="">Tất cả trạng thái</option>
+            <option value="PENDING">Chờ xử lý</option>
+            <option value="PROCESSING">Đang xử lý</option>
+            <option value="COMPLETED">Hoàn thành</option>
+            <option value="CANCELLED">Đã hủy</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Orders List */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {isLoading ? (
+          <div className="p-8 text-center">
+            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-500">Đang tải...</p>
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="p-8 text-center">
+            <ShoppingBag className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-500">Chưa có đơn hàng nào</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {orders.map((order) => (
+              <div key={order.id} className="p-4 hover:bg-gray-50">
+                <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                  {/* Order Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 mb-2">
+                      <p className="font-semibold text-gray-900">#{order.orderNumber}</p>
+                      {getStatusBadge(order.status)}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+                      <User className="w-4 h-4" />
+                      <span>{order.buyer?.name || order.buyer?.email}</span>
+                      <span>•</span>
+                      <span>{formatDate(order.createdAt)}</span>
+                    </div>
+                    {/* Products Preview */}
+                    <div className="flex items-center gap-2">
+                      {order.items.slice(0, 3).map((item, i) => {
+                        let images: string[] = [];
+                        try { images = JSON.parse(item.product.images); } catch {}
+                        return (
+                          <div key={i} className="w-10 h-10 bg-gray-100 rounded-lg overflow-hidden">
+                            {images[0] ? (
+                              <img src={images[0]} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Package className="w-4 h-4 text-gray-400" />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {order.items.length > 3 && (
+                        <span className="text-sm text-gray-500">+{order.items.length - 3}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Amount */}
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-gray-900">{order.total.toLocaleString('vi-VN')}đ</p>
+                    <p className="text-sm text-gray-500">{order.items.reduce((a, b) => a + b.quantity, 0)} sản phẩm</p>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedOrder(order)}
+                    >
+                      <Eye className="w-4 h-4 mr-1" />
+                      Chi tiết
+                    </Button>
+                    {order.status === 'PENDING' && (
+                      <Button
+                        size="sm"
+                        className="bg-blue-600 hover:bg-blue-700"
+                        onClick={() => handleUpdateStatus(order.id, 'PROCESSING')}
+                      >
+                        Xử lý
+                      </Button>
+                    )}
+                    {order.status === 'PROCESSING' && (
+                      <Button
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700"
+                        onClick={() => handleUpdateStatus(order.id, 'COMPLETED')}
+                      >
+                        Hoàn thành
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {pagination.totalPages > 1 && (
+          <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
+            <p className="text-sm text-gray-500">
+              Trang {pagination.page} / {pagination.totalPages}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pagination.page <= 1}
+                onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
+              >
+                Trước
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pagination.page >= pagination.totalPages}
+                onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
+              >
+                Sau
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Order Detail Modal */}
+      {selectedOrder && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Chi tiết đơn hàng</h2>
+                  <p className="text-gray-500">#{selectedOrder.orderNumber}</p>
+                </div>
+                <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-gray-100 rounded-lg">
+                  <XCircle className="w-6 h-6 text-gray-500" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Status */}
+              <div className="flex items-center justify-between">
+                <span className="text-gray-600">Trạng thái</span>
+                {getStatusBadge(selectedOrder.status)}
+              </div>
+
+              {/* Buyer Info */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-900 mb-2">Thông tin người mua</h3>
+                <p className="text-gray-700">{selectedOrder.buyer?.name || 'N/A'}</p>
+                <p className="text-gray-500 text-sm">{selectedOrder.buyer?.email}</p>
+              </div>
+
+              {/* Items */}
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-3">Sản phẩm</h3>
+                <div className="space-y-3">
+                  {selectedOrder.items.map((item) => {
+                    let images: string[] = [];
+                    try { images = JSON.parse(item.product.images); } catch {}
+                    return (
+                      <div key={item.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                        <div className="w-14 h-14 bg-gray-200 rounded-lg overflow-hidden">
+                          {images[0] ? (
+                            <img src={images[0]} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <Package className="w-6 h-6 text-gray-400" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 truncate">{item.product.title}</p>
+                          <p className="text-sm text-gray-500">x{item.quantity}</p>
+                        </div>
+                        <p className="font-semibold text-gray-900">{(item.price * item.quantity).toLocaleString('vi-VN')}đ</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Summary */}
+              <div className="border-t border-gray-200 pt-4 space-y-2">
+                <div className="flex justify-between text-gray-600">
+                  <span>Tạm tính</span>
+                  <span>{selectedOrder.subtotal.toLocaleString('vi-VN')}đ</span>
+                </div>
+                <div className="flex justify-between text-gray-600">
+                  <span>Phí hoa hồng</span>
+                  <span className="text-red-600">-{selectedOrder.commission.toLocaleString('vi-VN')}đ</span>
+                </div>
+                <div className="flex justify-between font-bold text-lg text-gray-900">
+                  <span>Bạn nhận được</span>
+                  <span className="text-green-600">{(selectedOrder.subtotal - selectedOrder.commission).toLocaleString('vi-VN')}đ</span>
+                </div>
+              </div>
+
+              {/* Actions */}
+              {(selectedOrder.status === 'PENDING' || selectedOrder.status === 'PROCESSING') && (
+                <div className="flex gap-3 pt-4 border-t border-gray-200">
+                  {selectedOrder.status === 'PENDING' && (
+                    <>
+                      <Button
+                        className="flex-1 bg-blue-600 hover:bg-blue-700"
+                        onClick={() => handleUpdateStatus(selectedOrder.id, 'PROCESSING')}
+                        disabled={isUpdating}
+                      >
+                        Xác nhận xử lý
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="flex-1 border-red-300 text-red-600 hover:bg-red-50"
+                        onClick={() => handleUpdateStatus(selectedOrder.id, 'CANCELLED')}
+                        disabled={isUpdating}
+                      >
+                        Hủy đơn
+                      </Button>
+                    </>
+                  )}
+                  {selectedOrder.status === 'PROCESSING' && (
+                    <Button
+                      className="flex-1 bg-green-600 hover:bg-green-700"
+                      onClick={() => handleUpdateStatus(selectedOrder.id, 'COMPLETED')}
+                      disabled={isUpdating}
+                    >
+                      Đánh dấu hoàn thành
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
