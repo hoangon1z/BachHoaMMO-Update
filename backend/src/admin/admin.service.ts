@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/co
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
 import { OrdersService } from '../orders/orders.service';
+import { TelegramService } from '../telegram/telegram.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class AdminService {
     private prisma: PrismaService,
     private walletService: WalletService,
     private ordersService: OrdersService,
+    private telegramService: TelegramService,
   ) {}
 
   /**
@@ -722,5 +724,316 @@ export class AdminService {
       where: { id: userId },
       data,
     });
+  }
+
+  /**
+   * Verify or unverify a seller
+   */
+  async verifySeller(userId: string, isVerified: boolean) {
+    // Check if user exists and has seller profile
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { sellerProfile: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (!user.sellerProfile) {
+      throw new NotFoundException('Seller profile not found. User must create a shop first.');
+    }
+
+    // Update seller profile verification status
+    const updatedProfile = await this.prisma.sellerProfile.update({
+      where: { userId },
+      data: { isVerified },
+    });
+
+    return {
+      success: true,
+      message: isVerified ? 'Seller đã được xác minh' : 'Đã hủy xác minh seller',
+      sellerProfile: updatedProfile,
+    };
+  }
+
+  // ==================== WITHDRAWAL MANAGEMENT ====================
+
+  /**
+   * Get all withdrawal requests
+   */
+  async getWithdrawals(params?: { status?: string; limit?: number; offset?: number }) {
+    const { status, limit = 50, offset = 0 } = params || {};
+
+    const where: any = {};
+    if (status) where.status = status;
+
+    const [withdrawals, total] = await Promise.all([
+      this.prisma.sellerWithdrawal.findMany({
+        where,
+        include: {
+          seller: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              balance: true,
+              sellerProfile: {
+                select: {
+                  shopName: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.sellerWithdrawal.count({ where }),
+    ]);
+
+    return {
+      withdrawals,
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  /**
+   * Get pending withdrawals count
+   */
+  async getPendingWithdrawalsCount() {
+    const count = await this.prisma.sellerWithdrawal.count({
+      where: { status: 'PENDING' },
+    });
+    return { count };
+  }
+
+  /**
+   * Approve withdrawal request
+   */
+  async approveWithdrawal(withdrawalId: string, adminId: string, note?: string) {
+    const withdrawal = await this.prisma.sellerWithdrawal.findUnique({
+      where: { id: withdrawalId },
+      include: { seller: true },
+    });
+
+    if (!withdrawal) {
+      throw new NotFoundException('Không tìm thấy yêu cầu rút tiền');
+    }
+
+    if (withdrawal.status !== 'PENDING') {
+      throw new Error('Yêu cầu đã được xử lý trước đó');
+    }
+
+    // Update withdrawal status to COMPLETED
+    const updatedWithdrawal = await this.prisma.sellerWithdrawal.update({
+      where: { id: withdrawalId },
+      data: {
+        status: 'COMPLETED',
+        completedAt: new Date(),
+        adminNote: note,
+      },
+    });
+
+    // Create transaction record for the withdrawal
+    await this.prisma.transaction.create({
+      data: {
+        userId: withdrawal.sellerId,
+        type: 'WITHDRAW',
+        amount: withdrawal.netAmount,
+        status: 'COMPLETED',
+        description: `Rút tiền về ${withdrawal.bankName} - ${withdrawal.bankAccount}`,
+      },
+    });
+
+    // Send Telegram notification to seller
+    this.telegramService.notifyWithdrawalStatus(withdrawal.sellerId, {
+      amount: withdrawal.netAmount,
+      status: 'APPROVED',
+    }).catch(err => console.error('Telegram notification error:', err));
+
+    return updatedWithdrawal;
+  }
+
+  /**
+   * Reject withdrawal request
+   */
+  async rejectWithdrawal(withdrawalId: string, adminId: string, reason: string) {
+    const withdrawal = await this.prisma.sellerWithdrawal.findUnique({
+      where: { id: withdrawalId },
+      include: { seller: true },
+    });
+
+    if (!withdrawal) {
+      throw new NotFoundException('Không tìm thấy yêu cầu rút tiền');
+    }
+
+    if (withdrawal.status !== 'PENDING') {
+      throw new Error('Yêu cầu đã được xử lý trước đó');
+    }
+
+    // Update withdrawal status to REJECTED and refund balance
+    const [updatedWithdrawal] = await this.prisma.$transaction([
+      this.prisma.sellerWithdrawal.update({
+        where: { id: withdrawalId },
+        data: {
+          status: 'REJECTED',
+          rejectedReason: reason,
+          completedAt: new Date(),
+        },
+      }),
+      // Refund the amount back to seller
+      this.prisma.user.update({
+        where: { id: withdrawal.sellerId },
+        data: {
+          balance: { increment: withdrawal.amount },
+        },
+      }),
+      // Create refund transaction
+      this.prisma.transaction.create({
+        data: {
+          userId: withdrawal.sellerId,
+          type: 'REFUND',
+          amount: withdrawal.amount,
+          status: 'COMPLETED',
+          description: `Hoàn tiền rút tiền bị từ chối: ${reason}`,
+        },
+      }),
+    ]);
+
+    // Send Telegram notification to seller
+    this.telegramService.notifyWithdrawalStatus(withdrawal.sellerId, {
+      amount: withdrawal.amount,
+      status: 'REJECTED',
+      reason,
+    }).catch(err => console.error('Telegram notification error:', err));
+
+    return updatedWithdrawal;
+  }
+
+  // ==================== SELLER APPLICATIONS ====================
+
+  async getSellerApplications(params: { status?: string; limit: number; offset: number }) {
+    const where: any = {};
+    if (params.status) {
+      where.status = params.status;
+    }
+
+    const [applications, total] = await Promise.all([
+      this.prisma.sellerApplication.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: params.offset,
+        take: params.limit,
+      }),
+      this.prisma.sellerApplication.count({ where }),
+    ]);
+
+    // Get user info for each application
+    const applicationsWithUser = await Promise.all(
+      applications.map(async (app) => {
+        const user = await this.prisma.user.findUnique({
+          where: { id: app.userId },
+          select: { id: true, email: true, name: true, avatar: true, createdAt: true },
+        });
+        return { ...app, user };
+      }),
+    );
+
+    return { applications: applicationsWithUser, total };
+  }
+
+  async getPendingSellerApplicationsCount() {
+    const count = await this.prisma.sellerApplication.count({
+      where: { status: 'PENDING' },
+    });
+    return { count };
+  }
+
+  async approveSellerApplication(applicationId: string, adminId: string, note?: string) {
+    const application = await this.prisma.sellerApplication.findUnique({
+      where: { id: applicationId },
+    });
+
+    if (!application) {
+      throw new NotFoundException('Không tìm thấy đơn đăng ký');
+    }
+
+    if (application.status !== 'PENDING') {
+      throw new Error('Đơn đăng ký đã được xử lý');
+    }
+
+    // Update application status
+    await this.prisma.sellerApplication.update({
+      where: { id: applicationId },
+      data: {
+        status: 'APPROVED',
+        adminNote: note,
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+      },
+    });
+
+    // Update user to seller
+    await this.prisma.user.update({
+      where: { id: application.userId },
+      data: {
+        isSeller: true,
+        role: 'SELLER',
+      },
+    });
+
+    // Create seller profile
+    await this.prisma.sellerProfile.create({
+      data: {
+        userId: application.userId,
+        shopName: application.shopName,
+        shopDescription: application.description,
+      },
+    });
+
+    // Send Telegram notification
+    this.telegramService.notifyAnnouncement(application.userId, {
+      title: '🎉 Chúc mừng! Đơn đăng ký Seller đã được duyệt',
+      content: `Xin chào ${application.fullName},\n\nĐơn đăng ký trở thành Seller của bạn đã được chấp thuận!\n\nShop: ${application.shopName}\n\nBạn có thể bắt đầu đăng bán sản phẩm ngay bây giờ.`,
+    }).catch(err => console.error('Telegram notification error:', err));
+
+    return { success: true, message: 'Đã duyệt đơn đăng ký' };
+  }
+
+  async rejectSellerApplication(applicationId: string, adminId: string, reason: string) {
+    const application = await this.prisma.sellerApplication.findUnique({
+      where: { id: applicationId },
+    });
+
+    if (!application) {
+      throw new NotFoundException('Không tìm thấy đơn đăng ký');
+    }
+
+    if (application.status !== 'PENDING') {
+      throw new Error('Đơn đăng ký đã được xử lý');
+    }
+
+    // Update application status
+    await this.prisma.sellerApplication.update({
+      where: { id: applicationId },
+      data: {
+        status: 'REJECTED',
+        adminNote: reason,
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+      },
+    });
+
+    // Send Telegram notification
+    this.telegramService.notifyAnnouncement(application.userId, {
+      title: '❌ Đơn đăng ký Seller bị từ chối',
+      content: `Xin chào ${application.fullName},\n\nĐơn đăng ký trở thành Seller của bạn đã bị từ chối.\n\nLý do: ${reason}\n\nBạn có thể nộp đơn đăng ký mới sau khi khắc phục các vấn đề trên.`,
+    }).catch(err => console.error('Telegram notification error:', err));
+
+    return { success: true, message: 'Đã từ chối đơn đăng ký' };
   }
 }

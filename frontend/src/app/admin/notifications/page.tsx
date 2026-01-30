@@ -229,7 +229,7 @@ export default function AdminNotificationsPage() {
                 placeholder="VD: /promotions/tet-2026"
               />
               <p className="text-xs text-muted-foreground">
-                Người dùng sẽ được chuyển đến link này khi click "Xem chi tiết"
+                Người dùng sẽ được chuyển đến link này khi click &quot;Xem chi tiết&quot;
               </p>
             </div>
 

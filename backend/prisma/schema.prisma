@@ -31,6 +31,10 @@ model User {
   resetOtp          String?
   resetOtpExpires   DateTime?
 
+  // Telegram Integration
+  telegramChatId    String?   // Chat ID for Telegram notifications
+  telegramLinkedAt  DateTime? // When Telegram was linked
+
   // Relations
   products           Product[]
   orders             Order[]            @relation("BuyerOrders")
@@ -47,6 +51,7 @@ model User {
   boughtInventory    ProductInventory[] @relation("BoughtInventory")
   auctionBids        AuctionBid[]
   notifications      Notification[]
+  devices            UserDevice[]
 
   @@map("users")
 }
@@ -298,6 +303,7 @@ model SellerWithdrawal {
   bankHolder    String
   status        String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, REJECTED
   rejectedReason String?
+  adminNote     String?   // Admin note when approving/rejecting
   processedAt   DateTime?
   completedAt   DateTime?
   transactionId String?   // Reference to Transaction record
@@ -495,4 +501,82 @@ model Notification {
   @@index([userId, isRead])
   @@index([userId, createdAt])
   @@map("notifications")
+}
+
+// ============================================
+// REVIEW SYSTEM
+// ============================================
+
+model Review {
+  id        String   @id @default(uuid())
+  orderId   String   @unique // One review per order
+  productId String
+  buyerId   String
+  sellerId  String
+  rating    Int      // 1-5 stars
+  comment   String?
+  images    String?  // JSON array of image URLs
+  isAnonymous Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Seller response
+  sellerResponse   String?
+  sellerRespondedAt DateTime?
+
+  @@index([productId])
+  @@index([sellerId])
+  @@index([buyerId])
+  @@map("reviews")
+}
+
+// ============================================
+// SELLER APPLICATION SYSTEM
+// ============================================
+
+model SellerApplication {
+  id            String   @id @default(uuid())
+  userId        String
+  fullName      String
+  shopName      String
+  email         String
+  phone         String?
+  description   String?  // Why want to become seller
+  agreement     Boolean  @default(true) // Agreed to terms
+  status        String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  adminNote     String?  // Admin rejection/approval note
+  reviewedBy    String?  // Admin ID who reviewed
+  reviewedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("seller_applications")
+}
+
+// ============================================
+// DEVICE MANAGEMENT
+// ============================================
+
+model UserDevice {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId     String   // Unique device fingerprint
+  deviceName   String?  // Browser/OS name
+  deviceType   String?  // desktop, mobile, tablet
+  browser      String?
+  os           String?
+  ipAddress    String?
+  location     String?  // City, Country from IP
+  lastActive   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  isActive     Boolean  @default(true)
+  isTrusted    Boolean  @default(false) // Trusted device (skip 2FA)
+  trustExpires DateTime? // When trust expires
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@map("user_devices")
 }

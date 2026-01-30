@@ -58,6 +58,7 @@ export function ChatWindow({
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -273,7 +274,7 @@ export function ChatWindow({
       inputRef.current?.focus();
     } catch (error) {
       console.error('Send message error:', error);
-      alert('Không thể gửi tin nhắn. Vui lòng thử lại!');
+      setSendError('Không thể gửi tin nhắn. Vui lòng thử lại!');
     } finally {
       setIsSending(false);
       setIsUploading(false);
@@ -463,6 +464,31 @@ export function ChatWindow({
           </div>
         )}
       </div>
+
+      {/* Error Modal */}
+      {sendError && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setSendError(null)}
+          />
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+                <AlertTriangle className="w-7 h-7 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Lỗi gửi tin nhắn</h3>
+              <p className="text-gray-600 mb-5">{sendError}</p>
+              <Button 
+                className="w-full"
+                onClick={() => setSendError(null)}
+              >
+                Đóng
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

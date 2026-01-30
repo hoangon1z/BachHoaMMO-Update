@@ -232,7 +232,16 @@ export class AuthService {
     return { message: 'Mã xác thực đã được gửi đến email' };
   }
 
-  async verify2FAAndLogin(email: string, code: string) {
+  async verify2FAAndLogin(
+    email: string, 
+    code: string,
+    deviceInfo?: {
+      deviceId?: string;
+      trustDevice?: boolean;
+      ipAddress?: string;
+      userAgent?: string;
+    }
+  ) {
     // Validate email
     if (!email || typeof email !== 'string' || email.trim() === '') {
       throw new BadRequestException('Email không hợp lệ');
@@ -264,6 +273,11 @@ export class AuthService {
       },
     });
 
+    // Trust device for 24 hours if requested
+    if (deviceInfo?.trustDevice && deviceInfo?.deviceId) {
+      await this.trustDevice(user.id, deviceInfo.deviceId, deviceInfo.ipAddress, deviceInfo.userAgent);
+    }
+
     // Generate token
     const { password: _, ...result } = user;
     const payload = { 
@@ -277,6 +291,89 @@ export class AuthService {
       access_token: this.jwtService.sign(payload),
       user: result,
     };
+  }
+
+  // Check if device is trusted (skip 2FA)
+  async isDeviceTrusted(userId: string, deviceId: string): Promise<boolean> {
+    const device = await this.prisma.userDevice.findUnique({
+      where: { userId_deviceId: { userId, deviceId } },
+    });
+
+    if (!device || !device.isTrusted || !device.trustExpires) {
+      return false;
+    }
+
+    // Check if trust has expired
+    if (new Date() > device.trustExpires) {
+      // Trust expired, update device
+      await this.prisma.userDevice.update({
+        where: { id: device.id },
+        data: { isTrusted: false, trustExpires: null },
+      });
+      return false;
+    }
+
+    return true;
+  }
+
+  // Trust a device for 24 hours
+  async trustDevice(userId: string, deviceId: string, ipAddress?: string, userAgent?: string) {
+    const trustExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Parse user agent for device info
+    const deviceInfo = this.parseUserAgent(userAgent || '');
+
+    await this.prisma.userDevice.upsert({
+      where: { userId_deviceId: { userId, deviceId } },
+      update: {
+        isTrusted: true,
+        trustExpires,
+        lastActive: new Date(),
+        ipAddress,
+        ...deviceInfo,
+      },
+      create: {
+        userId,
+        deviceId,
+        isTrusted: true,
+        trustExpires,
+        ipAddress,
+        ...deviceInfo,
+      },
+    });
+  }
+
+  // Parse user agent string
+  private parseUserAgent(userAgent: string): { deviceName?: string; deviceType?: string; browser?: string; os?: string } {
+    const result: { deviceName?: string; deviceType?: string; browser?: string; os?: string } = {};
+
+    // Simple parsing - can be improved with a library like ua-parser-js
+    if (userAgent.includes('Mobile') || userAgent.includes('Android') || userAgent.includes('iPhone')) {
+      result.deviceType = 'mobile';
+    } else if (userAgent.includes('Tablet') || userAgent.includes('iPad')) {
+      result.deviceType = 'tablet';
+    } else {
+      result.deviceType = 'desktop';
+    }
+
+    // Browser detection
+    if (userAgent.includes('Chrome')) result.browser = 'Chrome';
+    else if (userAgent.includes('Firefox')) result.browser = 'Firefox';
+    else if (userAgent.includes('Safari')) result.browser = 'Safari';
+    else if (userAgent.includes('Edge')) result.browser = 'Edge';
+    else result.browser = 'Unknown';
+
+    // OS detection
+    if (userAgent.includes('Windows')) result.os = 'Windows';
+    else if (userAgent.includes('Mac')) result.os = 'macOS';
+    else if (userAgent.includes('Linux')) result.os = 'Linux';
+    else if (userAgent.includes('Android')) result.os = 'Android';
+    else if (userAgent.includes('iPhone') || userAgent.includes('iPad')) result.os = 'iOS';
+    else result.os = 'Unknown';
+
+    result.deviceName = `${result.browser} on ${result.os}`;
+
+    return result;
   }
 
   // Check if user has 2FA enabled
@@ -311,5 +408,84 @@ export class AuthService {
     });
 
     return { message: 'Đổi mật khẩu thành công' };
+  }
+
+  // ==================== DEVICE MANAGEMENT ====================
+
+  async getUserDevices(userId: string) {
+    const devices = await this.prisma.userDevice.findMany({
+      where: { userId, isActive: true },
+      orderBy: { lastActive: 'desc' },
+    });
+
+    return devices.map(device => ({
+      id: device.id,
+      deviceId: device.deviceId,
+      deviceName: device.deviceName || 'Unknown Device',
+      deviceType: device.deviceType || 'unknown',
+      browser: device.browser,
+      os: device.os,
+      ipAddress: device.ipAddress,
+      location: device.location,
+      lastActive: device.lastActive,
+      createdAt: device.createdAt,
+      isTrusted: device.isTrusted,
+      trustExpires: device.trustExpires,
+    }));
+  }
+
+  async revokeDevice(userId: string, deviceId: string) {
+    const device = await this.prisma.userDevice.findFirst({
+      where: { userId, deviceId },
+    });
+
+    if (!device) {
+      throw new NotFoundException('Device not found');
+    }
+
+    await this.prisma.userDevice.update({
+      where: { id: device.id },
+      data: { 
+        isActive: false,
+        isTrusted: false,
+        trustExpires: null,
+      },
+    });
+
+    return { message: 'Device revoked successfully' };
+  }
+
+  async revokeAllDevices(userId: string) {
+    await this.prisma.userDevice.updateMany({
+      where: { userId },
+      data: { 
+        isActive: false,
+        isTrusted: false,
+        trustExpires: null,
+      },
+    });
+
+    return { message: 'All devices revoked successfully' };
+  }
+
+  // Update device activity
+  async updateDeviceActivity(userId: string, deviceId: string, ipAddress?: string, userAgent?: string) {
+    const deviceInfo = this.parseUserAgent(userAgent || '');
+    
+    await this.prisma.userDevice.upsert({
+      where: { userId_deviceId: { userId, deviceId } },
+      update: {
+        lastActive: new Date(),
+        ipAddress,
+        ...deviceInfo,
+      },
+      create: {
+        userId,
+        deviceId,
+        ipAddress,
+        isActive: true,
+        ...deviceInfo,
+      },
+    });
   }
 }

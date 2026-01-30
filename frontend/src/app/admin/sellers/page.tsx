@@ -89,6 +89,36 @@ export default function AdminSellersPage() {
     }
   };
 
+  const handleVerifySeller = async (seller: Seller) => {
+    if (!seller.sellerProfile) {
+      toast.error('Seller chưa tạo shop');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      const newVerified = !seller.sellerProfile.isVerified;
+      const response = await fetch(`/api/admin/sellers/${seller.id}/verify`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ isVerified: newVerified }),
+      });
+
+      if (response.ok) {
+        toast.success(newVerified ? 'Đã xác minh seller' : 'Đã hủy xác minh seller');
+        fetchSellers();
+      } else {
+        const data = await response.json();
+        toast.error(data.message || 'Có lỗi xảy ra');
+      }
+    } catch (error) {
+      toast.error('Có lỗi xảy ra');
+    }
+  };
+
   const filteredSellers = sellers.filter(s =>
     s.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
     s.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -255,11 +285,25 @@ export default function AdminSellersPage() {
                       Chi tiết
                     </Button>
                   </Link>
+                  {seller.sellerProfile && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleVerifySeller(seller)}
+                      className={seller.sellerProfile.isVerified 
+                        ? 'hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200' 
+                        : 'hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200'}
+                      title={seller.sellerProfile.isVerified ? 'Hủy xác minh' : 'Xác minh seller'}
+                    >
+                      <BadgeCheck className={`w-4 h-4 ${seller.sellerProfile.isVerified ? 'text-green-500' : 'text-gray-400'}`} />
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handleToggleSellerStatus(seller)}
                     className={seller.role === 'SELLER' ? 'hover:bg-red-50 hover:text-red-600 hover:border-red-200' : 'hover:bg-green-50 hover:text-green-600 hover:border-green-200'}
+                    title={seller.role === 'SELLER' ? 'Vô hiệu hóa' : 'Kích hoạt'}
                   >
                     {seller.role === 'SELLER' ? (
                       <XCircle className="w-4 h-4" />

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useToast } from '@/components/Toast';
 import {
   ArrowLeft,
   Upload,
@@ -21,13 +22,29 @@ import {
   RefreshCw,
   Search,
   Filter,
+  Layers,
 } from 'lucide-react';
 import Link from 'next/link';
+
+interface ProductVariant {
+  id: string;
+  name: string;
+  price: number;
+  stock: number;
+}
+
+interface VariantStat {
+  variantId: string;
+  variantName: string;
+  availableCount: number;
+}
 
 interface InventoryItem {
   id: string;
   accountData: string;
   status: string;
+  variantId: string | null;
+  variant: { id: string; name: string } | null;
   soldAt: string | null;
   soldTo: { id: string; name: string; email: string } | null;
   createdAt: string;
@@ -46,6 +63,7 @@ interface Product {
   price: number;
   stock: number;
   accountTemplateId: string | null;
+  hasVariants?: boolean;
 }
 
 export default function InventoryPage() {
@@ -53,6 +71,7 @@ export default function InventoryPage() {
   const router = useRouter();
   const productId = params.id as string;
   const { user } = useAuthStore();
+  const toast = useToast();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -60,19 +79,27 @@ export default function InventoryPage() {
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Variants
+  const [variants, setVariants] = useState<ProductVariant[]>([]);
+  const [variantStats, setVariantStats] = useState<VariantStat[]>([]);
+  const [hasVariants, setHasVariants] = useState(false);
+
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [variantFilter, setVariantFilter] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
 
   // Upload modal
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadText, setUploadText] = useState('');
+  const [uploadVariantId, setUploadVariantId] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<any>(null);
 
   // Add single modal
   const [showAddModal, setShowAddModal] = useState(false);
   const [singleAccountData, setSingleAccountData] = useState('');
+  const [singleVariantId, setSingleVariantId] = useState('');
 
   // Edit modal
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
@@ -89,7 +116,7 @@ export default function InventoryPage() {
       fetchProduct();
       fetchInventory();
     }
-  }, [user, productId, statusFilter]);
+  }, [user, productId, statusFilter, variantFilter]);
 
   const fetchProduct = async () => {
     try {
@@ -112,6 +139,7 @@ export default function InventoryPage() {
       const token = localStorage.getItem('token');
       let urlPath = `/api/seller/products/${productId}/inventory?limit=100`;
       if (statusFilter) urlPath += `&status=${statusFilter}`;
+      if (variantFilter) urlPath += `&variantId=${variantFilter}`;
 
       const res = await fetch(urlPath, {
         headers: { Authorization: `Bearer ${token}` },
@@ -121,6 +149,9 @@ export default function InventoryPage() {
         setInventory(data.inventory);
         setStats(data.stats);
         setTotal(data.total);
+        setVariants(data.variants || []);
+        setVariantStats(data.variantStats || []);
+        setHasVariants(data.hasVariants || false);
       }
     } catch (error) {
       console.error('Failed to fetch inventory:', error);
@@ -132,6 +163,12 @@ export default function InventoryPage() {
   const handleUpload = async () => {
     if (!uploadText.trim()) return;
 
+    // Validate variant selection for products with variants
+    if (hasVariants && variants.length > 0 && !uploadVariantId) {
+      toast.warning('Chưa chọn phân loại', 'Vui lòng chọn phân loại sản phẩm trước khi thêm kho');
+      return;
+    }
+
     setIsUploading(true);
     setUploadResult(null);
     try {
@@ -142,7 +179,10 @@ export default function InventoryPage() {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ accountData: uploadText }),
+        body: JSON.stringify({ 
+          accountData: uploadText,
+          variantId: uploadVariantId || undefined,
+        }),
       });
 
       const data = await res.json();
@@ -165,6 +205,12 @@ export default function InventoryPage() {
   const handleAddSingle = async () => {
     if (!singleAccountData.trim()) return;
 
+    // Validate variant selection for products with variants
+    if (hasVariants && variants.length > 0 && !singleVariantId) {
+      toast.warning('Chưa chọn phân loại', 'Vui lòng chọn phân loại sản phẩm trước khi thêm kho');
+      return;
+    }
+
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`/api/seller/products/${productId}/inventory`, {
@@ -173,21 +219,31 @@ export default function InventoryPage() {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ accountData: singleAccountData }),
+        body: JSON.stringify({ 
+          accountData: singleAccountData,
+          variantId: singleVariantId || undefined,
+        }),
       });
 
       if (res.ok) {
         fetchInventory();
         setSingleAccountData('');
+        setSingleVariantId('');
         setShowAddModal(false);
-        alert('Thêm tài khoản thành công!');
+        toast.success('Thành công', 'Đã thêm tài khoản vào kho');
       } else {
         const data = await res.json();
-        alert(data.message || 'Có lỗi xảy ra');
+        // Parse error message for user-friendly display
+        const errorMsg = data.message || 'Có lỗi xảy ra';
+        if (errorMsg.includes('Unique constraint') || errorMsg.includes('trùng') || errorMsg.includes('duplicate')) {
+          toast.error('Tài khoản trùng lặp', 'Tài khoản này đã tồn tại trong kho');
+        } else {
+          toast.error('Lỗi', errorMsg);
+        }
       }
     } catch (error) {
       console.error('Add failed:', error);
-      alert('Có lỗi xảy ra');
+      toast.error('Lỗi', 'Không thể thêm tài khoản. Vui lòng thử lại.');
     }
   };
 
@@ -208,14 +264,14 @@ export default function InventoryPage() {
       if (res.ok) {
         fetchInventory();
         setEditingItem(null);
-        alert('Cập nhật thành công!');
+        toast.success('Thành công', 'Đã cập nhật tài khoản');
       } else {
         const data = await res.json();
-        alert(data.message || 'Có lỗi xảy ra');
+        toast.error('Lỗi', data.message || 'Không thể cập nhật tài khoản');
       }
     } catch (error) {
       console.error('Update failed:', error);
-      alert('Có lỗi xảy ra');
+      toast.error('Lỗi', 'Không thể cập nhật tài khoản. Vui lòng thử lại.');
     }
   };
 
@@ -231,12 +287,14 @@ export default function InventoryPage() {
 
       if (res.ok) {
         fetchInventory();
+        toast.success('Đã xóa', 'Tài khoản đã được xóa khỏi kho');
       } else {
         const data = await res.json();
-        alert(data.message || 'Có lỗi xảy ra');
+        toast.error('Lỗi', data.message || 'Không thể xóa tài khoản');
       }
     } catch (error) {
       console.error('Delete failed:', error);
+      toast.error('Lỗi', 'Không thể xóa tài khoản. Vui lòng thử lại.');
     }
   };
 
@@ -257,12 +315,15 @@ export default function InventoryPage() {
 
       if (res.ok) {
         const data = await res.json();
-        alert(`Đã xóa ${data.deleted} tài khoản`);
+        toast.success('Đã xóa', `Đã xóa ${data.deleted} tài khoản khỏi kho`);
         setSelectedItems(new Set());
         fetchInventory();
+      } else {
+        toast.error('Lỗi', 'Không thể xóa các tài khoản đã chọn');
       }
     } catch (error) {
       console.error('Bulk delete failed:', error);
+      toast.error('Lỗi', 'Không thể xóa. Vui lòng thử lại.');
     }
   };
 
@@ -404,23 +465,49 @@ export default function InventoryPage() {
         </div>
       </div>
 
+      {/* Variant Stats - Show if product has variants */}
+      {hasVariants && variants.length > 0 && (
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Layers className="w-5 h-5 text-indigo-600" />
+            <h3 className="font-semibold text-gray-900">Kho theo phân loại</h3>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {variantStats.map((vs) => (
+              <div 
+                key={vs.variantId} 
+                className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                  variantFilter === vs.variantId 
+                    ? 'border-indigo-500 bg-indigo-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                onClick={() => setVariantFilter(variantFilter === vs.variantId ? '' : vs.variantId)}
+              >
+                <p className="text-sm font-medium text-gray-900 truncate">{vs.variantName}</p>
+                <p className="text-lg font-bold text-indigo-600">{vs.availableCount} <span className="text-xs font-normal text-gray-500">sẵn sàng</span></p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Filters & Actions */}
       <div className="bg-white rounded-lg shadow p-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
                 placeholder="Tìm kiếm..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 w-64"
+                className="pl-10 w-48"
               />
             </div>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 border rounded-md"
+              className="px-3 py-2 border rounded-md text-sm"
             >
               <option value="">Tất cả trạng thái</option>
               <option value="AVAILABLE">Sẵn sàng</option>
@@ -428,6 +515,18 @@ export default function InventoryPage() {
               <option value="SOLD">Đã bán</option>
               <option value="DISABLED">Vô hiệu</option>
             </select>
+            {hasVariants && variants.length > 0 && (
+              <select
+                value={variantFilter}
+                onChange={(e) => setVariantFilter(e.target.value)}
+                className="px-3 py-2 border rounded-md text-sm"
+              >
+                <option value="">Tất cả phân loại</option>
+                {variants.map((v) => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+              </select>
+            )}
             <Button variant="outline" size="sm" onClick={fetchInventory}>
               <RefreshCw className="w-4 h-4" />
             </Button>
@@ -472,6 +571,7 @@ export default function InventoryPage() {
                   />
                 </th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Dữ liệu tài khoản</th>
+                {hasVariants && <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Phân loại</th>}
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Trạng thái</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Ngày tạo</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Người mua</th>
@@ -504,6 +604,17 @@ export default function InventoryPage() {
                       </button>
                     </div>
                   </td>
+                  {hasVariants && (
+                    <td className="px-4 py-3">
+                      {item.variant ? (
+                        <span className="px-2 py-1 text-xs rounded-full bg-indigo-100 text-indigo-800">
+                          {item.variant.name}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-sm">-</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-4 py-3">{getStatusBadge(item.status)}</td>
                   <td className="px-4 py-3 text-sm text-gray-500">
                     {new Date(item.createdAt).toLocaleDateString('vi-VN')}
@@ -554,19 +665,40 @@ export default function InventoryPage() {
               <h2 className="text-xl font-bold">Upload kho hàng</h2>
               <p className="text-sm text-gray-500 mt-1">Mỗi dòng là một tài khoản. Định dạng: username|password|... </p>
             </div>
-            <div className="p-6">
+            <div className="p-6 space-y-4">
+              {/* Variant Selection for products with variants */}
+              {hasVariants && variants.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Chọn phân loại sản phẩm <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={uploadVariantId}
+                    onChange={(e) => setUploadVariantId(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  >
+                    <option value="">-- Chọn phân loại --</option>
+                    {variants.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name} (Kho: {variantStats.find(vs => vs.variantId === v.id)?.availableCount || 0})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <textarea
                 value={uploadText}
                 onChange={(e) => setUploadText(e.target.value)}
                 placeholder={`Ví dụ:\nuser1@gmail.com|password123\nuser2@gmail.com|password456\n...`}
-                className="w-full h-64 px-3 py-2 border rounded-lg font-mono text-sm resize-none"
+                className="w-full h-56 px-3 py-2 border rounded-lg font-mono text-sm resize-none"
               />
-              <p className="text-sm text-gray-500 mt-2">
+              <p className="text-sm text-gray-500">
                 {uploadText.split('\n').filter(l => l.trim()).length} dòng
               </p>
 
               {uploadResult && (
-                <div className={`mt-4 p-4 rounded-lg ${uploadResult.error ? 'bg-red-50' : 'bg-green-50'}`}>
+                <div className={`p-4 rounded-lg ${uploadResult.error ? 'bg-red-50' : 'bg-green-50'}`}>
                   {uploadResult.error ? (
                     <p className="text-red-600">{uploadResult.error}</p>
                   ) : (
@@ -592,11 +724,15 @@ export default function InventoryPage() {
               <Button variant="outline" onClick={() => {
                 setShowUploadModal(false);
                 setUploadText('');
+                setUploadVariantId('');
                 setUploadResult(null);
               }}>
                 Đóng
               </Button>
-              <Button onClick={handleUpload} disabled={isUploading || !uploadText.trim()}>
+              <Button 
+                onClick={handleUpload} 
+                disabled={isUploading || !uploadText.trim() || (hasVariants && variants.length > 0 && !uploadVariantId)}
+              >
                 {isUploading ? 'Đang upload...' : 'Upload'}
               </Button>
             </div>
@@ -611,22 +747,52 @@ export default function InventoryPage() {
             <div className="p-6 border-b">
               <h2 className="text-xl font-bold">Thêm tài khoản</h2>
             </div>
-            <div className="p-6">
-              <Input
-                value={singleAccountData}
-                onChange={(e) => setSingleAccountData(e.target.value)}
-                placeholder="username|password|..."
-                className="font-mono"
-              />
+            <div className="p-6 space-y-4">
+              {/* Variant Selection for products with variants */}
+              {hasVariants && variants.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Chọn phân loại sản phẩm <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={singleVariantId}
+                    onChange={(e) => setSingleVariantId(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  >
+                    <option value="">-- Chọn phân loại --</option>
+                    {variants.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name} (Kho: {variantStats.find(vs => vs.variantId === v.id)?.availableCount || 0})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Dữ liệu tài khoản
+                </label>
+                <Input
+                  value={singleAccountData}
+                  onChange={(e) => setSingleAccountData(e.target.value)}
+                  placeholder="username|password|..."
+                  className="font-mono"
+                />
+              </div>
             </div>
             <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
               <Button variant="outline" onClick={() => {
                 setShowAddModal(false);
                 setSingleAccountData('');
+                setSingleVariantId('');
               }}>
                 Hủy
               </Button>
-              <Button onClick={handleAddSingle} disabled={!singleAccountData.trim()}>
+              <Button 
+                onClick={handleAddSingle} 
+                disabled={!singleAccountData.trim() || (hasVariants && variants.length > 0 && !singleVariantId)}
+              >
                 Thêm
               </Button>
             </div>

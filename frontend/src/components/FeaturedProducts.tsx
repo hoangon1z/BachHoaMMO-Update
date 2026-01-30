@@ -12,7 +12,7 @@ interface FeaturedProductsProps {
 
 export function FeaturedProducts({ products, title }: FeaturedProductsProps) {
   return (
-    <div className="bg-white border border-gray-200 p-4 sm:p-6 rounded-lg">
+    <div className="bg-white border border-gray-200 p-3 sm:p-6 rounded-lg">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0 mb-4 sm:mb-6">
         <h2 className="text-xl sm:text-2xl font-bold uppercase">{title}</h2>
         <Link href="/explore">
@@ -22,7 +22,7 @@ export function FeaturedProducts({ products, title }: FeaturedProductsProps) {
           </Button>
         </Link>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
         {products.slice(0, 8).map((product) => (
           <ProductCard key={product.id} product={product} />
         ))}

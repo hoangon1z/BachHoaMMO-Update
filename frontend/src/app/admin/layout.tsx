@@ -25,7 +25,8 @@ import {
   ChevronDown,
   Settings,
   MessageCircle,
-  Gavel
+  Gavel,
+  Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -38,9 +39,11 @@ const sidebarLinks = [
   { href: '/admin/categories', label: 'Danh mục', icon: FolderOpen },
   { href: '/admin/products', label: 'Sản phẩm', icon: Package },
   { href: '/admin/sellers', label: 'Người bán', icon: Store },
+  { href: '/admin/seller-applications', label: 'Duyệt Seller', icon: Shield, badge: 'sellers' },
   { href: '/admin/users', label: 'Người dùng', icon: Users },
   { href: '/admin/orders', label: 'Đơn hàng', icon: ShoppingBag },
   { href: '/admin/recharges', label: 'Duyệt nạp tiền', icon: DollarSign, badge: true },
+  { href: '/admin/withdrawals', label: 'Duyệt rút tiền', icon: Wallet, badge: 'withdrawals' },
   { href: '/admin/escrows', label: 'Escrow', icon: Lock },
   { href: '/admin/transactions', label: 'Giao dịch', icon: TrendingUp },
   { href: '/admin/settings', label: 'Cài đặt', icon: Settings },
@@ -56,6 +59,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingWithdrawalsCount, setPendingWithdrawalsCount] = useState(0);
+  const [pendingSellersCount, setPendingSellersCount] = useState(0);
 
   useEffect(() => {
     const init = async () => {
@@ -72,23 +77,43 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [user, isCheckingAuth]);
 
   useEffect(() => {
-    const fetchPendingCount = async () => {
+    const fetchPendingCounts = async () => {
       try {
         const token = localStorage.getItem('token');
-        const response = await fetch('/api/admin/recharges/pending', {
+        
+        // Fetch pending recharges
+        const rechargesRes = await fetch('/api/admin/recharges/pending', {
           headers: { 'Authorization': `Bearer ${token}` },
         });
-        if (response.ok) {
-          const data = await response.json();
+        if (rechargesRes.ok) {
+          const data = await rechargesRes.json();
           setPendingCount(data.length || 0);
         }
+        
+        // Fetch pending withdrawals
+        const withdrawalsRes = await fetch('/api/admin/withdrawals/pending-count', {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (withdrawalsRes.ok) {
+          const data = await withdrawalsRes.json();
+          setPendingWithdrawalsCount(data.count || 0);
+        }
+        
+        // Fetch pending seller applications
+        const sellersRes = await fetch('/api/admin/seller-applications/pending-count', {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (sellersRes.ok) {
+          const data = await sellersRes.json();
+          setPendingSellersCount(data.count || 0);
+        }
       } catch (error) {
-        console.error('Error fetching pending count:', error);
+        console.error('Error fetching pending counts:', error);
       }
     };
     if (user?.role === 'ADMIN') {
-      fetchPendingCount();
-      const interval = setInterval(fetchPendingCount, 30000);
+      fetchPendingCounts();
+      const interval = setInterval(fetchPendingCounts, 30000);
       return () => clearInterval(interval);
     }
   }, [user]);
@@ -154,6 +179,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {sidebarLinks.map((link) => {
             const Icon = link.icon;
             const isActive = pathname === link.href;
+            
+            // Get badge count based on badge type
+            const getBadgeCount = () => {
+              if (link.badge === true) return pendingCount;
+              if (link.badge === 'withdrawals') return pendingWithdrawalsCount;
+              if (link.badge === 'sellers') return pendingSellersCount;
+              return 0;
+            };
+            const badgeCount = getBadgeCount();
 
             return (
               <Link key={link.href} href={link.href}>
@@ -162,16 +196,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   {!isSidebarCollapsed && (
                     <>
                       <span className="text-sm font-medium">{link.label}</span>
-                      {link.badge && pendingCount > 0 && (
+                      {link.badge && badgeCount > 0 && (
                         <span className="ml-auto px-1.5 py-0.5 bg-red-500 text-white text-xs font-bold rounded">
-                          {pendingCount}
+                          {badgeCount}
                         </span>
                       )}
                     </>
                   )}
-                  {isSidebarCollapsed && link.badge && pendingCount > 0 && (
+                  {isSidebarCollapsed && link.badge && badgeCount > 0 && (
                     <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
-                      {pendingCount}
+                      {badgeCount}
                     </span>
                   )}
                 </div>

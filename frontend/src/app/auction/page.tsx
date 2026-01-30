@@ -119,8 +119,8 @@ export default function AuctionPage() {
       return;
     }
 
-    if (user && amount > user.balance) {
-      setBidError(`Số dư không đủ. Bạn có ${formatPrice(user.balance)}đ`);
+    if (user && amount > (user.balance ?? 0)) {
+      setBidError(`Số dư không đủ. Bạn có ${formatPrice(user.balance ?? 0)}đ`);
       return;
     }
 
@@ -330,7 +330,7 @@ export default function AuctionPage() {
               <div className="flex items-center gap-3">
                 <Wallet className="w-5 h-5 text-primary" />
                 <span className="font-medium">Số dư của bạn:</span>
-                <span className="text-xl font-bold text-primary">{formatPrice(user.balance)}đ</span>
+                <span className="text-xl font-bold text-primary">{formatPrice(user.balance ?? 0)}đ</span>
               </div>
               <Link href="/wallet/recharge">
                 <Button variant="outline" size="sm">Nạp thêm</Button>

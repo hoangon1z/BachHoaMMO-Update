@@ -47,6 +47,27 @@ export class ProductsController {
     return this.productsService.findOne(id);
   }
 
+  // Track view when logged-in user views product
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/view')
+  trackView(@Param('id') id: string, @Request() req) {
+    return this.productsService.trackView(id, req.user.id);
+  }
+
+  // Get product reviews
+  @Get(':id/reviews')
+  @Public()
+  getReviews(
+    @Param('id') id: string,
+    @Query('skip') skip?: string,
+    @Query('take') take?: string,
+  ) {
+    return this.productsService.getProductReviews(id, {
+      skip: skip ? parseInt(skip) : 0,
+      take: take ? parseInt(take) : 10,
+    });
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post()
   create(@Body() data: any, @Request() req) {

@@ -20,15 +20,18 @@ function MessagesContent() {
   
   // Single useChat instance for entire page
   const chatHook = useChat();
-  const { startConversationWithAdmin } = chatHook;
+  const { startConversationWithAdmin, startConversationWithSeller } = chatHook;
   
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [filter, setFilter] = useState<{ status?: string; type?: string }>({});
   const [showMobileChat, setShowMobileChat] = useState(false);
   const [showAdminDialog, setShowAdminDialog] = useState(false);
+  const [isStartingChat, setIsStartingChat] = useState(false);
 
-  // Get conversation ID from URL
+  // Get params from URL
   const conversationIdFromUrl = searchParams.get('id');
+  const sellerIdFromUrl = searchParams.get('seller');
+  const sellerNameFromUrl = searchParams.get('sellerName');
 
   useEffect(() => {
     checkAuth();
@@ -40,6 +43,49 @@ function MessagesContent() {
       router.push('/login?redirect=/messages');
     }
   }, [user, isInitialized]);
+
+  // Handle opening conversation from URL params (e.g., from order page complaint)
+  useEffect(() => {
+    if (!user || !conversationIdFromUrl) return;
+    
+    // Show mobile chat when conversation ID is in URL
+    setShowMobileChat(true);
+    
+    // Find and set the conversation from loaded list
+    const conv = chatHook.conversations.find(c => c._id === conversationIdFromUrl);
+    if (conv) {
+      setSelectedConversation(conv);
+    }
+  }, [user, conversationIdFromUrl, chatHook.conversations]);
+
+  // Handle starting conversation with seller from URL params
+  useEffect(() => {
+    if (!user || !sellerIdFromUrl || isStartingChat) return;
+    
+    const startSellerChat = async () => {
+      setIsStartingChat(true);
+      try {
+        console.log('[Messages] Starting chat with seller:', sellerIdFromUrl);
+        const conversation = await startConversationWithSeller(sellerIdFromUrl);
+        console.log('[Messages] Conversation created:', conversation);
+        
+        if (conversation?._id) {
+          setSelectedConversation(conversation);
+          setShowMobileChat(true);
+          // Update URL to show conversation ID instead of seller params
+          router.replace(`/messages?id=${conversation._id}`, { scroll: false });
+          // Reload conversations list
+          chatHook.loadConversations();
+        }
+      } catch (error) {
+        console.error('[Messages] Failed to start chat with seller:', error);
+      } finally {
+        setIsStartingChat(false);
+      }
+    };
+    
+    startSellerChat();
+  }, [user, sellerIdFromUrl, startConversationWithSeller]);
 
   const handleLogout = () => {
     logout();
@@ -130,7 +176,14 @@ function MessagesContent() {
 
             {/* Chat Window */}
             <div className={`flex-1 flex flex-col ${!showMobileChat ? 'hidden md:flex' : 'flex'}`}>
-              {selectedConversation || conversationIdFromUrl ? (
+              {isStartingChat ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+                  <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
+                  <h2 className="text-lg font-semibold text-gray-700">
+                    Đang kết nối với {sellerNameFromUrl || 'shop'}...
+                  </h2>
+                </div>
+              ) : selectedConversation || conversationIdFromUrl ? (
                 <>
                   {/* Mobile back button */}
                   <div className="md:hidden p-3 border-b">

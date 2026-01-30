@@ -9,7 +9,14 @@ import {
   Query,
   UseGuards,
   Request,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname, join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SellerService } from './seller.service';
 import {
@@ -25,7 +32,15 @@ import {
   UploadInventoryDto,
   AddSingleInventoryDto,
   UpdateInventoryDto,
+  ManualDeliveryDto,
+  ManualDeliveryBulkDto,
 } from './dto/seller.dto';
+
+// Ensure upload directory for shop logos exists
+const shopLogoUploadDir = join(process.cwd(), 'uploads', 'shops');
+if (!existsSync(shopLogoUploadDir)) {
+  mkdirSync(shopLogoUploadDir, { recursive: true });
+}
 
 @Controller('seller')
 @UseGuards(JwtAuthGuard)
@@ -47,6 +62,39 @@ export class SellerController {
   @Put('store')
   async updateStore(@Request() req, @Body() dto: UpdateStoreDto) {
     return this.sellerService.updateStore(req.user.id, dto);
+  }
+
+  @Post('store/logo')
+  @UseInterceptors(
+    FileInterceptor('logo', {
+      storage: diskStorage({
+        destination: shopLogoUploadDir,
+        filename: (req, file, cb) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          cb(null, `shop-logo-${uniqueSuffix}${extname(file.originalname)}`);
+        },
+      }),
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+      fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|gif|webp/;
+        const ext = extname(file.originalname).toLowerCase().slice(1);
+        const mimetype = file.mimetype.split('/')[1];
+        
+        if (allowedTypes.test(ext) && allowedTypes.test(mimetype)) {
+          cb(null, true);
+        } else {
+          cb(new BadRequestException('Chỉ chấp nhận file ảnh (jpeg, jpg, png, gif, webp)'), false);
+        }
+      },
+    }),
+  )
+  async uploadShopLogo(@Request() req, @UploadedFile() file: any) {
+    if (!file) {
+      throw new BadRequestException('Vui lòng chọn file ảnh');
+    }
+
+    const logoUrl = `/uploads/shops/${file.filename}`;
+    return this.sellerService.updateShopLogo(req.user.id, logoUrl);
   }
 
   // ==================== DASHBOARD ====================
@@ -145,6 +193,31 @@ export class SellerController {
     return this.sellerService.updateOrderStatus(req.user.id, id, dto);
   }
 
+  /**
+   * Manual delivery - Seller giao tài khoản thủ công cho đơn hàng
+   */
+  @Post('orders/:id/deliver')
+  async manualDeliver(
+    @Request() req,
+    @Param('id') orderId: string,
+    @Body() dto: ManualDeliveryBulkDto,
+  ) {
+    return this.sellerService.manualDeliver(req.user.id, orderId, dto.deliveries);
+  }
+
+  /**
+   * Manual delivery single item
+   */
+  @Post('orders/:orderId/items/:itemId/deliver')
+  async manualDeliverItem(
+    @Request() req,
+    @Param('orderId') orderId: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: ManualDeliveryDto,
+  ) {
+    return this.sellerService.manualDeliverItem(req.user.id, orderId, itemId, dto.accountData);
+  }
+
   // ==================== COMPLAINT MANAGEMENT ====================
 
   @Get('complaints')
@@ -230,11 +303,13 @@ export class SellerController {
     @Request() req,
     @Param('id') productId: string,
     @Query('status') status?: string,
+    @Query('variantId') variantId?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
     return this.sellerService.getProductInventory(req.user.id, productId, {
       status,
+      variantId,
       limit: limit ? parseInt(limit) : undefined,
       offset: offset ? parseInt(offset) : undefined,
     });
@@ -249,7 +324,7 @@ export class SellerController {
     @Param('id') productId: string,
     @Body() dto: UploadInventoryDto,
   ) {
-    return this.sellerService.uploadInventory(req.user.id, productId, dto.accountData);
+    return this.sellerService.uploadInventory(req.user.id, productId, dto.accountData, dto.variantId);
   }
 
   /**
@@ -261,7 +336,7 @@ export class SellerController {
     @Param('id') productId: string,
     @Body() dto: AddSingleInventoryDto,
   ) {
-    return this.sellerService.addSingleInventory(req.user.id, productId, dto.accountData);
+    return this.sellerService.addSingleInventory(req.user.id, productId, dto.accountData, dto.variantId);
   }
 
   /**

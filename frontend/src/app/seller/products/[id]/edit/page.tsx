@@ -28,6 +28,7 @@ export default function EditProductPage() {
   const [commission, setCommission] = useState<number>(5);
   const [customCommission, setCustomCommission] = useState<string>('');
   const [useCustomCommission, setUseCustomCommission] = useState(false);
+  const [autoDelivery, setAutoDelivery] = useState(true); // Chế độ giao hàng
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -93,6 +94,9 @@ export default function EditProductPage() {
           setCustomCommission(productCommission.toString());
           setUseCustomCommission(true);
         }
+        
+        // Set autoDelivery
+        setAutoDelivery(product.autoDelivery !== false); // Default true if not set
       } else {
         setError('Không tìm thấy sản phẩm');
       }
@@ -160,6 +164,7 @@ export default function EditProductPage() {
             images: JSON.stringify(validImages.length > 0 ? validImages : ['/placeholder.jpg']),
             tags: formData.tags || null,
             commission: Math.max(0, Math.min(100, finalCommission)),
+            autoDelivery, // Chế độ giao hàng
           }),
         }
       );
@@ -344,6 +349,92 @@ export default function EditProductPage() {
                 />
               </div>
             </div>
+          </div>
+
+          {/* Delivery Mode */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${autoDelivery ? 'bg-green-100' : 'bg-orange-100'}`}>
+                  {autoDelivery ? (
+                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  )}
+                </div>
+                <div>
+                  <h2 className="font-semibold text-gray-900">Chế độ giao hàng</h2>
+                  <p className="text-sm text-gray-500">
+                    {autoDelivery 
+                      ? 'Tự động giao từ kho khi có đơn hàng' 
+                      : 'Bạn sẽ nhập thông tin tài khoản khi có đơn hàng'
+                    }
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setAutoDelivery(true)}
+                className={`p-4 rounded-lg border-2 text-left transition-all ${
+                  autoDelivery 
+                    ? 'border-green-500 bg-green-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <svg className={`w-5 h-5 ${autoDelivery ? 'text-green-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span className={`font-medium ${autoDelivery ? 'text-green-700' : 'text-gray-700'}`}>
+                    Giao tự động
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Nhập tài khoản vào kho trước, hệ thống tự động giao khi có đơn
+                </p>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setAutoDelivery(false)}
+                className={`p-4 rounded-lg border-2 text-left transition-all ${
+                  !autoDelivery 
+                    ? 'border-orange-500 bg-orange-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <svg className={`w-5 h-5 ${!autoDelivery ? 'text-orange-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span className={`font-medium ${!autoDelivery ? 'text-orange-700' : 'text-gray-700'}`}>
+                    Giao thủ công
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Không cần nhập kho, bạn nhập thông tin khi có đơn hàng
+                </p>
+              </button>
+            </div>
+            
+            {!autoDelivery && (
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <Info className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-amber-700">
+                    <strong>Lưu ý:</strong> Với chế độ giao thủ công, khách hàng có thể mua sản phẩm ngay cả khi kho trống. 
+                    Bạn cần theo dõi đơn hàng và giao thông tin tài khoản trong vòng 24h.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Commission */}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import {
   Package,
   Clock,
   CheckCircle,
+  CheckCircle2,
   XCircle,
   Eye,
   EyeOff,
@@ -21,6 +22,11 @@ import {
   AlertTriangle,
   ThumbsUp,
   MessageSquare,
+  Flag,
+  X,
+  Loader2,
+  Send,
+  AlertCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -75,6 +81,17 @@ interface Order {
   };
 }
 
+// Complaint reasons
+const COMPLAINT_REASONS = [
+  { id: 'wrong_account', label: 'Tài khoản sai thông tin' },
+  { id: 'not_working', label: 'Tài khoản không hoạt động' },
+  { id: 'already_used', label: 'Tài khoản đã bị sử dụng' },
+  { id: 'password_changed', label: 'Mật khẩu đã bị thay đổi' },
+  { id: 'not_as_described', label: 'Không đúng mô tả' },
+  { id: 'missing_features', label: 'Thiếu tính năng như cam kết' },
+  { id: 'other', label: 'Lý do khác' },
+];
+
 export default function OrderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -86,6 +103,21 @@ export default function OrderDetailPage() {
   const [visibleAccounts, setVisibleAccounts] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
+  
+  // Complaint state
+  const [showComplaintModal, setShowComplaintModal] = useState(false);
+  const [selectedReason, setSelectedReason] = useState('');
+  const [complaintDetails, setComplaintDetails] = useState('');
+  const [isSubmittingComplaint, setIsSubmittingComplaint] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successConversationId, setSuccessConversationId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Confirm order dialog state
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [confirmSuccessModal, setConfirmSuccessModal] = useState(false);
+  const [confirmErrorModal, setConfirmErrorModal] = useState<string | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -118,8 +150,7 @@ export default function OrderDetailPage() {
   };
 
   const handleConfirmOrder = async () => {
-    if (!confirm('Bạn xác nhận đã nhận được tài khoản và hài lòng với đơn hàng này?')) return;
-
+    setShowConfirmDialog(false);
     setIsConfirming(true);
     try {
       const token = localStorage.getItem('token');
@@ -128,14 +159,15 @@ export default function OrderDetailPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
-        alert('Đã xác nhận đơn hàng thành công!');
+        setConfirmSuccessModal(true);
         fetchOrder();
       } else {
         const data = await res.json();
-        alert(data.message || 'Có lỗi xảy ra');
+        setConfirmErrorModal(data.message || 'Có lỗi xảy ra');
       }
     } catch (error) {
       console.error('Failed to confirm order:', error);
+      setConfirmErrorModal('Có lỗi xảy ra, vui lòng thử lại');
     } finally {
       setIsConfirming(false);
     }
@@ -164,6 +196,105 @@ export default function OrderDetailPage() {
 
   const handleSearch = (query: string) => {
     router.push(`/search?q=${encodeURIComponent(query)}`);
+  };
+
+  // Handle contact seller
+  const handleContactSeller = async () => {
+    if (!order?.seller?.id) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/chat/start-with-seller', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ 
+          sellerId: order.seller.id,
+          orderId: order.id,
+          message: `Xin chào! Tôi muốn hỏi về đơn hàng ${order.orderNumber}`
+        }),
+      });
+      
+      const data = await response.json();
+      if (data.success && data.conversation?._id) {
+        // Redirect to messages page with conversation ID
+        router.push(`/messages?id=${data.conversation._id}`);
+      } else {
+        setErrorMessage(data.message || 'Có lỗi xảy ra');
+      }
+    } catch (error) {
+      console.error('Failed to start conversation:', error);
+      setErrorMessage('Có lỗi xảy ra, vui lòng thử lại');
+    }
+  };
+
+  // Handle complaint submission
+  const handleSubmitComplaint = async () => {
+    if (!selectedReason) {
+      setErrorMessage('Vui lòng chọn lý do khiếu nại');
+      return;
+    }
+    
+    if (!order?.seller?.id) return;
+    
+    setIsSubmittingComplaint(true);
+    setErrorMessage(null);
+    
+    try {
+      const token = localStorage.getItem('token');
+      const reasonLabel = COMPLAINT_REASONS.find(r => r.id === selectedReason)?.label || selectedReason;
+      
+      // Build complaint message
+      let complaintMessage = `🚨 **KHIẾU NẠI ĐƠN HÀNG** 🚨\n\n`;
+      complaintMessage += `📋 **Mã đơn hàng:** ${order.orderNumber}\n`;
+      complaintMessage += `📦 **Sản phẩm:** ${order.items.map(i => i.product?.title).join(', ')}\n`;
+      complaintMessage += `💰 **Giá trị:** ${formatPrice(order.total)}\n\n`;
+      complaintMessage += `⚠️ **Lý do khiếu nại:** ${reasonLabel}\n`;
+      if (complaintDetails.trim()) {
+        complaintMessage += `\n📝 **Chi tiết:** ${complaintDetails.trim()}\n`;
+      }
+      complaintMessage += `\n---\nKhách hàng yêu cầu được hỗ trợ giải quyết vấn đề này.`;
+      
+      // Start conversation with seller and send complaint message
+      const response = await fetch('/api/chat/start-with-seller', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ 
+          sellerId: order.seller.id,
+          orderId: order.id,
+          message: complaintMessage,
+          isComplaint: true, // Flag this as a complaint
+        }),
+      });
+      
+      const data = await response.json();
+      if (data.success && data.conversation?._id) {
+        setShowComplaintModal(false);
+        setSelectedReason('');
+        setComplaintDetails('');
+        setSuccessConversationId(data.conversation._id);
+        setShowSuccessModal(true);
+      } else {
+        setErrorMessage(data.message || 'Có lỗi xảy ra');
+      }
+    } catch (error) {
+      console.error('Failed to submit complaint:', error);
+      setErrorMessage('Có lỗi xảy ra, vui lòng thử lại');
+    } finally {
+      setIsSubmittingComplaint(false);
+    }
+  };
+
+  // Navigate to conversation
+  const handleGoToConversation = () => {
+    if (successConversationId) {
+      router.push(`/messages?id=${successConversationId}`);
+    }
   };
 
   const formatPrice = (price: number) => {
@@ -269,10 +400,10 @@ export default function OrderDetailPage() {
                 </span>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {canConfirm && (
                 <Button
-                  onClick={handleConfirmOrder}
+                  onClick={() => setShowConfirmDialog(true)}
                   disabled={isConfirming}
                   className="bg-green-600 hover:bg-green-700"
                 >
@@ -280,7 +411,22 @@ export default function OrderDetailPage() {
                   {isConfirming ? 'Đang xử lý...' : 'Xác nhận nhận hàng'}
                 </Button>
               )}
-              <Button variant="outline">
+              
+              {/* Complaint button - show when order has been delivered or completed */}
+              {(order.deliveredAt || order.status === 'COMPLETED' || order.status === 'PROCESSING') && 
+               order.status !== 'CANCELLED' && 
+               order.status !== 'REFUNDED' && (
+                <Button 
+                  variant="outline"
+                  onClick={() => setShowComplaintModal(true)}
+                  className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                >
+                  <Flag className="w-4 h-4 mr-2" />
+                  Khiếu nại
+                </Button>
+              )}
+              
+              <Button variant="outline" onClick={handleContactSeller}>
                 <MessageSquare className="w-4 h-4 mr-2" />
                 Liên hệ shop
               </Button>
@@ -450,6 +596,422 @@ export default function OrderDetailPage() {
       </div>
 
       <Footer />
+
+      {/* Complaint Modal */}
+      {showComplaintModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => !isSubmittingComplaint && setShowComplaintModal(false)}
+          />
+          
+          {/* Modal */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <Flag className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Khiếu nại đơn hàng</h2>
+                  <p className="text-sm text-gray-500">Đơn hàng: {order.orderNumber}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => !isSubmittingComplaint && setShowComplaintModal(false)}
+                disabled={isSubmittingComplaint}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors disabled:opacity-50"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            
+            {/* Body */}
+            <div className="p-5 space-y-5 max-h-[60vh] overflow-y-auto">
+              {/* Order info */}
+              <div className="p-4 bg-gray-50 rounded-xl">
+                <div className="flex items-center gap-3">
+                  {order.items[0]?.product?.images && (
+                    <img 
+                      src={JSON.parse(order.items[0].product.images)[0]} 
+                      alt="" 
+                      className="w-12 h-12 rounded-lg object-cover"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 truncate">
+                      {order.items.map(i => i.product?.title).join(', ')}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Giá trị: {formatPrice(order.total)} • Shop: {order.seller?.sellerProfile?.shopName || order.seller?.name}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Reason selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Lý do khiếu nại <span className="text-red-500">*</span>
+                </label>
+                <div className="space-y-2">
+                  {COMPLAINT_REASONS.map((reason) => (
+                    <label 
+                      key={reason.id}
+                      className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                        selectedReason === reason.id 
+                          ? 'border-red-500 bg-red-50' 
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="complaint_reason"
+                        value={reason.id}
+                        checked={selectedReason === reason.id}
+                        onChange={(e) => setSelectedReason(e.target.value)}
+                        className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500"
+                      />
+                      <span className={`text-sm ${selectedReason === reason.id ? 'text-red-700 font-medium' : 'text-gray-700'}`}>
+                        {reason.label}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Additional details */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Mô tả chi tiết (không bắt buộc)
+                </label>
+                <textarea
+                  ref={textareaRef}
+                  value={complaintDetails}
+                  onChange={(e) => setComplaintDetails(e.target.value)}
+                  placeholder="Mô tả vấn đề bạn gặp phải..."
+                  rows={4}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl resize-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition-all text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Vui lòng mô tả rõ ràng để shop có thể hỗ trợ bạn tốt hơn
+                </p>
+              </div>
+              
+              {/* Info notice */}
+              <div className="p-4 bg-blue-50 rounded-xl">
+                <div className="flex items-start gap-3">
+                  <MessageSquare className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-blue-700">
+                    <p className="font-medium mb-1">Quy trình khiếu nại</p>
+                    <ul className="list-disc list-inside space-y-1 text-blue-600">
+                      <li>Khiếu nại sẽ được gửi đến shop qua tin nhắn</li>
+                      <li>Shop sẽ phản hồi trong vòng 24 giờ</li>
+                      <li>Nếu không được giải quyết, bạn có thể liên hệ Admin</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Footer */}
+            {/* Error message */}
+            {errorMessage && (
+              <div className="mx-5 mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                <p className="text-sm text-red-700">{errorMessage}</p>
+                <button 
+                  onClick={() => setErrorMessage(null)}
+                  className="ml-auto p-1 hover:bg-red-100 rounded"
+                >
+                  <X className="w-4 h-4 text-red-500" />
+                </button>
+              </div>
+            )}
+
+            <div className="flex gap-3 p-5 border-t border-gray-100 bg-gray-50">
+              <Button 
+                variant="outline" 
+                className="flex-1"
+                onClick={() => {
+                  setShowComplaintModal(false);
+                  setErrorMessage(null);
+                }}
+                disabled={isSubmittingComplaint}
+              >
+                Hủy
+              </Button>
+              <Button 
+                className="flex-1 bg-red-600 hover:bg-red-700"
+                onClick={handleSubmitComplaint}
+                disabled={!selectedReason || isSubmittingComplaint}
+              >
+                {isSubmittingComplaint ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Đang gửi...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    Gửi khiếu nại
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Order Dialog */}
+      {showConfirmDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowConfirmDialog(false)}
+          />
+          
+          {/* Modal */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6">
+              {/* Header */}
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
+                  <ThumbsUp className="w-7 h-7 text-green-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Xác nhận đơn hàng</h2>
+                  <p className="text-sm text-gray-500">Hành động này không thể hoàn tác</p>
+                </div>
+              </div>
+              
+              {/* Content */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+                <div className="flex gap-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-medium text-amber-800 mb-1">Vui lòng kiểm tra kỹ trước khi xác nhận</p>
+                    <ul className="text-amber-700 space-y-1">
+                      <li>• Đã nhận được đầy đủ tài khoản</li>
+                      <li>• Tài khoản hoạt động bình thường</li>
+                      <li>• Thông tin tài khoản chính xác</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              
+              <p className="text-gray-700 text-center mb-6">
+                Bạn xác nhận đã nhận được tài khoản và <strong>hài lòng</strong> với đơn hàng này?
+              </p>
+              
+              {/* Actions */}
+              <div className="flex gap-3">
+                <Button 
+                  variant="outline" 
+                  className="flex-1 h-11"
+                  onClick={() => setShowConfirmDialog(false)}
+                >
+                  Hủy
+                </Button>
+                <Button 
+                  className="flex-1 h-11 bg-green-600 hover:bg-green-700"
+                  onClick={handleConfirmOrder}
+                  disabled={isConfirming}
+                >
+                  {isConfirming ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Đang xử lý...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      Xác nhận
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Success Modal */}
+      {confirmSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          
+          {/* Modal */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-8 text-center">
+              {/* Success Icon */}
+              <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-green-100 flex items-center justify-center">
+                <CheckCircle2 className="w-10 h-10 text-green-600" />
+              </div>
+              
+              <h2 className="text-xl font-bold text-gray-900 mb-2">
+                Xác nhận thành công!
+              </h2>
+              <p className="text-gray-600 mb-6">
+                Cảm ơn bạn đã xác nhận đơn hàng. Tiền sẽ được chuyển cho người bán.
+              </p>
+              
+              {/* Info box */}
+              <div className="p-4 bg-green-50 border border-green-200 rounded-xl mb-6 text-left">
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-green-700">
+                    <p className="font-medium mb-1">Đơn hàng đã hoàn thành</p>
+                    <p className="text-green-600">
+                      Nếu có vấn đề gì, bạn vẫn có thể liên hệ shop qua tin nhắn.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex gap-3">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => setConfirmSuccessModal(false)}
+                >
+                  Đóng
+                </Button>
+                <Button 
+                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  onClick={() => router.push('/orders')}
+                >
+                  <Package className="w-4 h-4 mr-2" />
+                  Xem đơn hàng
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Error Modal */}
+      {confirmErrorModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setConfirmErrorModal(null)}
+          />
+          
+          {/* Modal */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              {/* Error Icon */}
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+                <AlertCircle className="w-8 h-8 text-red-600" />
+              </div>
+              
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Không thể xác nhận</h3>
+              <p className="text-gray-600 mb-6">{confirmErrorModal}</p>
+              
+              <Button 
+                className="w-full"
+                onClick={() => setConfirmErrorModal(null)}
+              >
+                Đóng
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          
+          {/* Modal */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-8 text-center">
+              {/* Success Icon */}
+              <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-green-100 flex items-center justify-center">
+                <CheckCircle2 className="w-10 h-10 text-green-600" />
+              </div>
+              
+              <h2 className="text-xl font-bold text-gray-900 mb-2">
+                Gửi khiếu nại thành công!
+              </h2>
+              <p className="text-gray-600 mb-6">
+                Khiếu nại của bạn đã được gửi đến shop. Bạn có thể theo dõi và trao đổi trực tiếp với shop qua tin nhắn.
+              </p>
+              
+              {/* Info box */}
+              <div className="p-4 bg-blue-50 rounded-xl mb-6 text-left">
+                <div className="flex items-start gap-3">
+                  <MessageSquare className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-blue-700">
+                    <p className="font-medium mb-1">Tiếp theo</p>
+                    <ul className="list-disc list-inside space-y-1 text-blue-600">
+                      <li>Shop sẽ phản hồi trong vòng 24h</li>
+                      <li>Kiểm tra tin nhắn để cập nhật</li>
+                      <li>Liên hệ Admin nếu cần hỗ trợ thêm</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex gap-3">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => setShowSuccessModal(false)}
+                >
+                  Đóng
+                </Button>
+                <Button 
+                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  onClick={handleGoToConversation}
+                >
+                  <MessageSquare className="w-4 h-4 mr-2" />
+                  Xem tin nhắn
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error Modal (for general errors) */}
+      {errorMessage && !showComplaintModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setErrorMessage(null)}
+          />
+          
+          {/* Modal */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              {/* Error Icon */}
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+                <AlertCircle className="w-8 h-8 text-red-600" />
+              </div>
+              
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Có lỗi xảy ra</h3>
+              <p className="text-gray-600 mb-6">{errorMessage}</p>
+              
+              <Button 
+                className="w-full"
+                onClick={() => setErrorMessage(null)}
+              >
+                Đóng
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -93,9 +93,11 @@ export function Header({ user, onLogout, onSearch }: HeaderProps) {
             
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2.5 flex-shrink-0 group">
-              <div className="w-9 h-9 lg:w-10 lg:h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center shadow-md group-hover:shadow-lg transition-shadow">
-                <span className="text-lg lg:text-xl font-bold text-white">B</span>
-              </div>
+              <img 
+                src="/images/logobachhoa.png" 
+                alt="BachHoaMMO Logo" 
+                className="w-11 h-11 lg:w-12 lg:h-12 rounded-lg shadow-md group-hover:shadow-lg transition-shadow object-contain"
+              />
               <div className="hidden sm:block">
                 <h1 className="text-lg lg:text-xl font-bold text-gray-900 leading-tight">
                   BachHoa<span className="text-blue-600">MMO</span>
@@ -161,12 +163,12 @@ export function Header({ user, onLogout, onSearch }: HeaderProps) {
             {/* Right Actions */}
             <div className="flex items-center gap-1 sm:gap-2 lg:gap-3">
               {/* Contact - Desktop only */}
-              <div className="hidden xl:flex items-center gap-4 mr-2 pr-4 border-r border-gray-200">
+              {/* <div className="hidden xl:flex items-center gap-4 mr-2 pr-4 border-r border-gray-200">
                 <a href="tel:0123456789" className="flex items-center gap-2 text-sm text-gray-600 hover:text-blue-600 transition-colors">
                   <Phone className="w-4 h-4" />
-                  <span>0123.456.789</span>
+                  <span></span>
                 </a>
-              </div>
+              </div> */}
 
               {isLoading ? (
                 <div className="flex items-center gap-1 sm:gap-2">
@@ -312,7 +314,7 @@ export function Header({ user, onLogout, onSearch }: HeaderProps) {
               <div className="space-y-2">
                 <a href="tel:0123456789" className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">
                   <Phone className="w-4 h-4 text-blue-600" />
-                  <span>0123.456.789</span>
+                  <span></span>
                 </a>
                 <a href="mailto:support@BachHoaMMO.vn" className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">
                   <Mail className="w-4 h-4 text-blue-600" />

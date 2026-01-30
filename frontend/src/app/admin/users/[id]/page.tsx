@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { 
   ArrowLeft, Mail, Calendar, Wallet, ShoppingBag, TrendingUp, 
   User as UserIcon, Eye, EyeOff, Key, Shield, Store, Save, 
-  RefreshCw, Phone, MapPin, Crown, Package, AlertCircle
+  RefreshCw, Phone, MapPin, Crown, Package, AlertCircle, CheckCircle2, X
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -94,6 +94,9 @@ export default function UserDetailPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  
+  // Modal state for success/error messages
+  const [modalMessage, setModalMessage] = useState<{ type: 'success' | 'error'; title: string; text: string } | null>(null);
 
   useEffect(() => {
     if (currentUser) {
@@ -152,13 +155,13 @@ export default function UserDetailPage() {
       if (response.ok) {
         await fetchUserDetail();
         setEditMode(false);
-        alert('Cập nhật thành công!');
+        setModalMessage({ type: 'success', title: 'Thành công', text: 'Cập nhật thông tin người dùng thành công!' });
       } else {
-        alert('Có lỗi xảy ra khi cập nhật');
+        setModalMessage({ type: 'error', title: 'Lỗi', text: 'Có lỗi xảy ra khi cập nhật' });
       }
     } catch (error) {
       console.error('Failed to update user:', error);
-      alert('Có lỗi xảy ra khi cập nhật');
+      setModalMessage({ type: 'error', title: 'Lỗi', text: 'Có lỗi xảy ra khi cập nhật' });
     } finally {
       setIsSaving(false);
     }
@@ -191,14 +194,14 @@ export default function UserDetailPage() {
         setNewPassword('');
         setConfirmPassword('');
         setPasswordError('');
-        alert('Đặt lại mật khẩu thành công!');
+        setModalMessage({ type: 'success', title: 'Thành công', text: 'Đặt lại mật khẩu thành công!' });
         await fetchUserDetail();
       } else {
-        alert('Có lỗi xảy ra khi đặt lại mật khẩu');
+        setModalMessage({ type: 'error', title: 'Lỗi', text: 'Có lỗi xảy ra khi đặt lại mật khẩu' });
       }
     } catch (error) {
       console.error('Failed to reset password:', error);
-      alert('Có lỗi xảy ra khi đặt lại mật khẩu');
+      setModalMessage({ type: 'error', title: 'Lỗi', text: 'Có lỗi xảy ra khi đặt lại mật khẩu' });
     } finally {
       setIsSaving(false);
     }
@@ -726,6 +729,37 @@ export default function UserDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Message Modal */}
+      {modalMessage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setModalMessage(null)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className={`w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center ${
+                modalMessage.type === 'success' ? 'bg-green-100' : 'bg-red-100'
+              }`}>
+                {modalMessage.type === 'success' ? (
+                  <CheckCircle2 className="w-8 h-8 text-green-600" />
+                ) : (
+                  <AlertCircle className="w-8 h-8 text-red-600" />
+                )}
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">{modalMessage.title}</h3>
+              <p className="text-gray-600 mb-6">{modalMessage.text}</p>
+              <Button 
+                className="w-full"
+                onClick={() => setModalMessage(null)}
+              >
+                Đóng
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

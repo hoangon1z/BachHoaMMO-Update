@@ -1,12 +1,14 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
+import { TelegramService } from '../telegram/telegram.service';
 
 @Injectable()
 export class OrdersService {
   constructor(
     private prisma: PrismaService,
     private walletService: WalletService,
+    private telegramService: TelegramService,
   ) {}
 
   /**
@@ -60,10 +62,13 @@ export class OrdersService {
       throw new BadRequestException('All products must be from the same seller for this order');
     }
 
-    // Check inventory availability for digital products
+    // Check inventory availability for digital products with auto-delivery
+    // Skip check if product allows manual delivery (autoDelivery = false)
     for (const item of items) {
       const product = products.find(p => p.id === item.productId);
-      if (product?.isDigital) {
+      // Chỉ check inventory nếu sản phẩm số VÀ bật auto-delivery
+      // Nếu autoDelivery = false, seller sẽ giao thủ công nên không cần có hàng trong kho
+      if (product?.isDigital && product.autoDelivery) {
         const availableCount = await this.prisma.productInventory.count({
           where: { productId: item.productId, status: 'AVAILABLE' },
         });
@@ -246,10 +251,48 @@ export class OrdersService {
         escrow,
         deliveries,
         deliveredCount: deliveries.length,
+        sellerId,
+        buyerName: buyer.name || buyer.email,
+        products,
       };
     });
 
+    // Send Telegram notification to seller (async, don't block response)
+    this.sendNewOrderNotification(result).catch(err => {
+      console.error('Failed to send Telegram notification:', err.message);
+    });
+
     return result;
+  }
+
+  /**
+   * Send Telegram notification for new order
+   */
+  private async sendNewOrderNotification(result: {
+    order: any;
+    orderItems: any[];
+    sellerId: string;
+    buyerName: string;
+    products: any[];
+  }) {
+    try {
+      const items = result.orderItems.map(oi => {
+        const product = result.products.find(p => p.id === oi.productId);
+        return {
+          title: product?.title || 'Sản phẩm',
+          quantity: oi.quantity,
+        };
+      });
+
+      await this.telegramService.notifyNewOrder(result.sellerId, {
+        orderNumber: result.order.orderNumber,
+        total: result.order.total,
+        buyerName: result.buyerName,
+        items,
+      });
+    } catch (error) {
+      console.error('Telegram notification error:', error);
+    }
   }
 
   /**
@@ -590,5 +633,119 @@ export class OrdersService {
     });
 
     return escrows;
+  }
+
+  /**
+   * Submit review for completed order
+   */
+  async submitReview(
+    orderId: string,
+    userId: string,
+    data: { rating: number; comment?: string; isAnonymous?: boolean },
+  ) {
+    // Validate order exists and belongs to user
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (order.buyerId !== userId) {
+      throw new BadRequestException('You can only review your own orders');
+    }
+
+    if (order.status !== 'COMPLETED') {
+      throw new BadRequestException('Can only review completed orders');
+    }
+
+    // Check if already reviewed
+    const existingReview = await this.prisma.review.findUnique({
+      where: { orderId },
+    });
+
+    if (existingReview) {
+      throw new BadRequestException('Order already reviewed');
+    }
+
+    // Validate rating
+    if (data.rating < 1 || data.rating > 5) {
+      throw new BadRequestException('Rating must be between 1 and 5');
+    }
+
+    // Get first product from order
+    const productId = order.items[0]?.productId;
+    if (!productId) {
+      throw new BadRequestException('Order has no products');
+    }
+
+    // Create review
+    const review = await this.prisma.review.create({
+      data: {
+        orderId,
+        productId,
+        buyerId: userId,
+        sellerId: order.sellerId,
+        rating: data.rating,
+        comment: data.comment,
+        isAnonymous: data.isAnonymous || false,
+      },
+    });
+
+    // Update product rating
+    const productReviews = await this.prisma.review.findMany({
+      where: { productId },
+      select: { rating: true },
+    });
+
+    const avgRating =
+      productReviews.reduce((sum, r) => sum + r.rating, 0) / productReviews.length;
+
+    await this.prisma.product.update({
+      where: { id: productId },
+      data: { rating: avgRating },
+    });
+
+    // Update seller rating
+    const sellerReviews = await this.prisma.review.findMany({
+      where: { sellerId: order.sellerId },
+      select: { rating: true },
+    });
+
+    const sellerAvgRating =
+      sellerReviews.reduce((sum, r) => sum + r.rating, 0) / sellerReviews.length;
+
+    await this.prisma.sellerProfile.updateMany({
+      where: { userId: order.sellerId },
+      data: { rating: sellerAvgRating },
+    });
+
+    return { success: true, review };
+  }
+
+  /**
+   * Get review for an order
+   */
+  async getOrderReview(orderId: string, userId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    // Only buyer or seller can see the review
+    if (order.buyerId !== userId && order.sellerId !== userId) {
+      throw new BadRequestException('Access denied');
+    }
+
+    const review = await this.prisma.review.findUnique({
+      where: { orderId },
+    });
+
+    return review;
   }
 }

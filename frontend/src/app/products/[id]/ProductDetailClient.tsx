@@ -7,8 +7,9 @@ import { Footer } from '@/components/Footer';
 import { useAuthStore } from '@/store/authStore';
 import { useCartStore } from '@/store/cartStore';
 import { Button } from '@/components/ui/button';
-import { Star, ShoppingCart, Heart, MessageCircle, Shield, Zap, Check, Minus, Plus, ChevronRight, Store, Clock, Eye, Share2, BadgeCheck, TrendingUp, Package, ThumbsUp, ExternalLink } from 'lucide-react';
+import { Star, ShoppingCart, Heart, MessageCircle, Shield, Zap, Check, Minus, Plus, ChevronRight, Store, Clock, Eye, Share2, BadgeCheck, TrendingUp, Package, ThumbsUp, ExternalLink, AlertCircle, X, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { VerifyBadge } from '@/components/VerifyBadge';
 
 interface ProductVariant {
   id: string;
@@ -49,6 +50,9 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [selectedImage, setSelectedImage] = useState(0);
   const [isStartingChat, setIsStartingChat] = useState(false);
+  
+  // Error/Toast modal state
+  const [toastMessage, setToastMessage] = useState<{ type: 'error' | 'warning' | 'info'; text: string } | null>(null);
 
   // Handle chat with seller
   const handleChatWithSeller = async () => {
@@ -59,7 +63,7 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
 
     // Don't allow seller to chat with themselves
     if (user.id === product.seller.id) {
-      alert('Bạn không thể chat với chính mình');
+      setToastMessage({ type: 'warning', text: 'Bạn không thể chat với chính mình' });
       return;
     }
 
@@ -84,11 +88,11 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
         router.push(`/messages?id=${data.conversation._id}`);
       } else {
         console.error('Failed to start conversation:', data);
-        alert(data.message || 'Không thể bắt đầu cuộc trò chuyện');
+        setToastMessage({ type: 'error', text: data.message || 'Không thể bắt đầu cuộc trò chuyện' });
       }
     } catch (error) {
       console.error('Error starting chat:', error);
-      alert('Có lỗi xảy ra, vui lòng thử lại');
+      setToastMessage({ type: 'error', text: 'Có lỗi xảy ra, vui lòng thử lại' });
     } finally {
       setIsStartingChat(false);
     }
@@ -120,7 +124,7 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
 
     // Validate variant selection
     if (product.hasVariants && !selectedVariant) {
-      alert('Vui lòng chọn phân loại sản phẩm');
+      setToastMessage({ type: 'warning', text: 'Vui lòng chọn phân loại sản phẩm' });
       return;
     }
 
@@ -143,7 +147,7 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
 
   const handleBuyNow = () => {
     if (product.hasVariants && !selectedVariant) {
-      alert('Vui lòng chọn phân loại sản phẩm');
+      setToastMessage({ type: 'warning', text: 'Vui lòng chọn phân loại sản phẩm' });
       return;
     }
     handleAddToCart();
@@ -406,6 +410,70 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
               </div>
             </div>
 
+            {/* Mobile Seller Card - Only shown on mobile, before description */}
+            <div className="lg:hidden bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+              {/* Shop Info Row */}
+              <div className="flex items-center gap-3 mb-4">
+                {/* Avatar */}
+                <Link href={`/shop/${product.seller.id}`} className="flex-shrink-0">
+                  <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center overflow-hidden border-2 border-gray-100">
+                    {(product.seller.shopLogo || product.seller.avatar) ? (
+                      <img 
+                        src={product.seller.shopLogo || product.seller.avatar} 
+                        alt={product.seller.name}
+                        className="w-full h-full object-cover" 
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-[#2563eb] flex items-center justify-center">
+                        <Store className="w-5 h-5 text-white" />
+                      </div>
+                    )}
+                  </div>
+                </Link>
+                
+                {/* Shop Name & Stats */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <Link href={`/shop/${product.seller.id}`} className="font-semibold text-gray-900 hover:text-blue-600 transition-colors truncate text-sm">
+                      {product.seller.name}
+                    </Link>
+                    <VerifyBadge size={20} />
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+                    <span className="flex items-center gap-1">
+                      <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                      {product.seller.rating.toFixed(1)}
+                    </span>
+                    <span className="text-gray-300">|</span>
+                    <span>{product.seller.totalSales} đã bán</span>
+                    <span className="ml-auto flex items-center gap-1 text-green-600">
+                      <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                      Online
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex gap-2">
+                <Link href={`/shop/${product.seller.id}`} className="flex-1">
+                  <Button className="w-full h-9 rounded-lg font-medium bg-[#2563eb] hover:bg-blue-700 text-white text-sm">
+                    <Store className="w-4 h-4 mr-1.5" />
+                    Xem Shop
+                  </Button>
+                </Link>
+                <Button 
+                  variant="outline" 
+                  className="flex-1 h-9 rounded-lg font-medium border-2 text-sm"
+                  onClick={handleChatWithSeller}
+                  disabled={isStartingChat}
+                >
+                  <MessageCircle className="w-4 h-4 mr-1.5" />
+                  Chat
+                </Button>
+              </div>
+            </div>
+
             {/* Description Card */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
               <h3 className="font-semibold text-gray-900 mb-4 pb-3 border-b border-gray-100">
@@ -433,12 +501,12 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
             </div>
           </div>
 
-          {/* RIGHT COLUMN - Seller */}
-          <div className="lg:col-span-1">
+          {/* RIGHT COLUMN - Seller (Desktop only) */}
+          <div className="hidden lg:block lg:col-span-1">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden sticky top-6">
               
-              {/* Shop Header with Gradient */}
-              <div className="relative bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 p-4 h-20">
+              {/* Shop Header */}
+              <div className="relative bg-[#2563eb] p-4 h-20">
                 {/* Background Pattern */}
                 <div className="absolute inset-0 opacity-10 overflow-hidden">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-white rounded-full -translate-y-1/2 translate-x-1/2"></div>
@@ -473,7 +541,7 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" 
                         />
                       ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                        <div className="w-full h-full bg-[#2563eb] flex items-center justify-center">
                           <Store className="w-7 h-7 text-white" />
                         </div>
                       )}
@@ -487,12 +555,15 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
                 
                 {/* Shop Name & Info - Centered */}
                 <div className="text-center">
-                  <Link
-                    href={`/shop/${product.seller.id}`}
-                    className="font-bold text-gray-900 hover:text-blue-600 transition-colors text-lg inline-flex items-center gap-1"
-                  >
-                    {product.seller.name}
-                  </Link>
+                  <div className="inline-flex items-center gap-1.5">
+                    <Link
+                      href={`/shop/${product.seller.id}`}
+                      className="font-bold text-gray-900 hover:text-blue-600 transition-colors text-lg"
+                    >
+                      {product.seller.name}
+                    </Link>
+                    <VerifyBadge size={20} />
+                  </div>
                   <div className="flex items-center justify-center gap-1 text-xs text-gray-500 mt-1">
                     <Clock className="w-3 h-3" />
                     <span>Tham gia {product.seller.joinDate}</span>
@@ -503,14 +574,14 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
               {/* Shop Stats - Modern Cards */}
               <div className="px-4 pb-4">
                 <div className="grid grid-cols-3 gap-2">
-                  <div className="text-center p-3 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl border border-yellow-100">
+                  <div className="text-center p-3 bg-yellow-50 rounded-xl border border-yellow-100">
                     <div className="flex items-center justify-center gap-1 mb-1">
                       <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
                       <span className="font-bold text-gray-900">{product.seller.rating.toFixed(1)}</span>
                     </div>
                     <span className="text-[10px] text-gray-500 uppercase tracking-wide">Đánh giá</span>
                   </div>
-                  <div className="text-center p-3 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100">
+                  <div className="text-center p-3 bg-green-50 rounded-xl border border-green-100">
                     <div className="flex items-center justify-center gap-1 mb-1">
                       <Package className="w-4 h-4 text-green-500" />
                       <span className="font-bold text-gray-900">
@@ -521,7 +592,7 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
                     </div>
                     <span className="text-[10px] text-gray-500 uppercase tracking-wide">Đã bán</span>
                   </div>
-                  <div className="text-center p-3 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+                  <div className="text-center p-3 bg-blue-50 rounded-xl border border-blue-100">
                     <div className="flex items-center justify-center gap-1 mb-1">
                       <ThumbsUp className="w-4 h-4 text-blue-500" />
                       <span className="font-bold text-gray-900">98%</span>
@@ -574,7 +645,7 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
 
               {/* Trust Badges */}
               <div className="px-4 pb-4">
-                <div className="p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-100">
+                <div className="p-3 bg-green-50 rounded-xl border border-green-100">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm shadow-green-200">
                       <Shield className="w-5 h-5 text-white" />
@@ -592,6 +663,49 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
       </main>
 
       <Footer />
+
+      {/* Toast/Error Modal */}
+      {toastMessage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setToastMessage(null)}
+          />
+          
+          {/* Modal */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              {/* Icon */}
+              <div className={`w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center ${
+                toastMessage.type === 'error' ? 'bg-red-100' :
+                toastMessage.type === 'warning' ? 'bg-amber-100' :
+                'bg-blue-100'
+              }`}>
+                <AlertCircle className={`w-8 h-8 ${
+                  toastMessage.type === 'error' ? 'text-red-600' :
+                  toastMessage.type === 'warning' ? 'text-amber-600' :
+                  'text-blue-600'
+                }`} />
+              </div>
+              
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                {toastMessage.type === 'error' ? 'Có lỗi xảy ra' :
+                 toastMessage.type === 'warning' ? 'Lưu ý' :
+                 'Thông báo'}
+              </h3>
+              <p className="text-gray-600 mb-6">{toastMessage.text}</p>
+              
+              <Button 
+                className="w-full"
+                onClick={() => setToastMessage(null)}
+              >
+                Đóng
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

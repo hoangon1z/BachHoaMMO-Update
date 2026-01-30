@@ -162,7 +162,7 @@ export function showBrowserNotification(title: string, body: string, icon?: stri
       badge: '/logo.png',
       tag: 'chat-message', // Prevents multiple notifications stacking
       renotify: true,
-    });
+    } as NotificationOptions);
 
     notification.onclick = () => {
       window.focus();

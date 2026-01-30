@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -87,13 +87,8 @@ export class ProductsService {
   }
 
   async findOne(id: string) {
-    // Increment views
-    await this.prisma.product.update({
-      where: { id },
-      data: { views: { increment: 1 } },
-    });
-
-    return this.prisma.product.findUnique({
+    // Find first - avoid "Record to update not found" when id is invalid (e.g. slug)
+    const product = await this.prisma.product.findUnique({
       where: { id },
       include: {
         seller: {
@@ -108,6 +103,20 @@ export class ProductsService {
         },
       },
     });
+
+    if (!product) {
+      throw new NotFoundException('Sản phẩm không tồn tại');
+    }
+
+    // Increment views (fire-and-forget, don't block response)
+    this.prisma.product
+      .update({
+        where: { id },
+        data: { views: { increment: 1 } },
+      })
+      .catch(() => {});
+
+    return product;
   }
 
   async create(data: {
@@ -329,5 +338,87 @@ export class ProductsService {
       },
       take: 12,
     });
+  }
+
+  /**
+   * Track product view by logged-in user
+   */
+  async trackView(productId: string, userId: string) {
+    // Don't count view from product owner
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { sellerId: true },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    if (product.sellerId === userId) {
+      return { success: true, message: 'Own product view not counted' };
+    }
+
+    // Increment view count
+    await this.prisma.product.update({
+      where: { id: productId },
+      data: { views: { increment: 1 } },
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Get product reviews
+   */
+  async getProductReviews(productId: string, params: { skip: number; take: number }) {
+    const [reviews, total] = await Promise.all([
+      this.prisma.review.findMany({
+        where: { productId },
+        orderBy: { createdAt: 'desc' },
+        skip: params.skip,
+        take: params.take,
+      }),
+      this.prisma.review.count({ where: { productId } }),
+    ]);
+
+    // Get buyer info for non-anonymous reviews
+    const reviewsWithBuyer = await Promise.all(
+      reviews.map(async (review) => {
+        if (review.isAnonymous) {
+          return {
+            ...review,
+            buyer: { name: 'Người mua ẩn danh', avatar: null },
+          };
+        }
+        const buyer = await this.prisma.user.findUnique({
+          where: { id: review.buyerId },
+          select: { name: true, avatar: true },
+        });
+        return { ...review, buyer };
+      }),
+    );
+
+    // Calculate rating stats
+    const allReviews = await this.prisma.review.findMany({
+      where: { productId },
+      select: { rating: true },
+    });
+
+    const ratingStats = {
+      average: allReviews.length > 0
+        ? allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length
+        : 0,
+      total: allReviews.length,
+      breakdown: [5, 4, 3, 2, 1].map(star => ({
+        star,
+        count: allReviews.filter(r => r.rating === star).length,
+      })),
+    };
+
+    return {
+      reviews: reviewsWithBuyer,
+      total,
+      ratingStats,
+    };
   }
 }

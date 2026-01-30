@@ -72,4 +72,28 @@ export class UsersController {
       user: result,
     };
   }
+
+  // ==================== SELLER APPLICATION ====================
+
+  @UseGuards(JwtAuthGuard)
+  @Post('seller-application')
+  async applyForSeller(
+    @Request() req,
+    @Body() body: {
+      fullName: string;
+      shopName: string;
+      email: string;
+      phone?: string;
+      description?: string;
+      agreement: boolean;
+    },
+  ) {
+    return this.usersService.applyForSeller(req.user.id, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('seller-application')
+  async getSellerApplication(@Request() req) {
+    return this.usersService.getSellerApplication(req.user.id);
+  }
 }

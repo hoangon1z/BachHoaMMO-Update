@@ -88,6 +88,27 @@ export class SellerService {
     });
   }
 
+  async updateShopLogo(userId: string, logoUrl: string) {
+    const store = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!store) {
+      throw new NotFoundException('Không tìm thấy cửa hàng');
+    }
+
+    const updatedStore = await this.prisma.sellerProfile.update({
+      where: { userId },
+      data: { shopLogo: logoUrl },
+    });
+
+    return {
+      success: true,
+      shopLogo: logoUrl,
+      store: updatedStore,
+    };
+  }
+
   // ==================== PRODUCT/INVENTORY MANAGEMENT ====================
 
   async createProduct(userId: string, dto: CreateProductDto) {
@@ -284,17 +305,55 @@ export class SellerService {
           },
           items: {
             include: {
-              product: true,
+              product: {
+                select: {
+                  id: true,
+                  title: true,
+                  images: true,
+                  autoDelivery: true,
+                  isDigital: true,
+                },
+              },
+              deliveries: true,
             },
           },
           escrow: true,
+          deliveries: true,
         },
       }),
       this.prisma.order.count({ where }),
     ]);
 
+    // Map orders with delivery status info
+    const ordersWithDeliveryInfo = orders.map(order => {
+      const items = order.items.map(item => {
+        const isAutoDelivery = item.product.autoDelivery;
+        const deliveredQuantity = item.deliveries?.length || 0;
+        const needsManualDelivery = !isAutoDelivery && deliveredQuantity < item.quantity;
+        
+        return {
+          ...item,
+          isAutoDelivery,
+          deliveredQuantity,
+          needsManualDelivery,
+          pendingDeliveryCount: item.quantity - deliveredQuantity,
+        };
+      });
+
+      // Check if order needs manual delivery
+      const needsManualDelivery = items.some(item => item.needsManualDelivery);
+      const allDelivered = items.every(item => item.deliveredQuantity >= item.quantity);
+
+      return {
+        ...order,
+        items,
+        needsManualDelivery,
+        allDelivered,
+      };
+    });
+
     return {
-      orders,
+      orders: ordersWithDeliveryInfo,
       pagination: {
         page,
         limit,
@@ -321,10 +380,20 @@ export class SellerService {
         },
         items: {
           include: {
-            product: true,
+            product: {
+              select: {
+                id: true,
+                title: true,
+                images: true,
+                autoDelivery: true,
+                isDigital: true,
+              },
+            },
+            deliveries: true,
           },
         },
         escrow: true,
+        deliveries: true,
       },
     });
 
@@ -332,7 +401,30 @@ export class SellerService {
       throw new NotFoundException('Không tìm thấy đơn hàng');
     }
 
-    return order;
+    // Map items with delivery info
+    const items = order.items.map(item => {
+      const isAutoDelivery = item.product.autoDelivery;
+      const deliveredQuantity = item.deliveries?.length || 0;
+      const needsManualDelivery = !isAutoDelivery && deliveredQuantity < item.quantity;
+      
+      return {
+        ...item,
+        isAutoDelivery,
+        deliveredQuantity,
+        needsManualDelivery,
+        pendingDeliveryCount: item.quantity - deliveredQuantity,
+      };
+    });
+
+    const needsManualDelivery = items.some(item => item.needsManualDelivery);
+    const allDelivered = items.every(item => item.deliveredQuantity >= item.quantity);
+
+    return {
+      ...order,
+      items,
+      needsManualDelivery,
+      allDelivered,
+    };
   }
 
   async updateOrderStatus(userId: string, orderId: string, dto: UpdateOrderStatusDto) {
@@ -371,6 +463,176 @@ export class SellerService {
         escrow: true,
       },
     });
+  }
+
+  /**
+   * Manual delivery - Seller giao tài khoản thủ công
+   */
+  async manualDeliver(
+    userId: string,
+    orderId: string,
+    deliveries: Array<{ orderItemId: string; accountData: string }>,
+  ) {
+    // Verify order belongs to seller
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id: orderId,
+        sellerId: userId,
+      },
+      include: {
+        items: {
+          include: {
+            product: true,
+            deliveries: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Không tìm thấy đơn hàng');
+    }
+
+    if (order.status === 'CANCELLED' || order.status === 'REFUNDED') {
+      throw new BadRequestException('Không thể giao hàng cho đơn đã hủy hoặc hoàn tiền');
+    }
+
+    const results = [];
+
+    for (const delivery of deliveries) {
+      const result = await this.manualDeliverItem(
+        userId,
+        orderId,
+        delivery.orderItemId,
+        delivery.accountData,
+      );
+      results.push(result);
+    }
+
+    return {
+      message: `Đã giao ${results.length} tài khoản thành công`,
+      deliveries: results,
+    };
+  }
+
+  /**
+   * Manual delivery for single item
+   */
+  async manualDeliverItem(
+    userId: string,
+    orderId: string,
+    orderItemId: string,
+    accountData: string,
+  ) {
+    // Verify order and item
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id: orderId,
+        sellerId: userId,
+      },
+      include: {
+        items: {
+          where: { id: orderItemId },
+          include: {
+            product: true,
+            deliveries: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Không tìm thấy đơn hàng');
+    }
+
+    const orderItem = order.items[0];
+    if (!orderItem) {
+      throw new NotFoundException('Không tìm thấy sản phẩm trong đơn hàng');
+    }
+
+    if (order.status === 'CANCELLED' || order.status === 'REFUNDED') {
+      throw new BadRequestException('Không thể giao hàng cho đơn đã hủy hoặc hoàn tiền');
+    }
+
+    // Check if item is already fully delivered
+    const deliveredCount = orderItem.deliveries?.length || 0;
+    if (deliveredCount >= orderItem.quantity) {
+      throw new BadRequestException('Sản phẩm này đã được giao đủ số lượng');
+    }
+
+    // Create hash for the account data
+    const crypto = require('crypto');
+    const hash = crypto.createHash('md5').update(accountData).digest('hex');
+
+    // Create inventory record (for tracking) and delivery in transaction
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Create a "virtual" inventory record for manual delivery
+      const inventory = await tx.productInventory.create({
+        data: {
+          productId: orderItem.productId,
+          variantId: orderItem.variantId,
+          accountData: accountData,
+          hash: `manual-${orderId}-${orderItemId}-${Date.now()}-${hash}`,
+          status: 'SOLD',
+          soldAt: new Date(),
+          soldToId: order.buyerId,
+          orderId: orderId,
+          orderItemId: orderItemId,
+        },
+      });
+
+      // Create delivery record
+      const delivery = await tx.orderDelivery.create({
+        data: {
+          orderId: orderId,
+          orderItemId: orderItemId,
+          inventoryId: inventory.id,
+          accountData: accountData,
+        },
+      });
+
+      // Update delivered quantity
+      await tx.orderItem.update({
+        where: { id: orderItemId },
+        data: {
+          deliveredQuantity: { increment: 1 },
+        },
+      });
+
+      // Check if all items are delivered
+      const updatedOrder = await tx.order.findUnique({
+        where: { id: orderId },
+        include: {
+          items: {
+            include: {
+              deliveries: true,
+            },
+          },
+        },
+      });
+
+      const allDelivered = updatedOrder?.items.every(
+        item => (item.deliveries?.length || 0) >= item.quantity
+      );
+
+      // Update order status if all delivered
+      if (allDelivered && order.status === 'PENDING') {
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            status: 'PROCESSING',
+            deliveredAt: new Date(),
+          },
+        });
+      }
+
+      return delivery;
+    });
+
+    return {
+      message: 'Giao tài khoản thành công',
+      delivery: result,
+    };
   }
 
   // ==================== COMPLAINT MANAGEMENT ====================
@@ -901,21 +1163,23 @@ export class SellerService {
   async getProductInventory(
     userId: string,
     productId: string,
-    params?: { status?: string; limit?: number; offset?: number },
+    params?: { status?: string; variantId?: string; limit?: number; offset?: number },
   ) {
-    // Verify product belongs to seller
+    // Verify product belongs to seller and get variants
     const product = await this.prisma.product.findFirst({
       where: { id: productId, sellerId: userId },
+      include: { variants: { orderBy: { position: 'asc' } } },
     });
 
     if (!product) {
       throw new NotFoundException('Sản phẩm không tồn tại hoặc không thuộc về bạn');
     }
 
-    const { status, limit = 50, offset = 0 } = params || {};
+    const { status, variantId, limit = 50, offset = 0 } = params || {};
 
     const where: any = { productId };
     if (status) where.status = status;
+    if (variantId) where.variantId = variantId;
 
     const [inventory, total, stats] = await Promise.all([
       this.prisma.productInventory.findMany({
@@ -925,12 +1189,13 @@ export class SellerService {
         skip: offset,
         include: {
           soldTo: { select: { id: true, name: true, email: true } },
+          variant: { select: { id: true, name: true } },
         },
       }),
       this.prisma.productInventory.count({ where }),
       this.prisma.productInventory.groupBy({
         by: ['status'],
-        where: { productId },
+        where: { productId, ...(variantId ? { variantId } : {}) },
         _count: true,
       }),
     ]);
@@ -946,10 +1211,30 @@ export class SellerService {
       statusCounts[s.status as keyof typeof statusCounts] = s._count;
     });
 
+    // Get variant-level stats if product has variants
+    let variantStats: any[] = [];
+    if (product.hasVariants && product.variants.length > 0) {
+      variantStats = await Promise.all(
+        product.variants.map(async (variant) => {
+          const count = await this.prisma.productInventory.count({
+            where: { productId, variantId: variant.id, status: 'AVAILABLE' },
+          });
+          return {
+            variantId: variant.id,
+            variantName: variant.name,
+            availableCount: count,
+          };
+        })
+      );
+    }
+
     return {
       inventory,
       total,
       stats: statusCounts,
+      variants: product.variants,
+      variantStats,
+      hasVariants: product.hasVariants,
       limit,
       offset,
     };
@@ -962,14 +1247,29 @@ export class SellerService {
     userId: string,
     productId: string,
     accountData: string,
+    variantId?: string,
   ) {
     // Verify product belongs to seller
     const product = await this.prisma.product.findFirst({
       where: { id: productId, sellerId: userId },
+      include: { variants: true },
     });
 
     if (!product) {
       throw new NotFoundException('Sản phẩm không tồn tại hoặc không thuộc về bạn');
+    }
+
+    // If product has variants, variantId is required
+    if (product.hasVariants && product.variants.length > 0 && !variantId) {
+      throw new BadRequestException('Sản phẩm có phân loại, vui lòng chọn phân loại để thêm kho hàng');
+    }
+
+    // Verify variant belongs to product if provided
+    if (variantId) {
+      const variant = product.variants.find(v => v.id === variantId);
+      if (!variant) {
+        throw new BadRequestException('Phân loại không hợp lệ');
+      }
     }
 
     // Parse lines
@@ -996,9 +1296,13 @@ export class SellerService {
       const hash = this.generateAccountHash(line);
 
       try {
-        // Check if already exists in this product
+        // Check if already exists in this product (same product + variant combination)
         const existingInProduct = await this.prisma.productInventory.findFirst({
-          where: { productId, hash },
+          where: { 
+            productId, 
+            hash,
+            ...(variantId ? { variantId } : {}),
+          },
         });
 
         if (existingInProduct) {
@@ -1041,10 +1345,11 @@ export class SellerService {
           continue;
         }
 
-        // Create inventory item
+        // Create inventory item with optional variantId
         await this.prisma.productInventory.create({
           data: {
             productId,
+            variantId: variantId || null,
             accountData: line,
             hash,
             status: 'AVAILABLE',
@@ -1057,31 +1362,71 @@ export class SellerService {
           status: 'success',
           message: 'Thêm thành công',
         });
-      } catch (error) {
-        results.errors++;
-        results.details.push({
-          line: i + 1,
-          status: 'error',
-          message: error.message || 'Lỗi không xác định',
-        });
+      } catch (error: any) {
+        // Handle Prisma unique constraint error
+        if (error.code === 'P2002' || error.message?.includes('Unique constraint')) {
+          results.duplicates++;
+          results.details.push({
+            line: i + 1,
+            status: 'duplicate',
+            message: 'Tài khoản đã tồn tại trong kho',
+          });
+        } else {
+          results.errors++;
+          results.details.push({
+            line: i + 1,
+            status: 'error',
+            message: 'Lỗi khi thêm tài khoản',
+          });
+        }
       }
     }
 
-    // Update product stock
-    const availableCount = await this.prisma.productInventory.count({
-      where: { productId, status: 'AVAILABLE' },
-    });
+    // Update stock - for product or variant depending on whether variantId is provided
+    if (variantId) {
+      // Update variant stock
+      const variantAvailableCount = await this.prisma.productInventory.count({
+        where: { productId, variantId, status: 'AVAILABLE' },
+      });
 
-    await this.prisma.product.update({
-      where: { id: productId },
-      data: { stock: availableCount },
-    });
+      await this.prisma.productVariant.update({
+        where: { id: variantId },
+        data: { stock: variantAvailableCount },
+      });
 
-    return {
-      totalLines: lines.length,
-      ...results,
-      newStock: availableCount,
-    };
+      // Also update total product stock (sum of all variants)
+      const totalAvailableCount = await this.prisma.productInventory.count({
+        where: { productId, status: 'AVAILABLE' },
+      });
+
+      await this.prisma.product.update({
+        where: { id: productId },
+        data: { stock: totalAvailableCount },
+      });
+
+      return {
+        totalLines: lines.length,
+        ...results,
+        newStock: variantAvailableCount,
+        totalProductStock: totalAvailableCount,
+      };
+    } else {
+      // Update product stock
+      const availableCount = await this.prisma.productInventory.count({
+        where: { productId, status: 'AVAILABLE' },
+      });
+
+      await this.prisma.product.update({
+        where: { id: productId },
+        data: { stock: availableCount },
+      });
+
+      return {
+        totalLines: lines.length,
+        ...results,
+        newStock: availableCount,
+      };
+    }
   }
 
   /**
@@ -1091,8 +1436,9 @@ export class SellerService {
     userId: string,
     productId: string,
     accountData: string,
+    variantId?: string,
   ) {
-    const result = await this.uploadInventory(userId, productId, accountData);
+    const result = await this.uploadInventory(userId, productId, accountData, variantId);
     
     if (result.success === 0) {
       const detail = result.details[0];

@@ -12,30 +12,34 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  return handleRequest(request, params.id, 'GET');
+  const { id } = await context.params;
+  return handleRequest(request, id, 'GET');
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  return handleRequest(request, params.id, 'POST');
+  const { id } = await context.params;
+  return handleRequest(request, id, 'POST');
 }
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  return handleRequest(request, params.id, 'PUT');
+  const { id } = await context.params;
+  return handleRequest(request, id, 'PUT');
 }
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  return handleRequest(request, params.id, 'DELETE');
+  const { id } = await context.params;
+  return handleRequest(request, id, 'DELETE');
 }
 
 async function handleRequest(

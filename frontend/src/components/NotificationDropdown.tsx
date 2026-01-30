@@ -201,17 +201,17 @@ export function NotificationDropdown() {
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50">
+        <div className="fixed sm:absolute left-2 right-2 sm:left-auto sm:right-0 top-16 sm:top-auto sm:mt-2 w-auto sm:w-96 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50">
           {/* Header */}
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-            <h3 className="font-bold text-gray-900">Thông báo</h3>
+            <h3 className="font-bold text-gray-900 text-sm">Thông báo</h3>
             {unreadCount > 0 && (
               <button
                 onClick={markAllAsRead}
                 className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
               >
                 <CheckCheck className="w-3.5 h-3.5" />
-                Đánh dấu đã đọc
+                Đọc tất cả
               </button>
             )}
           </div>

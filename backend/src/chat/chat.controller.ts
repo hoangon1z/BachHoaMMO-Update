@@ -95,12 +95,18 @@ export class ChatController {
   }
 
   /**
-   * Start chat with seller (from product page)
+   * Start chat with seller (from product page or order page)
    * POST /chat/start-with-seller
    */
   @Post('start-with-seller')
   async startWithSeller(
-    @Body() body: { sellerId: string; productId?: string; message?: string },
+    @Body() body: { 
+      sellerId: string; 
+      productId?: string; 
+      orderId?: string;
+      message?: string;
+      isComplaint?: boolean;
+    },
     @Request() req,
   ) {
     const conversation = await this.chatService.createOrGetConversation(
@@ -109,7 +115,10 @@ export class ChatController {
         buyerId: req.user.id,
         sellerId: body.sellerId,
         productId: body.productId,
+        orderId: body.orderId,
         initialMessage: body.message,
+        // If it's a complaint, set conversation status to DISPUTED
+        status: body.isComplaint ? 'DISPUTED' : undefined,
       },
       req.user.id,
       req.user.role,

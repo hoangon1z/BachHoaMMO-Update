@@ -83,4 +83,32 @@ export class OrdersController {
   async releaseEscrow(@Param('escrowId') escrowId: string) {
     return this.ordersService.releaseEscrow(escrowId);
   }
+
+  /**
+   * Submit review for order
+   * POST /orders/:orderId/review
+   */
+  @UseGuards(JwtAuthGuard)
+  @Post(':orderId/review')
+  async submitReview(
+    @Param('orderId') orderId: string,
+    @Body() body: {
+      rating: number;
+      comment?: string;
+      isAnonymous?: boolean;
+    },
+    @Request() req,
+  ) {
+    return this.ordersService.submitReview(orderId, req.user.id, body);
+  }
+
+  /**
+   * Get review for order
+   * GET /orders/:orderId/review
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get(':orderId/review')
+  async getReview(@Param('orderId') orderId: string, @Request() req) {
+    return this.ordersService.getOrderReview(orderId, req.user.id);
+  }
 }

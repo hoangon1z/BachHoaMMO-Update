@@ -371,10 +371,10 @@ export default function CheckoutPage() {
                     <span className="text-gray-600">Tạm tính</span>
                     <span className="font-medium">{totalAmount.toLocaleString('vi-VN')}đ</span>
                   </div>
-                  <div className="flex justify-between text-sm">
+                  {/* <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Phí vận chuyển</span>
                     <span className="font-medium text-green-600">Miễn phí</span>
-                  </div>
+                  </div> */}
                   <div className="border-t border-gray-100 pt-4">
                     <div className="flex justify-between">
                       <span className="font-semibold text-gray-900">Tổng cộng</span>

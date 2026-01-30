@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Get, Request } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Get, Request, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -19,7 +19,7 @@ export class AuthController {
   @Post('login')
   @Public()
   @SkipWaf()
-  async login(@Body() loginDto: LoginDto) {
+  async login(@Body() loginDto: LoginDto & { deviceId?: string }, @Req() req) {
     // Check if user has 2FA enabled
     const { twoFactorEnabled } = await this.authService.check2FA(loginDto.email);
     
@@ -28,6 +28,15 @@ export class AuthController {
       const user = await this.authService.validateUser(loginDto.email, loginDto.password);
       if (!user) {
         return { error: 'Invalid credentials' };
+      }
+      
+      // Check if device is trusted (skip 2FA)
+      if (loginDto.deviceId) {
+        const isTrusted = await this.authService.isDeviceTrusted(user.id, loginDto.deviceId);
+        if (isTrusted) {
+          // Device is trusted, login directly
+          return this.authService.login(loginDto);
+        }
       }
       
       // Send 2FA code
@@ -87,8 +96,14 @@ export class AuthController {
   @Post('2fa/verify')
   @Public()
   @SkipWaf()
-  async verify2FA(@Body() body: { email: string; code: string }) {
-    return this.authService.verify2FAAndLogin(body.email, body.code);
+  async verify2FA(@Body() body: { email: string; code: string; deviceId?: string; trustDevice?: boolean }, @Req() req) {
+    const deviceInfo = {
+      deviceId: body.deviceId,
+      trustDevice: body.trustDevice,
+      ipAddress: req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress,
+      userAgent: req.headers['user-agent'],
+    };
+    return this.authService.verify2FAAndLogin(body.email, body.code, deviceInfo);
   }
 
   @Post('2fa/resend')
@@ -107,5 +122,25 @@ export class AuthController {
     @Body() body: { currentPassword: string; newPassword: string }
   ) {
     return this.authService.changePassword(req.user.id, body.currentPassword, body.newPassword);
+  }
+
+  // ==================== DEVICE MANAGEMENT ====================
+
+  @UseGuards(JwtAuthGuard)
+  @Get('devices')
+  async getDevices(@Request() req) {
+    return this.authService.getUserDevices(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('devices/:deviceId/revoke')
+  async revokeDevice(@Request() req, @Body() body: { deviceId: string }) {
+    return this.authService.revokeDevice(req.user.id, body.deviceId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('devices/revoke-all')
+  async revokeAllDevices(@Request() req) {
+    return this.authService.revokeAllDevices(req.user.id);
   }
 }

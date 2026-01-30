@@ -279,7 +279,7 @@ export function AdminContactDialog({ isOpen, onClose, orderId, defaultSubject }:
                     <ul className="space-y-1 list-disc list-inside">
                       <li>Admin sẽ phản hồi trong vòng 24 giờ</li>
                       <li>Bạn có thể gửi thêm hình ảnh sau khi tạo cuộc trò chuyện</li>
-                      <li>Kiểm tra mục "Tin nhắn" để xem phản hồi từ admin</li>
+                      <li>Kiểm tra mục &quot;Tin nhắn&quot; để xem phản hồi từ admin</li>
                     </ul>
                   </div>
                 </div>

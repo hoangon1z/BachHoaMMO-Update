@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Star, Eye, ShoppingCart, Heart, Package } from 'lucide-react';
 import { useState } from 'react';
+import { VerifyBadge } from './VerifyBadge';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
 
@@ -12,6 +13,36 @@ function getImageUrl(url: string): string {
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
   if (url.startsWith('/uploads')) return `${API_BASE_URL}${url}`;
   return url;
+}
+
+// Seller Avatar component with fallback
+function SellerAvatar({ shopLogo, avatar, shopName }: { shopLogo?: string; avatar?: string; shopName: string }) {
+  const [imgError, setImgError] = useState(false);
+  const logoUrl = shopLogo || avatar;
+  const fullLogoUrl = logoUrl ? getImageUrl(logoUrl) : null;
+  
+  return (
+    <div className="flex items-center gap-1 mb-2 min-w-0">
+      {fullLogoUrl && !imgError ? (
+        <img 
+          src={fullLogoUrl} 
+          alt={shopName}
+          className="w-4 h-4 rounded-full object-cover flex-shrink-0"
+          onError={() => setImgError(true)}
+        />
+      ) : (
+        <div className="w-4 h-4 rounded-full bg-[#2563eb] flex items-center justify-center flex-shrink-0">
+          <span className="text-[8px] font-bold text-white">
+            {shopName.charAt(0).toUpperCase()}
+          </span>
+        </div>
+      )}
+      <span className="text-[11px] text-gray-500 truncate max-w-[60%]">
+        {shopName}
+      </span>
+      <VerifyBadge size={20} />
+    </div>
+  );
 }
 
 interface ProductCardProps {
@@ -24,8 +55,10 @@ interface ProductCardProps {
     images: string;
     seller: {
       name: string;
+      avatar?: string;
       sellerProfile?: {
         shopName: string;
+        shopLogo?: string;
         rating: number;
       };
     };
@@ -64,12 +97,12 @@ export function ProductCard({ product }: ProductCardProps) {
   return (
     <Link href={`/products/${product.id}`}>
       <div 
-        className="group relative bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100"
+        className="group relative bg-white rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
         {/* Image Container */}
-        <div className="relative aspect-[4/3] overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+        <div className="relative aspect-[4/3] overflow-hidden bg-gray-100">
           {/* Product Image or Placeholder */}
           {thumbnail && !imageError ? (
             <img 
@@ -80,7 +113,7 @@ export function ProductCard({ product }: ProductCardProps) {
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
+              <div className="w-16 h-16 rounded-2xl bg-[#2563eb] flex items-center justify-center shadow-lg">
                 <Package className="w-8 h-8 text-white" />
               </div>
             </div>
@@ -88,7 +121,7 @@ export function ProductCard({ product }: ProductCardProps) {
           
           {/* Discount Badge */}
           {discount > 0 && (
-            <div className="absolute top-3 left-3 px-2.5 py-1 bg-red-500 text-white text-xs font-bold rounded-lg shadow-md">
+            <div className="absolute top-2 left-2 px-1.5 sm:px-2.5 py-0.5 sm:py-1 bg-red-500 text-white text-[10px] sm:text-xs font-bold rounded-md sm:rounded-lg shadow-md">
               -{discount}%
             </div>
           )}
@@ -96,17 +129,17 @@ export function ProductCard({ product }: ProductCardProps) {
           {/* Wishlist Button */}
           <button
             onClick={handleWishlist}
-            className={`absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+            className={`absolute top-2 right-2 w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-all ${
               isWishlisted 
                 ? 'bg-red-500 text-white' 
                 : 'bg-white/80 backdrop-blur-sm text-gray-600 hover:bg-white hover:text-red-500'
             } shadow-md`}
           >
-            <Heart className={`w-4 h-4 ${isWishlisted ? 'fill-current' : ''}`} />
+            <Heart className={`w-3 h-3 sm:w-4 sm:h-4 ${isWishlisted ? 'fill-current' : ''}`} />
           </button>
           
-          {/* Quick Actions Overlay */}
-          <div className={`absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/60 to-transparent transition-all duration-300 ${
+          {/* Quick Actions Overlay - Hidden on mobile */}
+          <div className={`hidden sm:block absolute inset-x-0 bottom-0 p-3 bg-black/50 transition-all duration-300 ${
             isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
           }`}>
             <button className="w-full py-2.5 bg-white hover:bg-blue-600 hover:text-white text-gray-900 text-sm font-semibold rounded-xl transition-colors flex items-center justify-center gap-2">
@@ -117,52 +150,42 @@ export function ProductCard({ product }: ProductCardProps) {
         </div>
         
         {/* Content */}
-        <div className="p-4">
+        <div className="p-2.5 sm:p-4">
           {/* Title */}
-          <h3 className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2 mb-2 group-hover:text-blue-600 transition-colors min-h-[2.5rem]">
+          <h3 className="font-semibold text-gray-900 text-xs sm:text-sm leading-snug line-clamp-2 mb-1.5 sm:mb-2 group-hover:text-blue-600 transition-colors min-h-[2rem] sm:min-h-[2.5rem]">
             {product.title}
           </h3>
           
-          {/* Stats Row */}
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex items-center gap-1">
-              <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />
-              <span className="text-xs font-medium text-gray-700">{product.rating.toFixed(1)}</span>
+          {/* Stats Row - Simplified for mobile */}
+          <div className="flex items-center gap-2 mb-2 text-[10px] sm:text-xs">
+            <div className="flex items-center gap-0.5">
+              <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+              <span className="font-medium text-gray-700">{product.rating.toFixed(1)}</span>
             </div>
-            <div className="w-px h-3 bg-gray-200"></div>
-            <span className="text-xs text-gray-500">Đã bán {product.sales}</span>
-            <div className="w-px h-3 bg-gray-200"></div>
-            <div className="flex items-center gap-1 text-xs text-gray-500">
-              <Eye className="w-3 h-3" />
-              {product.views}
-            </div>
+            <span className="text-gray-300">|</span>
+            <span className="text-gray-500 truncate">Đã bán {product.sales}</span>
           </div>
           
           {/* Seller */}
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
-              <span className="text-[10px] font-bold text-white">
-                {(product.seller.sellerProfile?.shopName || product.seller.name).charAt(0).toUpperCase()}
-              </span>
-            </div>
-            <span className="text-xs text-gray-500 truncate">
-              {product.seller.sellerProfile?.shopName || product.seller.name}
-            </span>
-          </div>
+          <SellerAvatar 
+            shopLogo={product.seller.sellerProfile?.shopLogo}
+            avatar={product.seller.avatar}
+            shopName={product.seller.sellerProfile?.shopName || product.seller.name}
+          />
           
           {/* Price */}
-          <div className="flex items-baseline gap-2">
+          <div className="flex items-baseline gap-1.5 flex-wrap">
             {product.salePrice ? (
               <>
-                <span className="text-lg font-bold text-red-500">
+                <span className="text-sm sm:text-lg font-bold text-red-500">
                   {formatPrice(product.salePrice)}
                 </span>
-                <span className="text-sm text-gray-400 line-through">
+                <span className="text-[10px] sm:text-sm text-gray-400 line-through">
                   {formatPrice(product.price)}
                 </span>
               </>
             ) : (
-              <span className="text-lg font-bold text-blue-600">
+              <span className="text-sm sm:text-lg font-bold text-blue-600">
                 {formatPrice(product.price)}
               </span>
             )}

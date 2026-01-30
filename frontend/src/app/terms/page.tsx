@@ -204,7 +204,7 @@ export default function TermsPage() {
               <p>Nếu bạn có thắc mắc về điều khoản dịch vụ, vui lòng liên hệ:</p>
               <ul className="space-y-2 ml-4">
                 <li><strong>Email:</strong> support@BachHoaMMO.vn</li>
-                <li><strong>Hotline:</strong> 0123.456.789</li>
+                <li><strong>Hotline:</strong> </li>
                 <li><strong>Địa chỉ:</strong> TP. Hồ Chí Minh, Việt Nam</li>
               </ul>
             </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { User, LogOut, ShoppingBag, Wallet, Settings, ChevronDown, Store, Shield, MessageCircle } from 'lucide-react';
+import { User, LogOut, ShoppingBag, Wallet, Settings, ChevronDown, Store, Shield, MessageCircle, UserPlus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface UserProfileMenuProps {
@@ -55,7 +55,6 @@ export function UserProfileMenu({ user, onLogout }: UserProfileMenuProps) {
       label: 'Đơn hàng của tôi',
       href: '/orders',
       description: 'Xem lịch sử mua hàng',
-      badge: 3, // Example: 3 pending orders
     },
     {
       icon: Wallet,
@@ -80,6 +79,15 @@ export function UserProfileMenu({ user, onLogout }: UserProfileMenuProps) {
     description: 'Dashboard, sản phẩm, đơn hàng',
   };
 
+  // Become seller menu item
+  const becomeSellerMenuItem = {
+    icon: UserPlus,
+    label: 'Đăng ký bán hàng',
+    href: '/become-seller',
+    description: 'Trở thành người bán trên BachHoaMMO',
+    highlight: true,
+  };
+
   // Admin-specific menu item
   const adminMenuItem = {
     icon: Shield,
@@ -95,6 +103,9 @@ export function UserProfileMenu({ user, onLogout }: UserProfileMenuProps) {
   // Add seller menu for sellers
   if (user.role === 'SELLER' || user.isSeller) {
     menuItems = [baseMenuItems[0], sellerMenuItem, ...baseMenuItems.slice(1)];
+  } else if (user.role === 'BUYER') {
+    // Add become seller option for buyers
+    menuItems = [...baseMenuItems, becomeSellerMenuItem];
   }
   
   // Add admin menu for admins (at the top)
@@ -190,16 +201,9 @@ export function UserProfileMenu({ user, onLogout }: UserProfileMenuProps) {
                   <item.icon className="w-5 h-5 text-primary" />
                 </div>
                 <div className="flex-1 text-left">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-foreground text-sm">
-                      {item.label}
-                    </span>
-                    {item.badge && (
-                      <span className="px-2 py-0.5 bg-primary text-white text-xs font-semibold rounded-full">
-                        {item.badge}
-                      </span>
-                    )}
-                  </div>
+                  <span className="font-medium text-foreground text-sm">
+                    {item.label}
+                  </span>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {item.description}
                   </p>

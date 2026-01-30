@@ -20,6 +20,7 @@ import { SettingsModule } from './settings/settings.module';
 import { AuctionModule } from './auction/auction.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { EmailModule } from './email/email.module';
+import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { EmailModule } from './email/email.module';
     SettingsModule, // System settings
     AuctionModule, // Auction system
     NotificationsModule, // Notification system
+    TelegramModule, // Telegram notifications
   ],
 })
 export class AppModule {}

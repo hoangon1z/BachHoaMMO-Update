@@ -222,14 +222,19 @@ export default function SettingsPage() {
 
   const ToggleSwitch = ({ enabled, onChange }: { enabled: boolean; onChange: () => void }) => (
     <button
+      type="button"
       onClick={onChange}
-      className={`relative w-12 h-7 rounded-full transition-colors ${
+      className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
         enabled ? 'bg-blue-600' : 'bg-gray-200'
       }`}
+      role="switch"
+      aria-checked={enabled}
     >
-      <span className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${
-        enabled ? 'translate-x-6' : 'translate-x-1'
-      }`} />
+      <span
+        className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+          enabled ? 'translate-x-5' : 'translate-x-0'
+        }`}
+      />
     </button>
   );
 

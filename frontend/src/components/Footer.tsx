@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Phone, Mail, MapPin, Facebook, Youtube, MessageCircle } from 'lucide-react';
+import { Mail, Facebook, MessageCircle, Send } from 'lucide-react';
 
 export function Footer() {
   return (
@@ -20,8 +20,8 @@ export function Footer() {
               <a href="#" className="w-10 h-10 rounded-full flex items-center justify-center hover:opacity-80 transition-opacity" style={{ backgroundColor: '#2579f2' }}>
                 <Facebook className="w-5 h-5" />
               </a>
-              <a href="#" className="w-10 h-10 rounded-full flex items-center justify-center hover:opacity-80 transition-opacity" style={{ backgroundColor: '#2579f2' }}>
-                <Youtube className="w-5 h-5" />
+              <a href="https://t.me/bachhoammobot" target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full flex items-center justify-center hover:opacity-80 transition-opacity" style={{ backgroundColor: '#2579f2' }}>
+                <Send className="w-5 h-5" />
               </a>
               <a href="#" className="w-10 h-10 rounded-full flex items-center justify-center hover:opacity-80 transition-opacity" style={{ backgroundColor: '#2579f2' }}>
                 <MessageCircle className="w-5 h-5" />
@@ -33,11 +33,9 @@ export function Footer() {
           <div>
             <h3 className="text-lg font-semibold mb-4">Liên kết nhanh</h3>
             <ul className="space-y-2 text-sm">
-              <li><a href="#" className="text-gray-200 hover:text-white transition-colors">Trang chủ</a></li>
-              <li><a href="#" className="text-gray-200 hover:text-white transition-colors">Sản phẩm</a></li>
-              <li><a href="#" className="text-gray-200 hover:text-white transition-colors">Dịch vụ</a></li>
-              <li><a href="#" className="text-gray-200 hover:text-white transition-colors">Tin tức</a></li>
-              <li><a href="#" className="text-gray-200 hover:text-white transition-colors">Liên hệ</a></li>
+              <li><Link href="/" className="text-gray-200 hover:text-white transition-colors">Trang chủ</Link></li>
+              <li><Link href="/explore" className="text-gray-200 hover:text-white transition-colors">Sản phẩm</Link></li>
+              <li><Link href="/auction" className="text-gray-200 hover:text-white transition-colors">Đấu giá</Link></li>
             </ul>
           </div>
 
@@ -47,9 +45,9 @@ export function Footer() {
             <ul className="space-y-2 text-sm">
               <li><Link href="/terms" className="text-gray-200 hover:text-white transition-colors">Điều khoản dịch vụ</Link></li>
               <li><Link href="/privacy" className="text-gray-200 hover:text-white transition-colors">Chính sách bảo mật</Link></li>
-              <li><a href="#" className="text-gray-200 hover:text-white transition-colors">Chính sách đổi trả</a></li>
-              <li><a href="#" className="text-gray-200 hover:text-white transition-colors">Hướng dẫn thanh toán</a></li>
-              <li><a href="#" className="text-gray-200 hover:text-white transition-colors">Hướng dẫn mua hàng</a></li>
+              <li><Link href="/refund-policy" className="text-gray-200 hover:text-white transition-colors">Chính sách đổi trả</Link></li>
+              <li><Link href="/payment-guide" className="text-gray-200 hover:text-white transition-colors">Hướng dẫn thanh toán</Link></li>
+              <li><Link href="/shopping-guide" className="text-gray-200 hover:text-white transition-colors">Hướng dẫn mua hàng</Link></li>
             </ul>
           </div>
 
@@ -59,21 +57,15 @@ export function Footer() {
             <ul className="space-y-3 text-sm">
               <li className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#2579f2' }}>
-                  <Phone className="w-4 h-4" />
+                  <Send className="w-4 h-4" />
                 </div>
-                <span className="text-gray-200">0123 456 789</span>
+                <a href="https://t.me/bachhoammobot" target="_blank" rel="noopener noreferrer" className="text-gray-200 hover:text-white">@bachhoammobot</a>
               </li>
               <li className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#2579f2' }}>
                   <Mail className="w-4 h-4" />
                 </div>
-                <span className="text-gray-200">support@BachHoaMMO.vn</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#2579f2' }}>
-                  <MapPin className="w-4 h-4" />
-                </div>
-                <span className="text-gray-200">123 Đường ABC, Quận XYZ, TP. Hồ Chí Minh</span>
+                <span className="text-gray-200">support@bachhoammo.store</span>
               </li>
             </ul>
           </div>

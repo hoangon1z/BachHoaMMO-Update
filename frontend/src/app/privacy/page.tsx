@@ -238,7 +238,7 @@ export default function PrivacyPage() {
               <ul className="list-disc list-inside space-y-2 ml-4">
                 <li>Thông báo qua email cho người dùng đã đăng ký</li>
                 <li>Hiển thị thông báo trên website</li>
-                <li>Cập nhật ngày "Cập nhật lần cuối" ở đầu trang</li>
+                <li>Cập nhật ngày &quot;Cập nhật lần cuối&quot; ở đầu trang</li>
               </ul>
               <p className="mt-4">
                 Việc tiếp tục sử dụng dịch vụ sau khi thay đổi có hiệu lực đồng nghĩa với 
@@ -260,7 +260,7 @@ export default function PrivacyPage() {
               <ul className="space-y-2 ml-4">
                 <li><strong>Email bảo mật:</strong> privacy@BachHoaMMO.vn</li>
                 <li><strong>Email hỗ trợ:</strong> support@BachHoaMMO.vn</li>
-                <li><strong>Hotline:</strong> 0123.456.789</li>
+                <li><strong>Hotline:</strong> </li>
                 <li><strong>Địa chỉ:</strong> TP. Hồ Chí Minh, Việt Nam</li>
               </ul>
             </div>

@@ -10,10 +10,31 @@ import {
   XCircle,
   Clock,
   Package,
-  User
+  User,
+  Send,
+  Truck,
+  Zap,
+  AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useToast } from '@/components/Toast';
+
+interface OrderItem {
+  id: string;
+  quantity: number;
+  price: number;
+  deliveredQuantity: number;
+  needsManualDelivery: boolean;
+  pendingDeliveryCount: number;
+  isAutoDelivery: boolean;
+  product: {
+    id: string;
+    title: string;
+    images: string;
+    autoDelivery: boolean;
+  };
+}
 
 interface Order {
   id: string;
@@ -23,21 +44,14 @@ interface Order {
   subtotal: number;
   commission: number;
   createdAt: string;
+  needsManualDelivery: boolean;
+  allDelivered: boolean;
   buyer: {
     id: string;
     name: string;
     email: string;
   };
-  items: {
-    id: string;
-    quantity: number;
-    price: number;
-    product: {
-      id: string;
-      title: string;
-      images: string;
-    };
-  }[];
+  items: OrderItem[];
 }
 
 export default function SellerOrdersPage() {
@@ -47,6 +61,10 @@ export default function SellerOrdersPage() {
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [deliveryModal, setDeliveryModal] = useState<{ order: Order; item: OrderItem } | null>(null);
+  const [deliveryInput, setDeliveryInput] = useState('');
+  const [isDelivering, setIsDelivering] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     fetchOrders();
@@ -99,15 +117,62 @@ export default function SellerOrdersPage() {
       if (response.ok) {
         fetchOrders();
         setSelectedOrder(null);
+        toast.success('Thành công', 'Đã cập nhật trạng thái đơn hàng');
       } else {
         const error = await response.json();
-        alert(error.message || 'Có lỗi xảy ra');
+        toast.error('Lỗi', error.message || 'Không thể cập nhật đơn hàng');
       }
     } catch (error) {
       console.error('Error updating order:', error);
-      alert('Có lỗi xảy ra');
+      toast.error('Lỗi', 'Không thể cập nhật đơn hàng. Vui lòng thử lại.');
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleManualDelivery = async () => {
+    if (!deliveryModal || !deliveryInput.trim()) {
+      toast.error('Lỗi', 'Vui lòng nhập dữ liệu tài khoản');
+      return;
+    }
+
+    setIsDelivering(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || '/api'}/seller/orders/${deliveryModal.order.id}/items/${deliveryModal.item.id}/deliver`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            orderItemId: deliveryModal.item.id,
+            accountData: deliveryInput.trim(),
+          }),
+        }
+      );
+
+      if (response.ok) {
+        toast.success('Thành công', 'Đã giao tài khoản thành công');
+        setDeliveryModal(null);
+        setDeliveryInput('');
+        fetchOrders();
+        if (selectedOrder?.id === deliveryModal.order.id) {
+          // Refresh selected order
+          const updatedOrder = orders.find(o => o.id === deliveryModal.order.id);
+          if (updatedOrder) setSelectedOrder(updatedOrder);
+        }
+      } else {
+        const error = await response.json();
+        toast.error('Lỗi', error.message || 'Không thể giao tài khoản');
+      }
+    } catch (error) {
+      console.error('Error delivering:', error);
+      toast.error('Lỗi', 'Không thể giao tài khoản. Vui lòng thử lại.');
+    } finally {
+      setIsDelivering(false);
     }
   };
 
@@ -126,6 +191,21 @@ export default function SellerOrdersPage() {
       default:
         return <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-full">{status}</span>;
     }
+  };
+
+  const getDeliveryBadge = (item: OrderItem) => {
+    if (item.isAutoDelivery) {
+      return (
+        <span className="px-2 py-0.5 bg-green-50 text-green-600 text-[10px] font-medium rounded-full flex items-center gap-1">
+          <Zap className="w-2.5 h-2.5" /> Tự động
+        </span>
+      );
+    }
+    return (
+      <span className="px-2 py-0.5 bg-orange-50 text-orange-600 text-[10px] font-medium rounded-full flex items-center gap-1">
+        <Truck className="w-2.5 h-2.5" /> Thủ công
+      </span>
+    );
   };
 
   const formatDate = (date: string) => {
@@ -233,14 +313,20 @@ export default function SellerOrdersPage() {
                     </div>
                   </div>
 
-                  {/* Amount */}
+                  {/* Amount & Delivery Status */}
                   <div className="text-right">
                     <p className="text-lg font-bold text-gray-900">{order.total.toLocaleString('vi-VN')}đ</p>
                     <p className="text-sm text-gray-500">{order.items.reduce((a, b) => a + b.quantity, 0)} sản phẩm</p>
+                    {order.needsManualDelivery && !order.allDelivered && (
+                      <div className="mt-1 flex items-center justify-end gap-1 text-orange-600">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span className="text-xs font-medium">Cần giao hàng</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Actions */}
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       variant="outline"
                       size="sm"
@@ -249,7 +335,23 @@ export default function SellerOrdersPage() {
                       <Eye className="w-4 h-4 mr-1" />
                       Chi tiết
                     </Button>
-                    {order.status === 'PENDING' && (
+                    {/* Manual delivery button for pending orders with manual items */}
+                    {order.needsManualDelivery && !order.allDelivered && order.status !== 'CANCELLED' && order.status !== 'COMPLETED' && (
+                      <Button
+                        size="sm"
+                        className="bg-orange-500 hover:bg-orange-600"
+                        onClick={() => {
+                          const itemNeedingDelivery = order.items.find(i => i.needsManualDelivery);
+                          if (itemNeedingDelivery) {
+                            setDeliveryModal({ order, item: itemNeedingDelivery });
+                          }
+                        }}
+                      >
+                        <Send className="w-4 h-4 mr-1" />
+                        Giao hàng
+                      </Button>
+                    )}
+                    {order.status === 'PENDING' && order.allDelivered && (
                       <Button
                         size="sm"
                         className="bg-blue-600 hover:bg-blue-700"
@@ -340,21 +442,72 @@ export default function SellerOrdersPage() {
                     let images: string[] = [];
                     try { images = JSON.parse(item.product.images); } catch {}
                     return (
-                      <div key={item.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                        <div className="w-14 h-14 bg-gray-200 rounded-lg overflow-hidden">
-                          {images[0] ? (
-                            <img src={images[0]} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <Package className="w-6 h-6 text-gray-400" />
+                      <div key={item.id} className="p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div className="w-14 h-14 bg-gray-200 rounded-lg overflow-hidden flex-shrink-0">
+                            {images[0] ? (
+                              <img src={images[0]} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Package className="w-6 h-6 text-gray-400" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-900 truncate">{item.product.title}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-sm text-gray-500">x{item.quantity}</span>
+                              {getDeliveryBadge(item)}
                             </div>
-                          )}
+                          </div>
+                          <p className="font-semibold text-gray-900">{(item.price * item.quantity).toLocaleString('vi-VN')}đ</p>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900 truncate">{item.product.title}</p>
-                          <p className="text-sm text-gray-500">x{item.quantity}</p>
-                        </div>
-                        <p className="font-semibold text-gray-900">{(item.price * item.quantity).toLocaleString('vi-VN')}đ</p>
+                        
+                        {/* Delivery Status & Action */}
+                        {!item.isAutoDelivery && (
+                          <div className="mt-3 pt-3 border-t border-gray-200">
+                            <div className="flex items-center justify-between">
+                              <div className="text-sm">
+                                <span className="text-gray-500">Đã giao: </span>
+                                <span className={item.deliveredQuantity >= item.quantity ? 'text-green-600 font-medium' : 'text-orange-600 font-medium'}>
+                                  {item.deliveredQuantity}/{item.quantity}
+                                </span>
+                              </div>
+                              {item.needsManualDelivery && selectedOrder.status !== 'CANCELLED' && selectedOrder.status !== 'COMPLETED' && (
+                                <Button
+                                  size="sm"
+                                  className="bg-orange-500 hover:bg-orange-600 h-8 text-xs"
+                                  onClick={() => {
+                                    setSelectedOrder(null);
+                                    setDeliveryModal({ order: selectedOrder, item });
+                                  }}
+                                >
+                                  <Send className="w-3 h-3 mr-1" />
+                                  Giao hàng
+                                </Button>
+                              )}
+                              {item.deliveredQuantity >= item.quantity && (
+                                <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  Đã giao đủ
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Auto delivery status */}
+                        {item.isAutoDelivery && (
+                          <div className="mt-3 pt-3 border-t border-gray-200">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-gray-500">Trạng thái giao hàng:</span>
+                              <span className="text-green-600 font-medium flex items-center gap-1">
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                Tự động từ kho
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -380,7 +533,7 @@ export default function SellerOrdersPage() {
               {/* Actions */}
               {(selectedOrder.status === 'PENDING' || selectedOrder.status === 'PROCESSING') && (
                 <div className="flex gap-3 pt-4 border-t border-gray-200">
-                  {selectedOrder.status === 'PENDING' && (
+                  {selectedOrder.status === 'PENDING' && selectedOrder.allDelivered && (
                     <>
                       <Button
                         className="flex-1 bg-blue-600 hover:bg-blue-700"
@@ -399,6 +552,16 @@ export default function SellerOrdersPage() {
                       </Button>
                     </>
                   )}
+                  {selectedOrder.status === 'PENDING' && !selectedOrder.allDelivered && (
+                    <Button
+                      variant="outline"
+                      className="flex-1 border-red-300 text-red-600 hover:bg-red-50"
+                      onClick={() => handleUpdateStatus(selectedOrder.id, 'CANCELLED')}
+                      disabled={isUpdating}
+                    >
+                      Hủy đơn
+                    </Button>
+                  )}
                   {selectedOrder.status === 'PROCESSING' && (
                     <Button
                       className="flex-1 bg-green-600 hover:bg-green-700"
@@ -410,6 +573,92 @@ export default function SellerOrdersPage() {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Delivery Modal */}
+      {deliveryModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Giao tài khoản thủ công</h2>
+                  <p className="text-gray-500 text-sm">Đơn hàng #{deliveryModal.order.orderNumber}</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setDeliveryModal(null);
+                    setDeliveryInput('');
+                  }} 
+                  className="p-2 hover:bg-gray-100 rounded-lg"
+                >
+                  <XCircle className="w-6 h-6 text-gray-500" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Product Info */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="font-medium text-gray-900 mb-1">{deliveryModal.item.product.title}</p>
+                <div className="flex items-center gap-4 text-sm text-gray-500">
+                  <span>Số lượng: {deliveryModal.item.quantity}</span>
+                  <span>Đã giao: {deliveryModal.item.deliveredQuantity}</span>
+                  <span className="text-orange-600 font-medium">
+                    Còn lại: {deliveryModal.item.pendingDeliveryCount}
+                  </span>
+                </div>
+              </div>
+
+              {/* Account Data Input */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Nhập dữ liệu tài khoản để giao
+                </label>
+                <textarea
+                  value={deliveryInput}
+                  onChange={(e) => setDeliveryInput(e.target.value)}
+                  placeholder="VD: email|password hoặc username:password"
+                  className="w-full h-32 px-4 py-3 border border-gray-200 rounded-lg text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Mỗi lần giao sẽ giao 1 tài khoản. Nếu cần giao nhiều, lặp lại thao tác này.
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-4">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setDeliveryModal(null);
+                    setDeliveryInput('');
+                  }}
+                >
+                  Hủy
+                </Button>
+                <Button
+                  className="flex-1 bg-orange-500 hover:bg-orange-600"
+                  onClick={handleManualDelivery}
+                  disabled={isDelivering || !deliveryInput.trim()}
+                >
+                  {isDelivering ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Đang giao...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4 mr-2" />
+                      Giao tài khoản
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

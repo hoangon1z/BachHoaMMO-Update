@@ -14,6 +14,7 @@ export interface CreateConversationDto {
   orderId?: string;
   subject?: string;
   initialMessage?: string;
+  status?: 'ACTIVE' | 'DISPUTED'; // Optional status override (e.g., DISPUTED for complaints)
 }
 
 export interface SendMessageDto {
@@ -74,6 +75,11 @@ export class ChatService {
       const isBuyer = userRole === 'BUYER' || userRole === 'USER';
       const isSeller = userRole === 'SELLER';
       
+      // Use provided status (e.g., DISPUTED for complaints) or default to ACTIVE
+      const conversationStatus = dto.status === 'DISPUTED' 
+        ? ConversationStatus.DISPUTED 
+        : ConversationStatus.ACTIVE;
+      
       conversation = new this.conversationModel({
         type: dto.type,
         buyerId: dto.buyerId || (isBuyer ? userId : undefined),
@@ -81,11 +87,27 @@ export class ChatService {
         productId: dto.productId,
         orderId: dto.orderId,
         subject: dto.subject || 'New Conversation',
-        status: ConversationStatus.ACTIVE,
+        status: conversationStatus,
       });
       await conversation.save();
 
       // Send initial message if provided
+      if (dto.initialMessage) {
+        await this.sendMessage({
+          conversationId: conversation._id.toString(),
+          content: dto.initialMessage,
+          type: MessageType.TEXT,
+        }, userId, userRole);
+      }
+    } else {
+      // Conversation already exists
+      // If this is a complaint, update status to DISPUTED and send the message
+      if (dto.status === 'DISPUTED') {
+        conversation.status = ConversationStatus.DISPUTED;
+        await conversation.save();
+      }
+      
+      // Send the message even if conversation exists
       if (dto.initialMessage) {
         await this.sendMessage({
           conversationId: conversation._id.toString(),

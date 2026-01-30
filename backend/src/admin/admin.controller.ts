@@ -336,4 +336,136 @@ export class AdminController {
     await this.adminService.verifyAdmin(req.user.id);
     return this.adminService.updateSellerStatus(id, body);
   }
+
+  /**
+   * Verify/Unverify seller
+   * POST /admin/sellers/:id/verify
+   */
+  @Post('sellers/:id/verify')
+  async verifySeller(
+    @Param('id') id: string,
+    @Body() body: { isVerified: boolean },
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.verifySeller(id, body.isVerified);
+  }
+
+  // ==================== WITHDRAWAL MANAGEMENT ====================
+
+  /**
+   * Get all withdrawal requests
+   * GET /admin/withdrawals?status=PENDING&limit=50&offset=0
+   */
+  @Get('withdrawals')
+  async getWithdrawals(
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Request() req?,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getWithdrawals({
+      status,
+      limit: limit ? parseInt(limit) : undefined,
+      offset: offset ? parseInt(offset) : undefined,
+    });
+  }
+
+  /**
+   * Get pending withdrawals count for dashboard
+   * GET /admin/withdrawals/pending-count
+   */
+  @Get('withdrawals/pending-count')
+  async getPendingWithdrawalsCount(@Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getPendingWithdrawalsCount();
+  }
+
+  /**
+   * Approve withdrawal request
+   * POST /admin/withdrawals/:id/approve
+   */
+  @Post('withdrawals/:id/approve')
+  async approveWithdrawal(
+    @Param('id') id: string,
+    @Body() body: { note?: string },
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.approveWithdrawal(id, req.user.id, body.note);
+  }
+
+  /**
+   * Reject withdrawal request
+   * POST /admin/withdrawals/:id/reject
+   */
+  @Post('withdrawals/:id/reject')
+  async rejectWithdrawal(
+    @Param('id') id: string,
+    @Body() body: { reason: string },
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.rejectWithdrawal(id, req.user.id, body.reason);
+  }
+
+  // ==================== SELLER APPLICATIONS ====================
+
+  /**
+   * Get seller applications
+   * GET /admin/seller-applications
+   */
+  @Get('seller-applications')
+  async getSellerApplications(
+    @Request() req,
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getSellerApplications({
+      status,
+      limit: limit ? parseInt(limit) : 20,
+      offset: offset ? parseInt(offset) : 0,
+    });
+  }
+
+  /**
+   * Get pending seller applications count
+   * GET /admin/seller-applications/pending-count
+   */
+  @Get('seller-applications/pending-count')
+  async getPendingSellerApplicationsCount(@Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getPendingSellerApplicationsCount();
+  }
+
+  /**
+   * Approve seller application
+   * POST /admin/seller-applications/:id/approve
+   */
+  @Post('seller-applications/:id/approve')
+  async approveSellerApplication(
+    @Param('id') id: string,
+    @Body() body: { note?: string },
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.approveSellerApplication(id, req.user.id, body.note);
+  }
+
+  /**
+   * Reject seller application
+   * POST /admin/seller-applications/:id/reject
+   */
+  @Post('seller-applications/:id/reject')
+  async rejectSellerApplication(
+    @Param('id') id: string,
+    @Body() body: { reason: string },
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.rejectSellerApplication(id, req.user.id, body.reason);
+  }
 }

@@ -1,0 +1,2 @@
+# Shell scripts: always LF (Unix) to avoid \r errors on Linux
+*.sh text eol=lf

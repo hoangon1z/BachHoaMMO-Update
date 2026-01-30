@@ -1,6 +1,9 @@
 import { serverMarketplaceApi } from '@/lib/server-api';
 import HomePageClient from './HomePageClient';
 
+// Force dynamic rendering - always fetch fresh data
+export const dynamic = 'force-dynamic';
+
 /**
  * Server Component - Fetches ALL data on server
  * NO API calls visible in browser Network tab!

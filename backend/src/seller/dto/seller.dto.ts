@@ -109,6 +109,10 @@ export class CreateProductDto {
   @Type(() => ProductVariantDto)
   @IsOptional()
   variants?: ProductVariantDto[];
+
+  @IsBoolean()
+  @IsOptional()
+  autoDelivery?: boolean; // Chế độ giao hàng: true = tự động, false = thủ công
 }
 
 export class UpdateProductDto {
@@ -159,6 +163,9 @@ export class UpdateProductDto {
   @IsOptional()
   @Min(0)
   commission?: number; // Phần trăm hoa hồng sàn (0-100%)
+
+  @IsOptional()
+  autoDelivery?: boolean; // Chế độ giao hàng: true = tự động, false = thủ công
 }
 
 export class UpdateStockDto {
@@ -236,11 +243,19 @@ export class UploadInventoryDto {
   @IsString()
   @IsOptional()
   accountTemplateId?: string; // Optional template ID
+
+  @IsString()
+  @IsOptional()
+  variantId?: string; // Optional variant ID for products with variants
 }
 
 export class AddSingleInventoryDto {
   @IsString()
   accountData: string; // Single account data line
+
+  @IsString()
+  @IsOptional()
+  variantId?: string; // Optional variant ID for products with variants
 }
 
 export class UpdateInventoryDto {
@@ -264,4 +279,20 @@ export class CreateDigitalProductDto extends CreateProductDto {
 
   @IsOptional()
   autoDelivery?: boolean;
+}
+
+// Manual Delivery DTO
+export class ManualDeliveryDto {
+  @IsString()
+  orderItemId: string;
+
+  @IsString()
+  accountData: string; // Dữ liệu tài khoản để giao cho buyer
+}
+
+export class ManualDeliveryBulkDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ManualDeliveryDto)
+  deliveries: ManualDeliveryDto[];
 }

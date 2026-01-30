@@ -11,6 +11,7 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ChatService } from './chat.service';
 import { MessageType } from './schemas/message.schema';
+import { TelegramService } from '../telegram/telegram.service';
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -35,6 +36,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private jwtService: JwtService,
     private chatService: ChatService,
+    private telegramService: TelegramService,
   ) {}
 
   // ============================================
@@ -216,11 +218,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           lastMessage: message,
         });
 
-        // TODO: Send push notification if user is offline
+        // Send Telegram notification if user is offline
         const isOnline = this.userSockets.has(participantId);
         if (!isOnline) {
-          console.log(`[Chat] Participant ${participantId} is offline`);
-          // await this.sendPushNotification(participantId, message);
+          console.log(`[Chat] Participant ${participantId} is offline, sending Telegram notification`);
+          this.telegramService.notifyNewMessage(participantId, {
+            senderName: client.userName || 'Người dùng',
+            preview: data.content || '[Đính kèm]',
+          }).catch(err => console.error('Telegram notification error:', err));
         }
       }
 

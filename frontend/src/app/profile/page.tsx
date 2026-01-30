@@ -135,10 +135,8 @@ export default function ProfilePage() {
       const uploadFormData = new FormData();
       uploadFormData.append('avatar', file);
 
-      // Upload directly to backend (bypass Next.js API proxy for multipart/form-data)
-      // NEXT_PUBLIC_SOCKET_URL points directly to backend, use that instead of API proxy
-      const backendUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
-      const response = await fetch(`${backendUrl}/users/avatar`, {
+      // Gửi qua API Next.js (cùng origin) để proxy lên backend, tránh lỗi CORS / URL
+      const response = await fetch('/api/users/avatar', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -148,8 +146,7 @@ export default function ProfilePage() {
 
       if (response.ok) {
         const data = await response.json();
-        // Update avatar URL with full backend URL
-        const avatarUrl = data.avatar.startsWith('http') ? data.avatar : `${backendUrl}${data.avatar}`;
+        const avatarUrl = data.avatar || '';
         updateUser({ avatar: avatarUrl });
         setSaveMessage({ type: 'success', text: 'Cập nhật ảnh đại diện thành công!' });
         setTimeout(() => setSaveMessage(null), 3000);
