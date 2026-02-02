@@ -7,7 +7,7 @@ import { Footer } from '@/components/Footer';
 import { useAuthStore } from '@/store/authStore';
 import { useCartStore } from '@/store/cartStore';
 import { Button } from '@/components/ui/button';
-import { Star, ShoppingCart, Heart, MessageCircle, Shield, Zap, Check, Minus, Plus, ChevronRight, Store, Clock, Eye, Share2, BadgeCheck, TrendingUp, Package, ThumbsUp, ExternalLink, AlertCircle, X, Loader2 } from 'lucide-react';
+import { Star, ShoppingCart, Heart, MessageCircle, Shield, Zap, Check, Minus, Plus, ChevronRight, Store, Clock, Eye, Share2, BadgeCheck, TrendingUp, Package, ThumbsUp, ExternalLink, AlertCircle, X, Loader2, ArrowUpCircle, Mail, User, Key } from 'lucide-react';
 import Link from 'next/link';
 import { VerifyBadge } from '@/components/VerifyBadge';
 
@@ -29,6 +29,9 @@ interface Product {
   images: string[];
   hasVariants?: boolean;
   variants?: ProductVariant[];
+  autoDelivery?: boolean; // true = auto (need stock), false = manual (no stock needed)
+  productType?: 'STANDARD' | 'UPGRADE'; // UPGRADE = buyer provides their email for upgrade
+  requiredBuyerFields?: string[]; // Fields buyer needs to provide for UPGRADE products
   category: { id: string; name: string; slug: string; };
   seller: { id: string; name: string; avatar?: string; shopLogo?: string; rating: number; totalSales: number; joinDate: string; };
   rating: number;
@@ -103,6 +106,11 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
       : null
   );
 
+  // Buyer provided data for UPGRADE products
+  const [buyerData, setBuyerData] = useState<Record<string, string>>({});
+  const isUpgradeProduct = product.productType === 'UPGRADE';
+  const requiredFields = product.requiredBuyerFields || ['email'];
+
   // Get selected variant
   const selectedVariant = useMemo(() => {
     if (!product.hasVariants || !product.variants || !selectedVariantId) return null;
@@ -113,6 +121,11 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
   const currentPrice = selectedVariant?.price ?? product.price;
   const currentSalePrice = selectedVariant?.salePrice ?? product.salePrice;
   const currentStock = selectedVariant?.stock ?? product.stock;
+  
+  // Check if product can be purchased
+  // If autoDelivery is false (manual delivery), allow purchase even with 0 stock
+  const isManualDelivery = product.autoDelivery === false;
+  const canPurchase = isManualDelivery || currentStock > 0;
 
   const handleLogout = () => {
     logout();
@@ -128,6 +141,22 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
       return;
     }
 
+    // Validate buyer data for UPGRADE products
+    if (isUpgradeProduct) {
+      for (const field of requiredFields) {
+        if (!buyerData[field] || buyerData[field].trim() === '') {
+          const fieldLabel = field === 'email' ? 'Email' : field === 'password' ? 'Mật khẩu' : 'Tên đăng nhập';
+          setToastMessage({ type: 'warning', text: `Vui lòng nhập ${fieldLabel} của bạn` });
+          return;
+        }
+        // Validate email format
+        if (field === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerData[field])) {
+          setToastMessage({ type: 'warning', text: 'Email không hợp lệ' });
+          return;
+        }
+      }
+    }
+
     addItem({
       id: selectedVariant ? `${product.id}-${selectedVariant.id}` : product.id,
       productId: product.id,
@@ -137,9 +166,13 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
       price: currentPrice,
       salePrice: currentSalePrice,
       image: product.images[0] || '',
-      stock: currentStock,
+      stock: isUpgradeProduct ? 999 : currentStock, // UPGRADE products don't need stock limit
       sellerId: product.seller.id,
       sellerName: product.seller.name,
+      // Thêm thông tin cho UPGRADE products
+      productType: product.productType,
+      requiredBuyerFields: requiredFields,
+      buyerProvidedData: isUpgradeProduct ? buyerData : undefined,
     });
     setAddedToCart(true);
     setTimeout(() => setAddedToCart(false), 2000);
@@ -150,6 +183,18 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
       setToastMessage({ type: 'warning', text: 'Vui lòng chọn phân loại sản phẩm' });
       return;
     }
+    
+    // Validate buyer data for UPGRADE products
+    if (isUpgradeProduct) {
+      for (const field of requiredFields) {
+        if (!buyerData[field] || buyerData[field].trim() === '') {
+          const fieldLabel = field === 'email' ? 'Email' : field === 'password' ? 'Mật khẩu' : 'Tên đăng nhập';
+          setToastMessage({ type: 'warning', text: `Vui lòng nhập ${fieldLabel} của bạn` });
+          return;
+        }
+      }
+    }
+    
     handleAddToCart();
     router.push('/cart');
   };
@@ -307,7 +352,11 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
                   <div className="mb-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium text-gray-700">Số lượng</span>
-                      <span className="text-sm text-gray-500">{currentStock} có sẵn</span>
+                      {isManualDelivery ? (
+                        <span className="text-sm text-orange-600">Giao thủ công</span>
+                      ) : (
+                        <span className="text-sm text-gray-500">{currentStock} có sẵn</span>
+                      )}
                     </div>
                     <div className="inline-flex items-center rounded-lg border border-gray-200 overflow-hidden">
                       <button
@@ -319,14 +368,56 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
                       </button>
                       <span className="w-12 text-center font-semibold text-gray-900">{quantity}</span>
                       <button
-                        onClick={() => setQuantity(Math.min(currentStock, quantity + 1))}
+                        onClick={() => setQuantity(Math.min(isManualDelivery ? 99 : currentStock, quantity + 1))}
                         className="w-10 h-10 flex items-center justify-center hover:bg-gray-50 transition-colors"
-                        disabled={quantity >= currentStock}
+                        disabled={!isManualDelivery && quantity >= currentStock}
                       >
                         <Plus className="w-4 h-4 text-gray-600" />
                       </button>
                     </div>
                   </div>
+
+                  {/* UPGRADE Product - Buyer Info Input */}
+                  {isUpgradeProduct && (
+                    <div className="mb-4 p-4 bg-purple-50 rounded-xl border border-purple-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <ArrowUpCircle className="w-5 h-5 text-purple-600" />
+                        <h4 className="font-semibold text-purple-800">Thông tin tài khoản cần nâng cấp</h4>
+                      </div>
+                      <p className="text-sm text-purple-600 mb-3">
+                        Vui lòng nhập thông tin tài khoản của bạn để seller có thể nâng cấp
+                      </p>
+                      <div className="space-y-3">
+                        {requiredFields.map((field) => (
+                          <div key={field}>
+                            <label className="text-sm font-medium text-purple-700 mb-1 block flex items-center gap-1">
+                              {field === 'email' && <Mail className="w-4 h-4" />}
+                              {field === 'username' && <User className="w-4 h-4" />}
+                              {field === 'password' && <Key className="w-4 h-4" />}
+                              {field === 'email' ? 'Email' : field === 'password' ? 'Mật khẩu' : 'Tên đăng nhập'} *
+                            </label>
+                            <input
+                              type={field === 'password' ? 'password' : field === 'email' ? 'email' : 'text'}
+                              placeholder={
+                                field === 'email' ? 'example@gmail.com' :
+                                field === 'password' ? '••••••••' :
+                                'your_username'
+                              }
+                              value={buyerData[field] || ''}
+                              onChange={(e) => setBuyerData({ ...buyerData, [field]: e.target.value })}
+                              className="w-full px-3 py-2.5 border border-purple-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 p-2.5 bg-purple-100 rounded-lg">
+                        <p className="text-xs text-purple-700">
+                          <strong>Lưu ý bảo mật:</strong> Thông tin của bạn sẽ chỉ được chia sẻ với seller để thực hiện nâng cấp. 
+                          Hãy đảm bảo đây là tài khoản bạn muốn nâng cấp.
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Action Buttons */}
                   <div className="space-y-3">
@@ -335,17 +426,21 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
                         onClick={handleAddToCart}
                         variant="outline"
                         className="flex-1 h-12 rounded-xl border-2 border-blue-500 text-blue-600 hover:bg-blue-500 hover:text-white font-semibold transition-all"
-                        disabled={currentStock === 0}
+                        disabled={!canPurchase}
                       >
                         <ShoppingCart className="w-5 h-5 mr-2" />
                         {addedToCart ? 'Đã thêm' : 'Thêm giỏ hàng'}
                       </Button>
                       <Button
                         onClick={handleBuyNow}
-                        className="flex-1 h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold transition-all"
-                        disabled={currentStock === 0}
+                        className={`flex-1 h-12 rounded-xl font-semibold transition-all ${
+                          isUpgradeProduct 
+                            ? 'bg-purple-600 hover:bg-purple-700 text-white' 
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
+                        disabled={!canPurchase}
                       >
-                        Mua ngay
+                        {isUpgradeProduct ? 'Nâng cấp ngay' : 'Mua ngay'}
                       </Button>
                     </div>
 
@@ -367,9 +462,22 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
                     </div>
                   </div>
 
-                  {currentStock === 0 && (
+                  {/* Out of stock message - only show for auto delivery products */}
+                  {!canPurchase && (
                     <div className="mt-4 p-3 bg-red-50 rounded-lg border border-red-200 text-center">
                       <span className="text-red-600 font-medium text-sm">Sản phẩm tạm hết hàng</span>
+                    </div>
+                  )}
+                  
+                  {/* Manual delivery info */}
+                  {isManualDelivery && currentStock === 0 && (
+                    <div className="mt-4 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                      <div className="flex items-start gap-2">
+                        <Clock className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" />
+                        <p className="text-sm text-orange-700">
+                          <strong>Giao hàng thủ công:</strong> Seller sẽ gửi thông tin tài khoản sau khi bạn đặt hàng (trong vòng 24h).
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>

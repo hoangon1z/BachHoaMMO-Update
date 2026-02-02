@@ -2,6 +2,22 @@ import { Controller, Get, Put, Body, UseGuards } from '@nestjs/common';
 import { SettingsService } from './settings.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
+// Public controller for site settings (no auth required)
+@Controller('settings')
+export class PublicSettingsController {
+  constructor(private settingsService: SettingsService) {}
+
+  /**
+   * Get public site settings (social links, contact info)
+   * GET /settings/site
+   */
+  @Get('site')
+  async getSiteSettings() {
+    const settings = await this.settingsService.getSiteSettings();
+    return { success: true, settings };
+  }
+}
+
 @Controller('admin/settings')
 @UseGuards(JwtAuthGuard)
 export class SettingsController {
@@ -68,6 +84,32 @@ export class SettingsController {
     
     await this.settingsService.updateMany(updates);
     const settings = await this.settingsService.getAuctionSettings();
+    return { success: true, settings };
+  }
+
+  /**
+   * Get site settings (social links, contact info)
+   * GET /admin/settings/site
+   */
+  @Get('site')
+  async getSiteSettings() {
+    const settings = await this.settingsService.getSiteSettings();
+    return { success: true, settings };
+  }
+
+  /**
+   * Update site settings
+   * PUT /admin/settings/site
+   */
+  @Put('site')
+  async updateSiteSettings(
+    @Body() body: {
+      social?: { facebook?: string; telegram?: string; zalo?: string };
+      contact?: { email?: string; phone?: string; address?: string };
+      site?: { name?: string; description?: string; telegramBot?: string };
+    },
+  ) {
+    const settings = await this.settingsService.updateSiteSettings(body);
     return { success: true, settings };
   }
 }

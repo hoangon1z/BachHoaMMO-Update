@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { 
   ArrowLeft, Mail, Calendar, Wallet, ShoppingBag, TrendingUp, 
   User as UserIcon, Eye, EyeOff, Key, Shield, Store, Save, 
-  RefreshCw, Phone, MapPin, Crown, Package, AlertCircle, CheckCircle2, X
+  RefreshCw, Phone, MapPin, Crown, Package, AlertCircle, CheckCircle2, X, Ban, Unlock
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -30,6 +30,9 @@ interface UserDetail {
   password: string;
   role: string;
   isSeller: boolean;
+  isBanned: boolean;
+  banReason: string | null;
+  bannedAt: string | null;
   avatar: string;
   phone: string;
   address: string;
@@ -94,6 +97,11 @@ export default function UserDetailPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  
+  // Ban user state
+  const [showBanModal, setShowBanModal] = useState(false);
+  const [banReason, setBanReason] = useState('');
+  const [isBanning, setIsBanning] = useState(false);
   
   // Modal state for success/error messages
   const [modalMessage, setModalMessage] = useState<{ type: 'success' | 'error'; title: string; text: string } | null>(null);
@@ -223,6 +231,67 @@ export default function UserDetailPage() {
     return transactions
       .filter(tx => tx.type === 'EARNING')
       .reduce((sum, tx) => sum + tx.amount, 0);
+  };
+
+  const handleBanUser = async () => {
+    if (!banReason.trim()) {
+      setModalMessage({ type: 'error', title: 'Lỗi', text: 'Vui lòng nhập lý do khóa tài khoản' });
+      return;
+    }
+
+    setIsBanning(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/admin/users/${params.id}/ban`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason: banReason }),
+      });
+
+      if (response.ok) {
+        setShowBanModal(false);
+        setBanReason('');
+        setModalMessage({ type: 'success', title: 'Thành công', text: 'Đã khóa tài khoản người dùng!' });
+        await fetchUserDetail();
+      } else {
+        const data = await response.json();
+        setModalMessage({ type: 'error', title: 'Lỗi', text: data.message || 'Có lỗi xảy ra khi khóa tài khoản' });
+      }
+    } catch (error) {
+      console.error('Failed to ban user:', error);
+      setModalMessage({ type: 'error', title: 'Lỗi', text: 'Có lỗi xảy ra khi khóa tài khoản' });
+    } finally {
+      setIsBanning(false);
+    }
+  };
+
+  const handleUnbanUser = async () => {
+    setIsBanning(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/admin/users/${params.id}/unban`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        setModalMessage({ type: 'success', title: 'Thành công', text: 'Đã mở khóa tài khoản người dùng!' });
+        await fetchUserDetail();
+      } else {
+        const data = await response.json();
+        setModalMessage({ type: 'error', title: 'Lỗi', text: data.message || 'Có lỗi xảy ra khi mở khóa tài khoản' });
+      }
+    } catch (error) {
+      console.error('Failed to unban user:', error);
+      setModalMessage({ type: 'error', title: 'Lỗi', text: 'Có lỗi xảy ra khi mở khóa tài khoản' });
+    } finally {
+      setIsBanning(false);
+    }
   };
 
   if (isLoading) {
@@ -618,6 +687,99 @@ export default function UserDetailPage() {
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Ban/Unban Section */}
+                {user.role !== 'ADMIN' && (
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <Ban className="w-5 h-5" /> Khóa tài khoản
+                    </h3>
+                    
+                    {user.isBanned ? (
+                      <div className="space-y-3">
+                        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                          <div className="flex items-center gap-2 text-red-800 font-medium mb-2">
+                            <Ban className="w-5 h-5" />
+                            Tài khoản đang bị khóa
+                          </div>
+                          <div className="text-sm text-red-700 space-y-1">
+                            <p><strong>Lý do:</strong> {user.banReason || 'Không có lý do'}</p>
+                            <p><strong>Ngày khóa:</strong> {user.bannedAt ? new Date(user.bannedAt).toLocaleString('vi-VN') : '-'}</p>
+                          </div>
+                        </div>
+                        <Button
+                          variant="outline"
+                          className="border-green-500 text-green-600 hover:bg-green-50"
+                          onClick={handleUnbanUser}
+                          disabled={isBanning}
+                        >
+                          <Unlock className="w-4 h-4 mr-2" />
+                          {isBanning ? 'Đang xử lý...' : 'Mở khóa tài khoản'}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="text-sm text-gray-600">
+                          Khóa tài khoản sẽ ngăn người dùng này đăng nhập vào hệ thống.
+                        </p>
+                        <Button
+                          variant="outline"
+                          className="border-red-500 text-red-600 hover:bg-red-50"
+                          onClick={() => setShowBanModal(true)}
+                        >
+                          <Ban className="w-4 h-4 mr-2" />
+                          Khóa tài khoản
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Ban Modal */}
+          {showBanModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+                <h3 className="text-lg font-bold text-red-600 flex items-center gap-2 mb-4">
+                  <Ban className="w-5 h-5" />
+                  Khóa tài khoản người dùng
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Bạn đang khóa tài khoản của <strong>{user.name || user.email}</strong>. 
+                  Người dùng này sẽ không thể đăng nhập vào hệ thống cho đến khi được mở khóa.
+                </p>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Lý do khóa tài khoản <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={banReason}
+                    onChange={(e) => setBanReason(e.target.value)}
+                    placeholder="Nhập lý do khóa tài khoản..."
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+                    rows={3}
+                  />
+                </div>
+                <div className="flex gap-3 justify-end">
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setShowBanModal(false);
+                      setBanReason('');
+                    }}
+                  >
+                    Hủy
+                  </Button>
+                  <Button
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                    onClick={handleBanUser}
+                    disabled={isBanning}
+                  >
+                    {isBanning ? 'Đang xử lý...' : 'Xác nhận khóa'}
+                  </Button>
                 </div>
               </div>
             </div>

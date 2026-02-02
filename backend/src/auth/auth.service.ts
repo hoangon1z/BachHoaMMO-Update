@@ -44,6 +44,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Check if user is banned
+    if (user.isBanned) {
+      throw new UnauthorizedException(`Tài khoản đã bị khóa. Lý do: ${user.banReason || 'Vi phạm quy định'}`);
+    }
+
     const payload = { 
       sub: user.id, 
       email: user.email,

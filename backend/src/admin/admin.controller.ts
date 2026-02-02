@@ -165,6 +165,33 @@ export class AdminController {
   }
 
   /**
+   * Ban a user
+   * POST /admin/users/:id/ban
+   */
+  @Post('users/:id/ban')
+  async banUser(
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.banUser(id, reason || 'Vi phạm quy định');
+  }
+
+  /**
+   * Unban a user
+   * POST /admin/users/:id/unban
+   */
+  @Post('users/:id/unban')
+  async unbanUser(
+    @Param('id') id: string,
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.unbanUser(id);
+  }
+
+  /**
    * Get all orders
    * GET /admin/orders?status=PENDING&limit=50&offset=0
    */

@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, Min, IsEnum, IsBoolean, IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsOptional, IsNumber, Min, Max, IsEnum, IsBoolean, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 // Store/Shop DTOs
@@ -36,15 +36,18 @@ export class ProductVariantDto {
 
   @IsNumber()
   @Min(0)
+  @Max(999999999) // Max ~1 tỷ VND
   price: number;
 
   @IsNumber()
   @IsOptional()
   @Min(0)
+  @Max(999999999)
   salePrice?: number;
 
   @IsNumber()
   @Min(0)
+  @Max(999999) // Max 999,999 sản phẩm
   stock: number;
 
   @IsString()
@@ -60,6 +63,12 @@ export class ProductVariantDto {
   position?: number;
 }
 
+// Product Type Enum
+export enum ProductType {
+  STANDARD = 'STANDARD',  // Bán tài khoản - buyer nhận account
+  UPGRADE = 'UPGRADE',    // Nâng cấp tài khoản - buyer cung cấp email, seller upgrade
+}
+
 // Product/Inventory DTOs
 export class CreateProductDto {
   @IsString()
@@ -70,15 +79,18 @@ export class CreateProductDto {
 
   @IsNumber()
   @Min(0)
+  @Max(999999999) // Max ~1 tỷ VND
   price: number;
 
   @IsNumber()
   @IsOptional()
   @Min(0)
+  @Max(999999999)
   salePrice?: number;
 
   @IsNumber()
   @Min(0)
+  @Max(999999) // Max 999,999 sản phẩm
   stock: number;
 
   @IsString()
@@ -113,6 +125,14 @@ export class CreateProductDto {
   @IsBoolean()
   @IsOptional()
   autoDelivery?: boolean; // Chế độ giao hàng: true = tự động, false = thủ công
+
+  @IsEnum(ProductType)
+  @IsOptional()
+  productType?: ProductType; // Loại sản phẩm: STANDARD (bán tài khoản) hoặc UPGRADE (nâng cấp)
+
+  @IsString()
+  @IsOptional()
+  requiredBuyerFields?: string; // JSON array các trường buyer cần cung cấp (VD: ["email"])
 }
 
 export class UpdateProductDto {
@@ -127,16 +147,19 @@ export class UpdateProductDto {
   @IsNumber()
   @IsOptional()
   @Min(0)
+  @Max(999999999) // Max ~1 tỷ VND
   price?: number;
 
   @IsNumber()
   @IsOptional()
   @Min(0)
+  @Max(999999999)
   salePrice?: number;
 
   @IsNumber()
   @IsOptional()
   @Min(0)
+  @Max(999999) // Max 999,999 sản phẩm
   stock?: number;
 
   @IsString()
@@ -166,6 +189,14 @@ export class UpdateProductDto {
 
   @IsOptional()
   autoDelivery?: boolean; // Chế độ giao hàng: true = tự động, false = thủ công
+
+  @IsEnum(ProductType)
+  @IsOptional()
+  productType?: ProductType; // Loại sản phẩm: STANDARD hoặc UPGRADE
+
+  @IsString()
+  @IsOptional()
+  requiredBuyerFields?: string; // JSON array các trường buyer cần cung cấp
 }
 
 export class UpdateStockDto {
@@ -233,6 +264,10 @@ export class UpdateOrderStatusDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsString()
+  @IsOptional()
+  cancelReason?: string; // Lý do hủy đơn (bắt buộc khi status = CANCELLED)
 }
 
 // Inventory DTOs

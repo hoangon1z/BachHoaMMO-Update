@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
 import { OrdersService } from '../orders/orders.service';
@@ -221,11 +221,12 @@ export class AdminService {
   /**
    * Get all users
    */
-  async getAllUsers(params?: { role?: string; limit?: number; offset?: number }) {
-    const { role, limit = 50, offset = 0 } = params || {};
+  async getAllUsers(params?: { role?: string; limit?: number; offset?: number; isBanned?: boolean }) {
+    const { role, limit = 50, offset = 0, isBanned } = params || {};
 
     const where: any = {};
     if (role) where.role = role;
+    if (isBanned !== undefined) where.isBanned = isBanned;
 
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
@@ -236,6 +237,9 @@ export class AdminService {
           name: true,
           role: true,
           isSeller: true,
+          isBanned: true,
+          banReason: true,
+          bannedAt: true,
           balance: true,
           createdAt: true,
         },
@@ -314,6 +318,9 @@ export class AdminService {
         password: user.password, // Include password hash for admin
         role: user.role,
         isSeller: user.isSeller,
+        isBanned: user.isBanned,
+        banReason: user.banReason,
+        bannedAt: user.bannedAt,
         avatar: user.avatar,
         phone: user.phone,
         address: user.address,
@@ -426,6 +433,74 @@ export class AdminService {
     });
 
     return { message: 'Password reset successfully' };
+  }
+
+  /**
+   * Ban a user
+   */
+  async banUser(userId: string, reason: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.role === 'ADMIN') {
+      throw new BadRequestException('Cannot ban an admin user');
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        isBanned: true,
+        banReason: reason,
+        bannedAt: new Date(),
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isBanned: true,
+        banReason: true,
+        bannedAt: true,
+      },
+    });
+
+    return { message: 'User banned successfully', user: updatedUser };
+  }
+
+  /**
+   * Unban a user
+   */
+  async unbanUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        isBanned: false,
+        banReason: null,
+        bannedAt: null,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isBanned: true,
+      },
+    });
+
+    return { message: 'User unbanned successfully', user: updatedUser };
   }
 
   /**
@@ -575,6 +650,7 @@ export class AdminService {
     description?: string;
     icon?: string;
     image?: string;
+    parentId?: string;
   }) {
     return this.prisma.category.create({
       data: {
@@ -583,11 +659,14 @@ export class AdminService {
         description: data.description,
         icon: data.icon,
         image: data.image,
+        parentId: data.parentId || null,
       },
       include: {
         _count: {
           select: { products: true },
         },
+        parent: true,
+        children: true,
       },
     });
   }
@@ -598,6 +677,7 @@ export class AdminService {
     description?: string;
     icon?: string;
     image?: string;
+    parentId?: string | null;
   }) {
     return this.prisma.category.update({
       where: { id },
@@ -607,11 +687,14 @@ export class AdminService {
         description: data.description,
         icon: data.icon,
         image: data.image,
+        parentId: data.parentId,
       },
       include: {
         _count: {
           select: { products: true },
         },
+        parent: true,
+        children: true,
       },
     });
   }
@@ -668,9 +751,37 @@ export class AdminService {
   }
 
   async deleteProduct(id: string) {
-    return this.prisma.product.delete({
-      where: { id },
+    // Check if product has orders - if so, just set status to DELETED instead of hard delete
+    const orderCount = await this.prisma.orderItem.count({
+      where: { productId: id },
     });
+
+    if (orderCount > 0) {
+      // Soft delete - mark as DELETED to preserve order history
+      return this.prisma.product.update({
+        where: { id },
+        data: { status: 'DELETED' },
+      });
+    }
+
+    // Hard delete - remove related records first, then product
+    await this.prisma.$transaction(async (tx) => {
+      // Delete cart items
+      await tx.cartItem.deleteMany({ where: { productId: id } });
+      // Delete inventory
+      await tx.productInventory.deleteMany({ where: { productId: id } });
+      // Delete variants (and their inventory/cart items)
+      const variants = await tx.productVariant.findMany({ where: { productId: id } });
+      for (const variant of variants) {
+        await tx.cartItem.deleteMany({ where: { variantId: variant.id } });
+        await tx.productInventory.deleteMany({ where: { variantId: variant.id } });
+      }
+      await tx.productVariant.deleteMany({ where: { productId: id } });
+      // Finally delete product
+      await tx.product.delete({ where: { id } });
+    });
+
+    return { success: true, message: 'Sản phẩm đã được xóa' };
   }
 
   // ==================== SELLER MANAGEMENT ====================

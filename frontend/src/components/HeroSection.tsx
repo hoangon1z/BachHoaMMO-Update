@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Shield, Zap, HeadphonesIcon, Sparkles, Gift, Flame, Crown, ArrowRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Shield, Zap, HeadphonesIcon, Sparkles, ArrowRight, Play, Music, Bot } from 'lucide-react';
 import Link from 'next/link';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
@@ -62,6 +62,7 @@ export function HeroSection({ banners }: HeroSectionProps) {
                 <Link
                   key={banner.id}
                   href={banner.link}
+                  aria-label={`Banner: ${banner.title}`}
                   className={`absolute inset-0 transition-all duration-700 ${
                     index === currentSlide ? 'opacity-100 z-10' : 'opacity-0 z-0'
                   }`}
@@ -71,8 +72,11 @@ export function HeroSection({ banners }: HeroSectionProps) {
                     {banner.image && (
                       <img 
                         src={getImageUrl(banner.image)} 
-                        alt={banner.title}
+                        alt={banner.title || 'Banner khuyến mãi'}
                         className="absolute inset-0 w-full h-full object-cover"
+                        fetchPriority={index === 0 ? 'high' : 'auto'}
+                        loading={index === 0 ? 'eager' : 'lazy'}
+                        decoding="async"
                       />
                     )}
                   </div>
@@ -81,13 +85,16 @@ export function HeroSection({ banners }: HeroSectionProps) {
 
               {/* Slide indicators */}
               {banners.length > 1 && (
-                <div className="absolute bottom-5 right-5 sm:right-8 flex gap-1.5 z-20">
+                <div className="absolute bottom-5 right-5 sm:right-8 flex gap-1.5 z-20" role="tablist" aria-label="Chọn banner">
                   {banners.map((_, index) => (
                     <button
                       key={index}
+                      role="tab"
+                      aria-label={`Xem banner ${index + 1}`}
+                      aria-selected={index === currentSlide}
                       onClick={(e) => { e.preventDefault(); setCurrentSlide(index); }}
-                      className={`h-1.5 rounded-full transition-all ${
-                        index === currentSlide ? 'w-6 bg-white' : 'w-1.5 bg-white/40 hover:bg-white/60'
+                      className={`h-2.5 min-w-[10px] rounded-full transition-all ${
+                        index === currentSlide ? 'w-6 bg-white' : 'w-2.5 bg-white/40 hover:bg-white/60'
                       }`}
                     />
                   ))}
@@ -98,12 +105,14 @@ export function HeroSection({ banners }: HeroSectionProps) {
               {banners.length > 1 && (
                 <>
                   <button
+                    aria-label="Banner trước"
                     onClick={(e) => { e.preventDefault(); setCurrentSlide((prev) => (prev - 1 + banners.length) % banners.length); }}
                     className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-black/30 backdrop-blur-sm hover:bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-20"
                   >
                     <ChevronLeft className="w-5 h-5 text-white" />
                   </button>
                   <button
+                    aria-label="Banner tiếp theo"
                     onClick={(e) => { e.preventDefault(); setCurrentSlide((prev) => (prev + 1) % banners.length); }}
                     className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-black/30 backdrop-blur-sm hover:bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-20"
                   >
@@ -124,46 +133,46 @@ export function HeroSection({ banners }: HeroSectionProps) {
         </div>
       </div>
 
-      {/* Right Column - 4 columns on desktop */}
+      {/* Right Column - Featured Categories */}
       <div className="lg:col-span-4 grid grid-cols-2 lg:grid-cols-1 gap-3 lg:gap-4 lg:grid-rows-3">
-        {/* Flash Sale Card */}
-        <Link href="/flash-sale" className="group/card relative overflow-hidden rounded-2xl bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 p-4 lg:p-5 h-[100px] lg:h-full">
+        {/* Netflix Category */}
+        <Link href="/explore?category=netflix" className="group/card relative overflow-hidden rounded-2xl bg-gradient-to-br from-red-600 via-red-700 to-red-800 p-4 lg:p-5 h-[100px] lg:h-full">
           <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
           <div className="relative z-10 h-full flex flex-col justify-center">
             <div className="flex items-center gap-2 mb-1">
-              <Flame className="w-5 h-5 text-yellow-300" />
-              <span className="text-xs font-bold text-white/90 uppercase tracking-wide">Flash Sale</span>
+              <Play className="w-5 h-5 text-white" />
+              <span className="text-xs font-bold text-white/90 uppercase tracking-wide">Netflix</span>
             </div>
-            <p className="text-lg lg:text-xl font-bold text-white">Giảm đến 70%</p>
-            <p className="text-xs text-white/70 hidden lg:block mt-1">Số lượng có hạn</p>
+            <p className="text-lg lg:text-xl font-bold text-white">Tài khoản Premium</p>
+            <p className="text-xs text-white/70 hidden lg:block mt-1">Xem phim không giới hạn</p>
           </div>
           <ArrowRight className="absolute bottom-4 right-4 w-5 h-5 text-white/50 group-hover/card:text-white group-hover/card:translate-x-1 transition-all" />
         </Link>
 
-        {/* VIP Card */}
-        <Link href="/vip" className="group/card relative overflow-hidden rounded-2xl bg-gradient-to-br from-amber-400 via-yellow-500 to-orange-400 p-4 lg:p-5 h-[100px] lg:h-full">
+        {/* Spotify Category */}
+        <Link href="/explore?category=spotify" className="group/card relative overflow-hidden rounded-2xl bg-gradient-to-br from-green-500 via-green-600 to-emerald-700 p-4 lg:p-5 h-[100px] lg:h-full">
           <div className="absolute top-0 right-0 w-16 h-16 bg-white/20 rounded-full -translate-y-1/2 translate-x-1/2" />
           <div className="relative z-10 h-full flex flex-col justify-center">
             <div className="flex items-center gap-2 mb-1">
-              <Crown className="w-5 h-5 text-amber-900" />
-              <span className="text-xs font-bold text-amber-900/80 uppercase tracking-wide">VIP Member</span>
+              <Music className="w-5 h-5 text-white" />
+              <span className="text-xs font-bold text-white/90 uppercase tracking-wide">Spotify</span>
             </div>
-            <p className="text-lg lg:text-xl font-bold text-amber-900">Ưu đãi độc quyền</p>
-            <p className="text-xs text-amber-900/60 hidden lg:block mt-1">Tích điểm đổi quà</p>
+            <p className="text-lg lg:text-xl font-bold text-white">Nghe nhạc Premium</p>
+            <p className="text-xs text-white/70 hidden lg:block mt-1">Không quảng cáo</p>
           </div>
-          <ArrowRight className="absolute bottom-4 right-4 w-5 h-5 text-amber-900/30 group-hover/card:text-amber-900 group-hover/card:translate-x-1 transition-all" />
+          <ArrowRight className="absolute bottom-4 right-4 w-5 h-5 text-white/50 group-hover/card:text-white group-hover/card:translate-x-1 transition-all" />
         </Link>
 
-        {/* New Products Card - Hidden on mobile */}
-        <Link href="/new" className="hidden lg:flex group/card relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 p-5 h-full">
+        {/* AI Tools Category - Hidden on mobile */}
+        <Link href="/explore?category=ai" className="hidden lg:flex group/card relative overflow-hidden rounded-2xl bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700 p-5 h-full">
           <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
           <div className="relative z-10 h-full flex flex-col justify-center">
             <div className="flex items-center gap-2 mb-1">
-              <Gift className="w-5 h-5 text-emerald-200" />
-              <span className="text-xs font-bold text-white/90 uppercase tracking-wide">Mới về</span>
+              <Bot className="w-5 h-5 text-violet-200" />
+              <span className="text-xs font-bold text-white/90 uppercase tracking-wide">AI Tools</span>
             </div>
-            <p className="text-xl font-bold text-white">Sản phẩm mới</p>
-            <p className="text-xs text-white/70 mt-1">Cập nhật mỗi ngày</p>
+            <p className="text-xl font-bold text-white">ChatGPT, Midjourney</p>
+            <p className="text-xs text-white/70 mt-1">Công cụ AI hàng đầu</p>
           </div>
           <ArrowRight className="absolute bottom-4 right-4 w-5 h-5 text-white/50 group-hover/card:text-white group-hover/card:translate-x-1 transition-all" />
         </Link>

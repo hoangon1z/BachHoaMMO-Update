@@ -5,9 +5,18 @@ import { PrismaService } from '../prisma/prisma.service';
 export class CategoriesService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll() {
+  async findAll(onlyParent: boolean = false) {
+    const where = onlyParent ? { parentId: null } : {};
+    
     return this.prisma.category.findMany({
+      where,
       include: {
+        children: {
+          include: {
+            _count: { select: { products: true } },
+          },
+          orderBy: { name: 'asc' },
+        },
         _count: {
           select: { products: true },
         },

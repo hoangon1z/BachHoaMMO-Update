@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
 import { Public } from '../security/decorators/security.decorators';
 
@@ -8,8 +8,10 @@ export class CategoriesController {
 
   @Get()
   @Public() // Allow public access to list categories
-  findAll() {
-    return this.categoriesService.findAll();
+  findAll(@Query('parent') parent?: string) {
+    // If parent=true, only return parent categories (for homepage)
+    const onlyParent = parent === 'true';
+    return this.categoriesService.findAll(onlyParent);
   }
 
   @Get(':id')

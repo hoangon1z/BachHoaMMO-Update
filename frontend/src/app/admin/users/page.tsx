@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/authStore';
-import { Users, ShoppingBag, User as UserIcon, Mail, Calendar, Wallet, Shield } from 'lucide-react';
+import { Users, ShoppingBag, User as UserIcon, Mail, Calendar, Wallet, Shield, Ban, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
 import { PageHeader, StatsCard, FilterBar, DataTable, EmptyState, StatusBadge, Pagination } from '@/components/admin';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,9 @@ interface User {
   name: string;
   role: string;
   isSeller: boolean;
+  isBanned: boolean;
+  banReason?: string;
+  bannedAt?: string;
   balance: number;
   createdAt: string;
 }
@@ -56,7 +59,14 @@ export default function UsersManagementPage() {
     }
   };
 
-  const getRoleBadge = (role: string, isSeller: boolean) => {
+  const getRoleBadge = (role: string, isSeller: boolean, isBanned: boolean) => {
+    if (isBanned) {
+      return (
+        <StatusBadge variant="error" icon={<Ban className="w-3 h-3" />}>
+          Đã khóa
+        </StatusBadge>
+      );
+    }
     if (role === 'ADMIN') {
       return (
         <StatusBadge variant="warning" icon={<Shield className="w-3 h-3" />}>
@@ -117,9 +127,9 @@ export default function UsersManagementPage() {
     },
     {
       key: 'role',
-      title: 'Vai trò',
+      title: 'Trạng thái',
       align: 'center' as const,
-      render: (u: User) => getRoleBadge(u.role, u.isSeller),
+      render: (u: User) => getRoleBadge(u.role, u.isSeller, u.isBanned),
     },
     {
       key: 'balance',

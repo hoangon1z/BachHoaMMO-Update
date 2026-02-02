@@ -3,15 +3,19 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Save, Image, Plus, X, Layers, Percent, Info } from 'lucide-react';
+import { ArrowLeft, Save, Image, Plus, X, Layers, Info, Package, ArrowUpCircle, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+
+type ProductType = 'STANDARD' | 'UPGRADE';
 
 interface Category {
   id: string;
   name: string;
   slug: string;
+  parentId?: string | null;
+  children?: Category[];
 }
 
 interface Variant {
@@ -21,7 +25,8 @@ interface Variant {
   stock: string;
 }
 
-const COMMISSION_OPTIONS = [1, 2, 3, 4, 5];
+// Platform fixed commission rate
+const PLATFORM_COMMISSION = 5;
 
 export default function NewProductPage() {
   const router = useRouter();
@@ -32,10 +37,9 @@ export default function NewProductPage() {
   const [variants, setVariants] = useState<Variant[]>([
     { name: '', price: '', salePrice: '', stock: '' }
   ]);
-  const [commission, setCommission] = useState<number>(5);
-  const [customCommission, setCustomCommission] = useState<string>('');
-  const [useCustomCommission, setUseCustomCommission] = useState(false);
   const [autoDelivery, setAutoDelivery] = useState(true); // Chế độ giao hàng
+  const [productType, setProductType] = useState<ProductType>('STANDARD'); // Loại sản phẩm
+  const [requiredBuyerFields, setRequiredBuyerFields] = useState<string[]>(['email']); // Trường buyer cần cung cấp
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -53,7 +57,8 @@ export default function NewProductPage() {
 
   const fetchCategories = async () => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || '/api'}/categories`);
+      // Fetch categories with hierarchy
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || '/api'}/categories?parent=true`);
       if (response.ok) {
         const data = await response.json();
         setCategories(data);
@@ -61,6 +66,25 @@ export default function NewProductPage() {
     } catch (error) {
       console.error('Error fetching categories:', error);
     }
+  };
+
+  // Flatten categories for display with proper grouping
+  const getCategoryOptions = () => {
+    const options: { id: string; name: string; isParent: boolean }[] = [];
+    
+    categories.forEach(parent => {
+      // Add parent as disabled header
+      options.push({ id: parent.id, name: parent.name, isParent: true });
+      
+      // Add children
+      if (parent.children && parent.children.length > 0) {
+        parent.children.forEach(child => {
+          options.push({ id: child.id, name: `  └ ${child.name}`, isParent: false });
+        });
+      }
+    });
+    
+    return options;
   };
 
   const handleImageAdd = () => {
@@ -112,9 +136,29 @@ export default function NewProductPage() {
         setError('Vui lòng thêm ít nhất 1 phân loại với đầy đủ thông tin');
         return;
       }
+      // Validate max values for variants
+      for (const v of validVariants) {
+        if (parseFloat(v.price) > 999999999) {
+          setError('Giá sản phẩm không được vượt quá 999,999,999đ');
+          return;
+        }
+        if (parseInt(v.stock) > 999999) {
+          setError('Số lượng kho không được vượt quá 999,999');
+          return;
+        }
+      }
     } else {
       if (!formData.price || !formData.stock) {
         setError('Vui lòng điền giá và số lượng');
+        return;
+      }
+      // Validate max values
+      if (parseFloat(formData.price) > 999999999) {
+        setError('Giá sản phẩm không được vượt quá 999,999,999đ');
+        return;
+      }
+      if (parseInt(formData.stock) > 999999) {
+        setError('Số lượng kho không được vượt quá 999,999');
         return;
       }
     }
@@ -124,19 +168,15 @@ export default function NewProductPage() {
       const token = localStorage.getItem('token');
       const validImages = formData.images.filter(img => img.trim());
 
-      // Get final commission value
-      const finalCommission = useCustomCommission && customCommission 
-        ? parseFloat(customCommission) 
-        : commission;
-
       const requestBody: any = {
         title: formData.title,
         description: formData.description,
         categoryId: formData.categoryId,
         images: JSON.stringify(validImages.length > 0 ? validImages : ['/placeholder.jpg']),
         tags: formData.tags || undefined,
-        commission: Math.max(0, Math.min(100, finalCommission)), // Clamp 0-100
-        autoDelivery, // Chế độ giao hàng: true = tự động, false = thủ công
+        autoDelivery: productType === 'UPGRADE' ? false : autoDelivery, // UPGRADE luôn là thủ công
+        productType, // Loại sản phẩm: STANDARD hoặc UPGRADE
+        requiredBuyerFields: productType === 'UPGRADE' ? JSON.stringify(requiredBuyerFields) : undefined,
       };
 
       if (hasVariants) {
@@ -249,10 +289,18 @@ export default function NewProductPage() {
                 required
               >
                 <option value="">Chọn danh mục</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                {getCategoryOptions().map((opt) => (
+                  <option 
+                    key={opt.id} 
+                    value={opt.id}
+                    disabled={opt.isParent}
+                    className={opt.isParent ? 'font-semibold bg-gray-100 text-gray-700' : ''}
+                  >
+                    {opt.name}
+                  </option>
                 ))}
               </select>
+              <p className="text-xs text-gray-500">Chọn danh mục con phù hợp với sản phẩm của bạn</p>
             </div>
 
             <div className="space-y-2">
@@ -263,6 +311,125 @@ export default function NewProductPage() {
                 onChange={(e) => setFormData(prev => ({ ...prev, tags: e.target.value }))}
               />
             </div>
+          </div>
+
+          {/* Product Type Selection */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+            <h2 className="font-semibold text-gray-900">Loại sản phẩm</h2>
+            <p className="text-sm text-gray-500">Chọn loại sản phẩm bạn muốn bán</p>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* STANDARD Product */}
+              <button
+                type="button"
+                onClick={() => setProductType('STANDARD')}
+                className={`p-4 rounded-xl border-2 text-left transition-all ${
+                  productType === 'STANDARD' 
+                    ? 'border-blue-500 bg-blue-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                    productType === 'STANDARD' ? 'bg-blue-100' : 'bg-gray-100'
+                  }`}>
+                    <Package className={`w-5 h-5 ${productType === 'STANDARD' ? 'text-blue-600' : 'text-gray-500'}`} />
+                  </div>
+                  <div>
+                    <span className={`font-semibold ${productType === 'STANDARD' ? 'text-blue-700' : 'text-gray-700'}`}>
+                      Bán tài khoản
+                    </span>
+                    <p className="text-xs text-gray-500">Mặc định</p>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-600">
+                  Bạn cung cấp tài khoản cho khách hàng. Hệ thống tự động giao hoặc bạn giao thủ công.
+                </p>
+              </button>
+
+              {/* UPGRADE Product */}
+              <button
+                type="button"
+                onClick={() => {
+                  setProductType('UPGRADE');
+                  setAutoDelivery(false); // UPGRADE luôn là thủ công
+                }}
+                className={`p-4 rounded-xl border-2 text-left transition-all ${
+                  productType === 'UPGRADE' 
+                    ? 'border-purple-500 bg-purple-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                    productType === 'UPGRADE' ? 'bg-purple-100' : 'bg-gray-100'
+                  }`}>
+                    <ArrowUpCircle className={`w-5 h-5 ${productType === 'UPGRADE' ? 'text-purple-600' : 'text-gray-500'}`} />
+                  </div>
+                  <div>
+                    <span className={`font-semibold ${productType === 'UPGRADE' ? 'text-purple-700' : 'text-gray-700'}`}>
+                      Nâng cấp tài khoản
+                    </span>
+                    <p className="text-xs text-gray-500">Upgrade</p>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-600">
+                  Khách hàng cung cấp email/tài khoản của họ, bạn nâng cấp lên Pro/Premium.
+                </p>
+              </button>
+            </div>
+
+            {/* UPGRADE Configuration */}
+            {productType === 'UPGRADE' && (
+              <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg space-y-4">
+                <div className="flex items-start gap-2">
+                  <Mail className="w-5 h-5 text-purple-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-purple-800">Thông tin khách hàng cần cung cấp</h4>
+                    <p className="text-sm text-purple-600">Chọn các trường khách hàng cần nhập khi mua sản phẩm này</p>
+                  </div>
+                </div>
+                
+                <div className="flex flex-wrap gap-2">
+                  {['email', 'password', 'username'].map((field) => (
+                    <label
+                      key={field}
+                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${
+                        requiredBuyerFields.includes(field)
+                          ? 'border-purple-500 bg-purple-100 text-purple-700'
+                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={requiredBuyerFields.includes(field)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setRequiredBuyerFields([...requiredBuyerFields, field]);
+                          } else {
+                            setRequiredBuyerFields(requiredBuyerFields.filter(f => f !== field));
+                          }
+                        }}
+                        className="sr-only"
+                      />
+                      <span className="text-sm font-medium capitalize">
+                        {field === 'email' ? 'Email' : field === 'password' ? 'Mật khẩu' : 'Tên đăng nhập'}
+                      </span>
+                      {requiredBuyerFields.includes(field) && (
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </label>
+                  ))}
+                </div>
+                
+                <div className="text-xs text-purple-600">
+                  <strong>Lưu ý:</strong> Với sản phẩm Upgrade, khách hàng sẽ nhập thông tin tài khoản của họ khi mua. 
+                  Bạn sẽ nhận được thông tin này và tiến hành nâng cấp tài khoản cho khách.
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Variants Toggle */}
@@ -322,6 +489,7 @@ export default function NewProductPage() {
                           value={variant.price}
                           onChange={(e) => handleVariantChange(index, 'price', e.target.value)}
                           min="0"
+                          max="999999999"
                           className="mt-1"
                         />
                       </div>
@@ -333,6 +501,7 @@ export default function NewProductPage() {
                           value={variant.salePrice}
                           onChange={(e) => handleVariantChange(index, 'salePrice', e.target.value)}
                           min="0"
+                          max="999999999"
                           className="mt-1"
                         />
                       </div>
@@ -344,6 +513,7 @@ export default function NewProductPage() {
                           value={variant.stock}
                           onChange={(e) => handleVariantChange(index, 'stock', e.target.value)}
                           min="0"
+                          max="999999"
                           className="mt-1"
                         />
                       </div>
@@ -358,7 +528,8 @@ export default function NewProductPage() {
             )}
           </div>
 
-          {/* Delivery Mode */}
+          {/* Delivery Mode - Only show for STANDARD products */}
+          {productType === 'STANDARD' && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -443,6 +614,7 @@ export default function NewProductPage() {
               </div>
             )}
           </div>
+          )}
 
           {/* Pricing (only show if no variants) */}
           {!hasVariants && (
@@ -459,6 +631,7 @@ export default function NewProductPage() {
                     value={formData.price}
                     onChange={(e) => setFormData(prev => ({ ...prev, price: e.target.value }))}
                     min="0"
+                    max="999999999"
                     required={!hasVariants}
                   />
                 </div>
@@ -472,6 +645,7 @@ export default function NewProductPage() {
                     value={formData.salePrice}
                     onChange={(e) => setFormData(prev => ({ ...prev, salePrice: e.target.value }))}
                     min="0"
+                    max="999999999"
                   />
                   <p className="text-xs text-gray-500">Hiển thị giá gạch ngang</p>
                 </div>
@@ -485,78 +659,27 @@ export default function NewProductPage() {
                     value={formData.stock}
                     onChange={(e) => setFormData(prev => ({ ...prev, stock: e.target.value }))}
                     min="0"
+                    max="999999"
                     required={!hasVariants}
                   />
+                  <p className="text-xs text-gray-500">Tối đa 999,999</p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Commission */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                <Percent className="w-5 h-5 text-green-600" />
-              </div>
+          {/* Commission Info - Fixed 5% */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+              <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
               <div>
-                <h2 className="font-semibold text-gray-900">Hoa hồng sàn</h2>
-                <p className="text-sm text-gray-500">Phần trăm sàn nhận được khi bán sản phẩm</p>
+                <h3 className="font-semibold text-blue-800 mb-1">Phí hoa hồng sàn: 5%</h3>
+                <p className="text-sm text-blue-700">
+                  Khi bạn bán được sản phẩm, sàn sẽ thu <strong>5%</strong> hoa hồng cố định.
+                  <br />
+                  Ví dụ: Bán sản phẩm <strong>100,000đ</strong> → Bạn nhận <strong>95,000đ</strong>
+                </p>
               </div>
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
-              <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-blue-700">
-                Khi bạn bán được sản phẩm, sàn sẽ thu <strong>{useCustomCommission && customCommission ? customCommission : commission}%</strong> hoa hồng. 
-                Ví dụ: Bán sản phẩm <strong>100,000đ</strong> → Bạn nhận <strong>{(100000 * (1 - (useCustomCommission && customCommission ? parseFloat(customCommission) : commission) / 100)).toLocaleString('vi-VN')}đ</strong>
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <Label>Chọn mức hoa hồng</Label>
-              <div className="flex flex-wrap gap-2">
-                {COMMISSION_OPTIONS.map((opt) => (
-                  <button
-                    key={opt}
-                    type="button"
-                    onClick={() => { setCommission(opt); setUseCustomCommission(false); }}
-                    className={`px-4 py-2 rounded-lg border-2 font-medium transition-all ${
-                      !useCustomCommission && commission === opt
-                        ? 'border-green-600 bg-green-50 text-green-700'
-                        : 'border-gray-200 hover:border-gray-300 text-gray-700'
-                    }`}
-                  >
-                    {opt}%
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setUseCustomCommission(true)}
-                  className={`px-4 py-2 rounded-lg border-2 font-medium transition-all ${
-                    useCustomCommission
-                      ? 'border-green-600 bg-green-50 text-green-700'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-700'
-                  }`}
-                >
-                  Tùy chỉnh
-                </button>
-              </div>
-              
-              {useCustomCommission && (
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    placeholder="Nhập phần trăm"
-                    value={customCommission}
-                    onChange={(e) => setCustomCommission(e.target.value)}
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    className="w-32"
-                  />
-                  <span className="text-gray-600">%</span>
-                </div>
-              )}
             </div>
           </div>
 

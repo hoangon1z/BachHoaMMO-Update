@@ -14,7 +14,10 @@ import {
   Send,
   Truck,
   Zap,
-  AlertCircle
+  AlertCircle,
+  ArrowUpCircle,
+  Mail,
+  Key
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,11 +31,14 @@ interface OrderItem {
   needsManualDelivery: boolean;
   pendingDeliveryCount: number;
   isAutoDelivery: boolean;
+  buyerProvidedData?: string; // JSON string of buyer's account info for UPGRADE products
+  productType?: string; // STANDARD or UPGRADE
   product: {
     id: string;
     title: string;
     images: string;
     autoDelivery: boolean;
+    productType?: string;
   };
 }
 
@@ -64,6 +70,10 @@ export default function SellerOrdersPage() {
   const [deliveryModal, setDeliveryModal] = useState<{ order: Order; item: OrderItem } | null>(null);
   const [deliveryInput, setDeliveryInput] = useState('');
   const [isDelivering, setIsDelivering] = useState(false);
+  // Cancel modal state
+  const [cancelModal, setCancelModal] = useState<Order | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [isCancelling, setIsCancelling] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
@@ -127,6 +137,48 @@ export default function SellerOrdersPage() {
       toast.error('Lỗi', 'Không thể cập nhật đơn hàng. Vui lòng thử lại.');
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    if (!cancelModal || !cancelReason.trim()) {
+      toast.error('Lỗi', 'Vui lòng nhập lý do hủy đơn');
+      return;
+    }
+
+    setIsCancelling(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || '/api'}/seller/orders/${cancelModal.id}/status`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            status: 'CANCELLED',
+            cancelReason: cancelReason.trim(),
+          }),
+        }
+      );
+
+      if (response.ok) {
+        toast.success('Đã hủy đơn hàng', 'Tiền đã được hoàn cho khách hàng');
+        setCancelModal(null);
+        setCancelReason('');
+        setSelectedOrder(null);
+        fetchOrders();
+      } else {
+        const error = await response.json();
+        toast.error('Lỗi', error.message || 'Không thể hủy đơn hàng');
+      }
+    } catch (error) {
+      console.error('Error cancelling order:', error);
+      toast.error('Lỗi', 'Không thể hủy đơn hàng. Vui lòng thử lại.');
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -463,6 +515,43 @@ export default function SellerOrdersPage() {
                           <p className="font-semibold text-gray-900">{(item.price * item.quantity).toLocaleString('vi-VN')}đ</p>
                         </div>
                         
+                        {/* UPGRADE Product - Buyer's Account Info */}
+                        {item.buyerProvidedData && (item.productType === 'UPGRADE' || item.product.productType === 'UPGRADE') && (
+                          <div className="mt-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                            <div className="flex items-center gap-2 mb-2">
+                              <ArrowUpCircle className="w-4 h-4 text-purple-600" />
+                              <h4 className="font-semibold text-purple-800 text-sm">Tài khoản cần nâng cấp</h4>
+                            </div>
+                            <div className="space-y-1.5">
+                              {(() => {
+                                try {
+                                  const data = typeof item.buyerProvidedData === 'string' 
+                                    ? JSON.parse(item.buyerProvidedData) 
+                                    : item.buyerProvidedData;
+                                  return Object.entries(data).map(([key, value]) => (
+                                    <div key={key} className="flex items-center gap-2 text-sm">
+                                      {key === 'email' && <Mail className="w-3.5 h-3.5 text-purple-600" />}
+                                      {key === 'username' && <User className="w-3.5 h-3.5 text-purple-600" />}
+                                      {key === 'password' && <Key className="w-3.5 h-3.5 text-purple-600" />}
+                                      <span className="text-purple-600 capitalize">
+                                        {key === 'email' ? 'Email' : key === 'password' ? 'Mật khẩu' : 'Username'}:
+                                      </span>
+                                      <span className="font-medium text-purple-900 select-all">
+                                        {String(value)}
+                                      </span>
+                                    </div>
+                                  ));
+                                } catch {
+                                  return <span className="text-purple-700 text-sm">{String(item.buyerProvidedData)}</span>;
+                                }
+                              })()}
+                            </div>
+                            <p className="mt-2 text-xs text-purple-600">
+                              Vui lòng sử dụng thông tin trên để nâng cấp tài khoản cho khách hàng
+                            </p>
+                          </div>
+                        )}
+
                         {/* Delivery Status & Action */}
                         {!item.isAutoDelivery && (
                           <div className="mt-3 pt-3 border-t border-gray-200">
@@ -545,7 +634,10 @@ export default function SellerOrdersPage() {
                       <Button
                         variant="outline"
                         className="flex-1 border-red-300 text-red-600 hover:bg-red-50"
-                        onClick={() => handleUpdateStatus(selectedOrder.id, 'CANCELLED')}
+                        onClick={() => {
+                          setCancelModal(selectedOrder);
+                          setSelectedOrder(null);
+                        }}
                         disabled={isUpdating}
                       >
                         Hủy đơn
@@ -556,20 +648,36 @@ export default function SellerOrdersPage() {
                     <Button
                       variant="outline"
                       className="flex-1 border-red-300 text-red-600 hover:bg-red-50"
-                      onClick={() => handleUpdateStatus(selectedOrder.id, 'CANCELLED')}
+                      onClick={() => {
+                        setCancelModal(selectedOrder);
+                        setSelectedOrder(null);
+                      }}
                       disabled={isUpdating}
                     >
                       Hủy đơn
                     </Button>
                   )}
                   {selectedOrder.status === 'PROCESSING' && (
-                    <Button
-                      className="flex-1 bg-green-600 hover:bg-green-700"
-                      onClick={() => handleUpdateStatus(selectedOrder.id, 'COMPLETED')}
-                      disabled={isUpdating}
-                    >
-                      Đánh dấu hoàn thành
-                    </Button>
+                    <>
+                      <Button
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                        onClick={() => handleUpdateStatus(selectedOrder.id, 'COMPLETED')}
+                        disabled={isUpdating}
+                      >
+                        Đánh dấu hoàn thành
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="flex-1 border-red-300 text-red-600 hover:bg-red-50"
+                        onClick={() => {
+                          setCancelModal(selectedOrder);
+                          setSelectedOrder(null);
+                        }}
+                        disabled={isUpdating}
+                      >
+                        Hủy đơn
+                      </Button>
+                    </>
                   )}
                 </div>
               )}
@@ -585,8 +693,18 @@ export default function SellerOrdersPage() {
             <div className="p-6 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-bold text-gray-900">Giao tài khoản thủ công</h2>
-                  <p className="text-gray-500 text-sm">Đơn hàng #{deliveryModal.order.orderNumber}</p>
+                  {/* Different title for UPGRADE vs STANDARD manual delivery */}
+                  {(deliveryModal.item.productType === 'UPGRADE' || deliveryModal.item.product.productType === 'UPGRADE') ? (
+                    <>
+                      <h2 className="text-xl font-bold text-purple-800">Xác nhận đã nâng cấp</h2>
+                      <p className="text-purple-600 text-sm">Đơn hàng #{deliveryModal.order.orderNumber}</p>
+                    </>
+                  ) : (
+                    <>
+                      <h2 className="text-xl font-bold text-gray-900">Giao tài khoản thủ công</h2>
+                      <p className="text-gray-500 text-sm">Đơn hàng #{deliveryModal.order.orderNumber}</p>
+                    </>
+                  )}
                 </div>
                 <button 
                   onClick={() => {
@@ -613,19 +731,62 @@ export default function SellerOrdersPage() {
                 </div>
               </div>
 
-              {/* Account Data Input */}
+              {/* Show buyer's account info for UPGRADE products */}
+              {deliveryModal.item.buyerProvidedData && (deliveryModal.item.productType === 'UPGRADE' || deliveryModal.item.product.productType === 'UPGRADE') && (
+                <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ArrowUpCircle className="w-5 h-5 text-purple-600" />
+                    <h4 className="font-semibold text-purple-800">Tài khoản khách hàng cần upgrade</h4>
+                  </div>
+                  <div className="space-y-1">
+                    {(() => {
+                      try {
+                        const data = typeof deliveryModal.item.buyerProvidedData === 'string' 
+                          ? JSON.parse(deliveryModal.item.buyerProvidedData) 
+                          : deliveryModal.item.buyerProvidedData;
+                        return Object.entries(data).map(([key, value]) => (
+                          <div key={key} className="flex items-center gap-2 text-sm">
+                            {key === 'email' && <Mail className="w-4 h-4 text-purple-600" />}
+                            {key === 'username' && <User className="w-4 h-4 text-purple-600" />}
+                            {key === 'password' && <Key className="w-4 h-4 text-purple-600" />}
+                            <span className="text-purple-600 capitalize">
+                              {key === 'email' ? 'Email' : key === 'password' ? 'Mật khẩu' : 'Username'}:
+                            </span>
+                            <span className="font-medium text-purple-900 select-all bg-white px-2 py-0.5 rounded">
+                              {String(value)}
+                            </span>
+                          </div>
+                        ));
+                      } catch {
+                        return <span className="text-purple-700">{String(deliveryModal.item.buyerProvidedData)}</span>;
+                      }
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* Account Data Input - Different label for UPGRADE */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nhập dữ liệu tài khoản để giao
+                  {(deliveryModal.item.productType === 'UPGRADE' || deliveryModal.item.product.productType === 'UPGRADE')
+                    ? 'Ghi chú xác nhận (VD: Đã upgrade thành công, thời hạn...)'
+                    : 'Nhập dữ liệu tài khoản để giao'
+                  }
                 </label>
                 <textarea
                   value={deliveryInput}
                   onChange={(e) => setDeliveryInput(e.target.value)}
-                  placeholder="VD: email|password hoặc username:password"
+                  placeholder={(deliveryModal.item.productType === 'UPGRADE' || deliveryModal.item.product.productType === 'UPGRADE')
+                    ? 'VD: Đã nâng cấp Premium thành công, hết hạn 30/12/2025'
+                    : 'VD: email|password hoặc username:password'
+                  }
                   className="w-full h-32 px-4 py-3 border border-gray-200 rounded-lg text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Mỗi lần giao sẽ giao 1 tài khoản. Nếu cần giao nhiều, lặp lại thao tác này.
+                  {(deliveryModal.item.productType === 'UPGRADE' || deliveryModal.item.product.productType === 'UPGRADE')
+                    ? 'Nhập ghi chú xác nhận đã upgrade thành công cho khách hàng.'
+                    : 'Mỗi lần giao sẽ giao 1 tài khoản. Nếu cần giao nhiều, lặp lại thao tác này.'
+                  }
                 </p>
               </div>
 
@@ -642,19 +803,134 @@ export default function SellerOrdersPage() {
                   Hủy
                 </Button>
                 <Button
-                  className="flex-1 bg-orange-500 hover:bg-orange-600"
+                  className={`flex-1 ${
+                    (deliveryModal.item.productType === 'UPGRADE' || deliveryModal.item.product.productType === 'UPGRADE')
+                      ? 'bg-purple-600 hover:bg-purple-700'
+                      : 'bg-orange-500 hover:bg-orange-600'
+                  }`}
                   onClick={handleManualDelivery}
                   disabled={isDelivering || !deliveryInput.trim()}
                 >
                   {isDelivering ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                      Đang giao...
+                      Đang xử lý...
+                    </>
+                  ) : (deliveryModal.item.productType === 'UPGRADE' || deliveryModal.item.product.productType === 'UPGRADE') ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Xác nhận đã Upgrade
                     </>
                   ) : (
                     <>
                       <Send className="w-4 h-4 mr-2" />
                       Giao tài khoản
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Order Modal */}
+      {cancelModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                    <XCircle className="w-6 h-6 text-red-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">Hủy đơn hàng</h2>
+                    <p className="text-gray-500 text-sm">#{cancelModal.orderNumber}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => {
+                    setCancelModal(null);
+                    setCancelReason('');
+                  }} 
+                  className="p-2 hover:bg-gray-100 rounded-lg"
+                >
+                  <XCircle className="w-6 h-6 text-gray-500" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Warning */}
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-semibold text-red-800">Lưu ý quan trọng</h4>
+                    <ul className="text-sm text-red-700 mt-1 space-y-1">
+                      <li>• Tiền sẽ được hoàn vào ví của khách hàng</li>
+                      <li>• Khách hàng sẽ nhận được thông báo hủy đơn</li>
+                      <li>• Hành động này không thể hoàn tác</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Order Summary */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Tổng tiền hoàn:</span>
+                  <span className="text-lg font-bold text-red-600">{cancelModal.total.toLocaleString('vi-VN')}đ</span>
+                </div>
+                <div className="flex justify-between items-center mt-2">
+                  <span className="text-gray-600">Khách hàng:</span>
+                  <span className="font-medium text-gray-900">{cancelModal.buyer?.name || cancelModal.buyer?.email}</span>
+                </div>
+              </div>
+
+              {/* Cancel Reason */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Lý do hủy đơn <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="VD: Hết hàng, không thể thực hiện dịch vụ..."
+                  className="w-full h-24 px-4 py-3 border border-gray-200 rounded-lg text-sm resize-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Lý do này sẽ được gửi cho khách hàng
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setCancelModal(null);
+                    setCancelReason('');
+                  }}
+                >
+                  Quay lại
+                </Button>
+                <Button
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                  onClick={handleCancelOrder}
+                  disabled={isCancelling || !cancelReason.trim()}
+                >
+                  {isCancelling ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Đang hủy...
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Xác nhận hủy đơn
                     </>
                   )}
                 </Button>

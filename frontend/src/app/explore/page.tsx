@@ -15,11 +15,44 @@ import {
   List,
   Star,
   ChevronDown,
+  ChevronRight,
   X,
   Package,
   ArrowUpDown,
-  Loader2
+  Loader2,
+  Folder,
+  MonitorPlay,
+  Cpu,
+  Music,
+  MessageCircle,
+  Video,
+  GraduationCap,
+  Globe,
+  Layers
 } from 'lucide-react';
+
+// Icon mapping for categories
+const getCategoryIcon = (slug: string) => {
+  const iconMap: Record<string, React.ReactNode> = {
+    'tai-khoan': <Folder className="w-4 h-4" />,
+    'phan-mem': <Cpu className="w-4 h-4" />,
+    'dich-vu': <Layers className="w-4 h-4" />,
+    'khac': <Package className="w-4 h-4" />,
+    'tai-khoan-netflix': <MonitorPlay className="w-4 h-4" />,
+    'tai-khoan-spotiffy': <Music className="w-4 h-4" />,
+    'tai-khoan-facebook': <MessageCircle className="w-4 h-4" />,
+    'tai-khoan-youtube': <Video className="w-4 h-4" />,
+    'tai-khoan-telegram': <MessageCircle className="w-4 h-4" />,
+    'tai-khoan-ai': <Cpu className="w-4 h-4" />,
+    'tai-khoan-canva': <Layers className="w-4 h-4" />,
+    'tai-khoan-cap-cut': <Video className="w-4 h-4" />,
+    'tai-khoan-hoc-tap': <GraduationCap className="w-4 h-4" />,
+    'tai-khoan-vpn-proxy': <Globe className="w-4 h-4" />,
+    'tai-khoan-adobe': <Layers className="w-4 h-4" />,
+    'key-van-phong-do-hoa': <Cpu className="w-4 h-4" />,
+  };
+  return iconMap[slug] || <Folder className="w-4 h-4" />;
+};
 import Link from 'next/link';
 import { apiFetch } from '@/lib/config';
 
@@ -42,6 +75,7 @@ interface Category {
   name: string;
   slug: string;
   icon?: string;
+  children?: Category[];
 }
 
 const SORT_OPTIONS = [
@@ -130,7 +164,7 @@ function ExplorePageContent() {
 
   const fetchCategories = async () => {
     try {
-      const response = await apiFetch('/categories');
+      const response = await apiFetch('/categories?parent=true');
       if (response.ok) {
         const data = await response.json();
         setCategories(data);
@@ -159,10 +193,14 @@ function ExplorePageContent() {
       const response = await apiFetch(`/products?${params}`);
       if (response.ok) {
         const data = await response.json();
-        setProducts(data.products || data);
-        if (data.pagination) {
-          setPagination(prev => ({ ...prev, ...data.pagination }));
-        }
+        setProducts(data.products || []);
+        // API returns total, page, totalPages directly in response (not nested in pagination)
+        setPagination(prev => ({
+          ...prev,
+          total: data.total || 0,
+          page: data.page || 1,
+          totalPages: data.totalPages || 1
+        }));
       }
     } catch (error) {
       console.error('Error fetching products:', error);
@@ -260,31 +298,71 @@ function ExplorePageContent() {
               </div>
 
               <div className="space-y-6">
-                {/* Categories */}
+                {/* Categories - Smart Tree View */}
                 <div className="bg-white rounded-xl border border-gray-200 p-4">
                   <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                     <Grid3X3 className="w-4 h-4" />
                     Danh mục
                   </h3>
                   <div className="space-y-1">
+                    {/* All categories button */}
                     <button
                       onClick={() => setSelectedCategory('')}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                      className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
                         !selectedCategory ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-700'
                       }`}
                     >
+                      <Package className={`w-4 h-4 ${!selectedCategory ? 'text-blue-500' : 'text-gray-400'}`} />
                       Tất cả danh mục
                     </button>
+                    
+                    {/* Parent categories with children */}
                     {categories.map((cat) => (
-                      <button
-                        key={cat.id}
-                        onClick={() => setSelectedCategory(cat.id)}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                          selectedCategory === cat.id ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-700'
-                        }`}
-                      >
-                        {cat.name}
-                      </button>
+                      <div key={cat.id} className="space-y-0.5">
+                        {/* Parent category */}
+                        <button
+                          onClick={() => setSelectedCategory(cat.id)}
+                          className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-between ${
+                            selectedCategory === cat.id 
+                              ? 'bg-blue-50 text-blue-700 font-medium' 
+                              : 'hover:bg-gray-50 text-gray-700'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className={selectedCategory === cat.id ? 'text-blue-500' : 'text-gray-400'}>
+                              {getCategoryIcon(cat.slug)}
+                            </span>
+                            {cat.name}
+                          </span>
+                          {cat.children && cat.children.length > 0 && (
+                            <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                              {cat.children.length}
+                            </span>
+                          )}
+                        </button>
+                        
+                        {/* Child categories */}
+                        {cat.children && cat.children.length > 0 && (
+                          <div className="ml-4 pl-3 border-l-2 border-gray-100 space-y-0.5">
+                            {cat.children.map((child) => (
+                              <button
+                                key={child.id}
+                                onClick={() => setSelectedCategory(child.id)}
+                                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                                  selectedCategory === child.id 
+                                    ? 'bg-blue-50 text-blue-700 font-medium' 
+                                    : 'hover:bg-gray-50 text-gray-600'
+                                }`}
+                              >
+                                <span className={selectedCategory === child.id ? 'text-blue-500' : 'text-gray-400'}>
+                                  {getCategoryIcon(child.slug)}
+                                </span>
+                                <span className="truncate">{child.name.replace('Tài khoản ', '').replace('Key ', '')}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>

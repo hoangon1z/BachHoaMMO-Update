@@ -14,6 +14,10 @@ interface CartItem {
   stock: number;
   sellerId: string;
   sellerName: string;
+  // Thêm cho sản phẩm loại UPGRADE
+  productType?: 'STANDARD' | 'UPGRADE';
+  requiredBuyerFields?: string[]; // Các trường buyer cần cung cấp (VD: ["email"])
+  buyerProvidedData?: Record<string, string>; // Dữ liệu buyer cung cấp (VD: {email: "user@example.com"})
 }
 
 interface CartState {
@@ -21,6 +25,7 @@ interface CartState {
   addItem: (item: Omit<CartItem, 'quantity'>) => void;
   removeItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
+  updateBuyerData: (id: string, data: Record<string, string>) => void;
   clearCart: () => void;
   getTotalItems: () => number;
   getTotalPrice: () => number;
@@ -74,19 +79,35 @@ export const useCartStore = create<CartState>()(
         });
       },
 
+      updateBuyerData: (id, data) => {
+        set({
+          items: get().items.map((i) =>
+            i.id === id
+              ? { ...i, buyerProvidedData: { ...i.buyerProvidedData, ...data } }
+              : i
+          ),
+        });
+      },
+
       clearCart: () => {
         set({ items: [] });
       },
 
       getTotalItems: () => {
-        return get().items.reduce((total, item) => total + item.quantity, 0);
+        // Filter out invalid items (quantity <= 0)
+        return get().items
+          .filter(item => item.quantity > 0)
+          .reduce((total, item) => total + item.quantity, 0);
       },
 
       getTotalPrice: () => {
-        return get().items.reduce((total, item) => {
-          const price = item.salePrice || item.price;
-          return total + price * item.quantity;
-        }, 0);
+        // Filter out invalid items (quantity <= 0)
+        return get().items
+          .filter(item => item.quantity > 0)
+          .reduce((total, item) => {
+            const price = item.salePrice || item.price;
+            return total + price * item.quantity;
+          }, 0);
       },
     }),
     {

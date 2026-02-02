@@ -1,18 +1,75 @@
 import { serverMarketplaceApi } from '@/lib/server-api';
 import ShopPageClient from './ShopPageClient';
 import { notFound } from 'next/navigation';
+import type { Metadata } from 'next';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+// Public backend URL for images (accessible from client browser)
+const PUBLIC_BACKEND_URL = process.env.NEXT_PUBLIC_SOCKET_URL || process.env.BACKEND_URL || 'http://localhost:3001';
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://bachhoammo.store';
 
-// Helper to get full image URL
+// Helper to get full image URL (use public URL so it works in browser)
 function getFullImageUrl(url: string | undefined): string | undefined {
   if (!url) return undefined;
-  if (url.startsWith('http')) return url;
-  return `${BACKEND_URL}${url}`;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return `${PUBLIC_BACKEND_URL}${url}`;
 }
 
 interface PageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
+}
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { id } = await params;
+  const shopData = await serverMarketplaceApi.getShopProfile(id);
+  
+  if (!shopData || shopData.error) {
+    return { title: 'Shop | BachHoaMMO' };
+  }
+
+  const shopName = shopData.name || 'Shop';
+  const description = shopData.description || `Mua sản phẩm số uy tín tại ${shopName} trên BachHoaMMO`;
+  const logoUrl = getFullImageUrl(shopData.logo) || `${SITE_URL}/images/logobachhoa.png`;
+
+  return {
+    title: `${shopName} - Cửa hàng sản phẩm số | BachHoaMMO`,
+    description: description.slice(0, 160),
+    openGraph: {
+      title: `${shopName} | BachHoaMMO`,
+      description,
+      url: `${SITE_URL}/shop/${id}`,
+      type: 'profile',
+      images: [{ url: logoUrl, width: 200, height: 200, alt: shopName }],
+    },
+    alternates: { canonical: `${SITE_URL}/shop/${id}` },
+  };
+}
+
+/** Shop structured data */
+function ShopStructuredData({ shop, shopUrl }: { shop: any; shopUrl: string }) {
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Store',
+    name: shop.name,
+    description: shop.description || `Cửa hàng ${shop.name} trên BachHoaMMO`,
+    url: shopUrl,
+    image: shop.logo || `${SITE_URL}/images/logobachhoa.png`,
+    ...(shop.rating && shop.rating > 0 && {
+      aggregateRating: {
+        '@type': 'AggregateRating',
+        ratingValue: shop.rating,
+        ratingCount: shop.totalSales || 1,
+        bestRating: 5,
+        worstRating: 1,
+      },
+    }),
+  };
+
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+    />
+  );
 }
 
 /**
@@ -20,10 +77,12 @@ interface PageProps {
  * NO API calls visible in browser Network tab!
  */
 export default async function ShopPage({ params }: PageProps) {
+  const { id } = await params;
+  
   // Fetch all shop data on server-side - Client will NOT see these API calls
   const [shopData, productsData] = await Promise.all([
-    serverMarketplaceApi.getShopProfile(params.id),
-    serverMarketplaceApi.getShopProducts(params.id, { page: 1, limit: 12 }),
+    serverMarketplaceApi.getShopProfile(id),
+    serverMarketplaceApi.getShopProducts(id, { page: 1, limit: 12 }),
   ]);
 
   if (!shopData || shopData.error) {
@@ -44,12 +103,16 @@ export default async function ShopPage({ params }: PageProps) {
 
   const products = productsData.products || [];
   const pagination = productsData.pagination || { page: 1, limit: 12, total: 0, totalPages: 0 };
+  const shopUrl = `${SITE_URL}/shop/${id}`;
 
   return (
-    <ShopPageClient 
-      shop={shop}
-      initialProducts={products}
-      initialPagination={pagination}
-    />
+    <>
+      <ShopStructuredData shop={shop} shopUrl={shopUrl} />
+      <ShopPageClient 
+        shop={shop}
+        initialProducts={products}
+        initialPagination={pagination}
+      />
+    </>
   );
 }

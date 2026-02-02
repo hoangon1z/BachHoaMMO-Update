@@ -312,6 +312,7 @@ export class SellerService {
                   images: true,
                   autoDelivery: true,
                   isDigital: true,
+                  productType: true,
                 },
               },
               deliveries: true,
@@ -433,6 +434,15 @@ export class SellerService {
         id: orderId,
         sellerId: userId,
       },
+      include: {
+        buyer: true,
+        escrow: true,
+        items: {
+          include: {
+            product: true,
+          },
+        },
+      },
     });
 
     if (!order) {
@@ -452,6 +462,16 @@ export class SellerService {
       throw new BadRequestException(`Không thể chuyển từ ${order.status} sang ${dto.status}`);
     }
 
+    // Require cancel reason when cancelling
+    if (dto.status === 'CANCELLED' && !dto.cancelReason) {
+      throw new BadRequestException('Vui lòng nhập lý do hủy đơn hàng');
+    }
+
+    // Handle cancellation with refund
+    if (dto.status === 'CANCELLED') {
+      return this.cancelOrderWithRefund(order, dto.cancelReason!, userId);
+    }
+
     return this.prisma.order.update({
       where: { id: orderId },
       data: {
@@ -463,6 +483,150 @@ export class SellerService {
         escrow: true,
       },
     });
+  }
+
+  /**
+   * Cancel order with refund and notification
+   */
+  private async cancelOrderWithRefund(order: any, cancelReason: string, sellerId: string) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Update order status
+      const updatedOrder = await tx.order.update({
+        where: { id: order.id },
+        data: {
+          status: 'CANCELLED',
+          notes: `Đã hủy bởi seller. Lý do: ${cancelReason}`,
+        },
+      });
+
+      // 2. Refund buyer if escrow exists
+      if (order.escrow && order.escrow.status === 'HOLDING') {
+        // Update escrow status
+        await tx.escrow.update({
+          where: { id: order.escrow.id },
+          data: { status: 'REFUNDED' },
+        });
+
+        // Refund to buyer's balance
+        await tx.user.update({
+          where: { id: order.buyerId },
+          data: { balance: { increment: order.total } },
+        });
+
+        // Create refund transaction
+        await tx.transaction.create({
+          data: {
+            userId: order.buyerId,
+            type: 'REFUND',
+            amount: order.total,
+            status: 'COMPLETED',
+            description: `Hoàn tiền đơn hàng #${order.orderNumber} - Seller hủy: ${cancelReason}`,
+            orderId: order.id,
+          },
+        });
+      }
+
+      // 3. Restore inventory if auto-delivery items were sold
+      for (const item of order.items) {
+        if (item.product.autoDelivery) {
+          // Mark inventory items as AVAILABLE again
+          await tx.productInventory.updateMany({
+            where: {
+              orderId: order.id,
+              orderItemId: item.id,
+              status: 'SOLD',
+            },
+            data: {
+              status: 'AVAILABLE',
+              soldAt: null,
+              soldToId: null,
+              orderId: null,
+              orderItemId: null,
+            },
+          });
+
+          // Update product stock
+          const availableCount = await tx.productInventory.count({
+            where: { productId: item.productId, status: 'AVAILABLE' },
+          });
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: availableCount },
+          });
+        }
+      }
+
+      // 4. Delete order deliveries
+      await tx.orderDelivery.deleteMany({
+        where: { orderId: order.id },
+      });
+
+      // 5. Create notification for buyer
+      await tx.notification.create({
+        data: {
+          userId: order.buyerId,
+          type: 'ORDER',
+          title: 'Đơn hàng đã bị hủy',
+          message: `Đơn hàng #${order.orderNumber} đã bị seller hủy. Lý do: ${cancelReason}. Tiền đã được hoàn vào ví của bạn.`,
+          link: `/orders/${order.id}`,
+          icon: 'XCircle',
+        },
+      });
+
+      return updatedOrder;
+    });
+
+    // 6. Send Telegram notification to buyer (async)
+    this.sendCancelNotificationToBuyer(order, cancelReason).catch(err => {
+      console.error('Failed to send cancel notification:', err.message);
+    });
+
+    return {
+      ...result,
+      message: 'Đã hủy đơn hàng và hoàn tiền cho khách hàng',
+    };
+  }
+
+  /**
+   * Send Telegram notification when order is cancelled
+   */
+  private async sendCancelNotificationToBuyer(order: any, cancelReason: string) {
+    try {
+      const buyer = await this.prisma.user.findUnique({
+        where: { id: order.buyerId },
+        select: { telegramChatId: true },
+      });
+
+      if (buyer?.telegramChatId) {
+        const { TelegramService } = await import('../telegram/telegram.service');
+        // Create inline telegram service call
+        const message = `❌ *Đơn hàng đã bị hủy*
+
+📦 Đơn hàng: \`#${order.orderNumber}\`
+💰 Số tiền: *${order.total.toLocaleString('vi-VN')}đ*
+📝 Lý do: ${cancelReason}
+
+✅ Tiền đã được hoàn vào ví của bạn.
+
+🔗 [Xem chi tiết đơn hàng](https://bachhoammo.store/orders/${order.id})`;
+
+        // Use fetch to call Telegram API directly
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        if (botToken) {
+          await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: buyer.telegramChatId,
+              text: message,
+              parse_mode: 'Markdown',
+            }),
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error sending Telegram cancel notification:', error);
+    }
   }
 
   /**

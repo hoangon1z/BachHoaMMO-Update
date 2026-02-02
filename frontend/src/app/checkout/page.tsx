@@ -92,6 +92,18 @@ export default function CheckoutPage() {
       return;
     }
 
+    // Validate items before checkout
+    const invalidItems = items.filter(item => !item.quantity || item.quantity <= 0);
+    if (invalidItems.length > 0) {
+      toast.error('Lỗi giỏ hàng', 'Có sản phẩm với số lượng không hợp lệ');
+      return;
+    }
+
+    if (totalAmount <= 0) {
+      toast.error('Lỗi đơn hàng', 'Tổng đơn hàng phải lớn hơn 0');
+      return;
+    }
+
     setIsProcessing(true);
 
     try {
@@ -102,6 +114,10 @@ export default function CheckoutPage() {
             productId: item.productId,
             quantity: item.quantity,
             price: item.salePrice || item.price,
+            // Include buyer provided data for UPGRADE products
+            buyerProvidedData: item.buyerProvidedData 
+              ? JSON.stringify(item.buyerProvidedData) 
+              : undefined,
           })),
           total: totalAmount,
           notes: note,

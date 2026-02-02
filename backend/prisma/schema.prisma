@@ -17,6 +17,9 @@ model User {
   name      String?
   role      String   @default("BUYER") // BUYER, SELLER, ADMIN
   isSeller  Boolean  @default(false)
+  isBanned  Boolean  @default(false)    // User is banned from the platform
+  banReason String?                      // Reason for the ban
+  bannedAt  DateTime?                    // When the user was banned
   avatar    String?
   phone     String?
   address   String?
@@ -117,6 +120,12 @@ model Product {
   accountTemplateId String?          // Template định dạng tài khoản
   accountTemplate   AccountTemplate? @relation("ProductTemplate", fields: [accountTemplateId], references: [id])
   autoDelivery      Boolean          @default(true) // Tự động giao hàng khi mua
+  
+  // Product type: STANDARD (bán tài khoản), UPGRADE (nâng cấp tài khoản của buyer)
+  productType       String           @default("STANDARD") // STANDARD, UPGRADE
+  // Các trường buyer cần cung cấp khi mua sản phẩm UPGRADE (JSON array)
+  // VD: ["email", "password"] hoặc ["email"]
+  requiredBuyerFields String?
 
   // Product Variants
   hasVariants Boolean          @default(false) // Có phân loại hay không
@@ -163,6 +172,10 @@ model CartItem {
   quantity  Int      @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  
+  // Thông tin buyer cung cấp cho sản phẩm UPGRADE (JSON object)
+  // VD: {"email": "user@example.com", "password": "abc123"}
+  buyerProvidedData String?
 
   @@unique([userId, productId, variantId])
   @@map("cart_items")
@@ -214,6 +227,12 @@ model OrderItem {
 
   // Digital delivery tracking
   deliveredQuantity Int @default(0) // Số lượng đã giao
+  
+  // Thông tin buyer cung cấp cho sản phẩm UPGRADE (JSON object)
+  // VD: {"email": "user@example.com"} - Email cần upgrade
+  buyerProvidedData String?
+  // Loại sản phẩm tại thời điểm mua (snapshot)
+  productType       String?  // STANDARD, UPGRADE
 
   // Relations
   deliveries OrderDelivery[]

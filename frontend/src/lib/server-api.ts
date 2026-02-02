@@ -49,10 +49,12 @@ export const serverMarketplaceApi = {
 
   /**
    * Get all categories (server-side only)
+   * @param onlyParent - If true, only return parent categories (for homepage)
    */
-  async getCategories() {
+  async getCategories(onlyParent: boolean = false) {
     try {
-      const response = await serverApi.get('/categories');
+      const url = onlyParent ? '/categories?parent=true' : '/categories';
+      const response = await serverApi.get(url);
       return response.data;
     } catch (error: any) {
       console.error('[Server API Error] getCategories:', error.message);

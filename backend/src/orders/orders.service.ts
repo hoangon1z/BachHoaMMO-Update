@@ -22,7 +22,7 @@ export class OrdersService {
    */
   async createOrder(
     buyerId: string,
-    items: Array<{ productId: string; quantity: number; price: number }>,
+    items: Array<{ productId: string; quantity: number; price: number; buyerProvidedData?: string }>,
     total: number,
   ) {
     // Validate buyer has sufficient balance
@@ -51,6 +51,21 @@ export class OrdersService {
 
     if (products.length !== items.length) {
       throw new BadRequestException('Some products not found');
+    }
+
+    // Validate quantity and price for each item
+    for (const item of items) {
+      if (!item.quantity || item.quantity <= 0) {
+        throw new BadRequestException('Số lượng sản phẩm phải lớn hơn 0');
+      }
+      if (!item.price || item.price <= 0) {
+        throw new BadRequestException('Giá sản phẩm không hợp lệ');
+      }
+    }
+
+    // Validate total > 0
+    if (!total || total <= 0) {
+      throw new BadRequestException('Tổng đơn hàng phải lớn hơn 0');
     }
 
     // For simplicity, assume single seller (in real app, split orders by seller)
@@ -90,8 +105,9 @@ export class OrdersService {
       if (product) {
         // Use item.price which is the actual price being charged
         const itemTotal = item.price * item.quantity;
-        const productCommission = (product as any).commission || 5; // Default 5% if not set
-        commission += itemTotal * (productCommission / 100);
+        // Fixed 5% platform commission for all products
+        const PLATFORM_COMMISSION = 5;
+        commission += itemTotal * (PLATFORM_COMMISSION / 100);
       }
     }
     const sellerAmount = total - commission;
@@ -143,7 +159,7 @@ export class OrdersService {
       for (const item of items) {
         const product = products.find(p => p.id === item.productId);
         
-        // Create order item
+        // Create order item với buyerProvidedData (cho sản phẩm UPGRADE)
         const orderItem = await tx.orderItem.create({
           data: {
             orderId: order.id,
@@ -152,6 +168,10 @@ export class OrdersService {
             price: item.price,
             total: item.price * item.quantity,
             deliveredQuantity: 0,
+            // Lưu thông tin buyer cung cấp (email để upgrade) nếu có
+            buyerProvidedData: item.buyerProvidedData || null,
+            // Lưu loại sản phẩm tại thời điểm mua
+            productType: product?.productType || 'STANDARD',
           },
         });
         orderItems.push(orderItem);

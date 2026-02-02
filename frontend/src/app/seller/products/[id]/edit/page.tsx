@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Save, Image, Plus, X, Trash2, Percent, Info } from 'lucide-react';
+import { ArrowLeft, Save, Image, Plus, X, Trash2, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,9 +12,12 @@ interface Category {
   id: string;
   name: string;
   slug: string;
+  parentId?: string | null;
+  children?: Category[];
 }
 
-const COMMISSION_OPTIONS = [1, 2, 3, 4, 5];
+// Platform fixed commission rate
+const PLATFORM_COMMISSION = 5;
 
 export default function EditProductPage() {
   const router = useRouter();
@@ -25,9 +28,6 @@ export default function EditProductPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState('');
-  const [commission, setCommission] = useState<number>(5);
-  const [customCommission, setCustomCommission] = useState<string>('');
-  const [useCustomCommission, setUseCustomCommission] = useState(false);
   const [autoDelivery, setAutoDelivery] = useState(true); // Chế độ giao hàng
   const [formData, setFormData] = useState({
     title: '',
@@ -47,7 +47,7 @@ export default function EditProductPage() {
 
   const fetchCategories = async () => {
     try {
-      const response = await fetch(`/api/categories`);
+      const response = await fetch(`/api/categories?parent=true`);
       if (response.ok) {
         const data = await response.json();
         setCategories(data);
@@ -55,6 +55,25 @@ export default function EditProductPage() {
     } catch (error) {
       console.error('Error fetching categories:', error);
     }
+  };
+
+  // Flatten categories for display with proper grouping
+  const getCategoryOptions = () => {
+    const options: { id: string; name: string; isParent: boolean }[] = [];
+    
+    categories.forEach(parent => {
+      // Add parent as disabled header
+      options.push({ id: parent.id, name: parent.name, isParent: true });
+      
+      // Add children
+      if (parent.children && parent.children.length > 0) {
+        parent.children.forEach(child => {
+          options.push({ id: child.id, name: `  └ ${child.name}`, isParent: false });
+        });
+      }
+    });
+    
+    return options;
   };
 
   const fetchProduct = async () => {
@@ -84,16 +103,6 @@ export default function EditProductPage() {
           images,
           tags: product.tags || '',
         });
-        
-        // Set commission
-        const productCommission = product.commission || 5;
-        if (COMMISSION_OPTIONS.includes(productCommission)) {
-          setCommission(productCommission);
-          setUseCustomCommission(false);
-        } else {
-          setCustomCommission(productCommission.toString());
-          setUseCustomCommission(true);
-        }
         
         // Set autoDelivery
         setAutoDelivery(product.autoDelivery !== false); // Default true if not set
@@ -139,11 +148,6 @@ export default function EditProductPage() {
     try {
       const token = localStorage.getItem('token');
       const validImages = formData.images.filter(img => img.trim());
-      
-      // Get final commission value
-      const finalCommission = useCustomCommission && customCommission 
-        ? parseFloat(customCommission) 
-        : commission;
 
       const response = await fetch(
         `/api/seller/products/${productId}`,
@@ -163,7 +167,6 @@ export default function EditProductPage() {
             status: formData.status,
             images: JSON.stringify(validImages.length > 0 ? validImages : ['/placeholder.jpg']),
             tags: formData.tags || null,
-            commission: Math.max(0, Math.min(100, finalCommission)),
             autoDelivery, // Chế độ giao hàng
           }),
         }
@@ -279,8 +282,15 @@ export default function EditProductPage() {
                   required
                 >
                   <option value="">Chọn danh mục</option>
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  {getCategoryOptions().map((opt) => (
+                    <option 
+                      key={opt.id} 
+                      value={opt.id}
+                      disabled={opt.isParent}
+                      className={opt.isParent ? 'font-semibold bg-gray-100 text-gray-700' : ''}
+                    >
+                      {opt.name}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -437,71 +447,18 @@ export default function EditProductPage() {
             )}
           </div>
 
-          {/* Commission */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                <Percent className="w-5 h-5 text-green-600" />
-              </div>
+          {/* Commission Info - Fixed 5% */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+              <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
               <div>
-                <h2 className="font-semibold text-gray-900">Hoa hồng sàn</h2>
-                <p className="text-sm text-gray-500">Phần trăm sàn nhận được khi bán sản phẩm</p>
+                <h3 className="font-semibold text-blue-800 mb-1">Phí hoa hồng sàn: 5%</h3>
+                <p className="text-sm text-blue-700">
+                  Khi bạn bán được sản phẩm, sàn sẽ thu <strong>5%</strong> hoa hồng cố định.
+                  <br />
+                  Ví dụ: Bán sản phẩm <strong>100,000đ</strong> → Bạn nhận <strong>95,000đ</strong>
+                </p>
               </div>
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
-              <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-blue-700">
-                Khi bạn bán được sản phẩm, sàn sẽ thu <strong>{useCustomCommission && customCommission ? customCommission : commission}%</strong> hoa hồng. 
-                Ví dụ: Bán sản phẩm <strong>100,000đ</strong> → Bạn nhận <strong>{(100000 * (1 - (useCustomCommission && customCommission ? parseFloat(customCommission) : commission) / 100)).toLocaleString('vi-VN')}đ</strong>
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <Label>Chọn mức hoa hồng</Label>
-              <div className="flex flex-wrap gap-2">
-                {COMMISSION_OPTIONS.map((opt) => (
-                  <button
-                    key={opt}
-                    type="button"
-                    onClick={() => { setCommission(opt); setUseCustomCommission(false); }}
-                    className={`px-4 py-2 rounded-lg border-2 font-medium transition-all ${
-                      !useCustomCommission && commission === opt
-                        ? 'border-green-600 bg-green-50 text-green-700'
-                        : 'border-gray-200 hover:border-gray-300 text-gray-700'
-                    }`}
-                  >
-                    {opt}%
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setUseCustomCommission(true)}
-                  className={`px-4 py-2 rounded-lg border-2 font-medium transition-all ${
-                    useCustomCommission
-                      ? 'border-green-600 bg-green-50 text-green-700'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-700'
-                  }`}
-                >
-                  Tùy chỉnh
-                </button>
-              </div>
-              
-              {useCustomCommission && (
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    placeholder="Nhập phần trăm"
-                    value={customCommission}
-                    onChange={(e) => setCustomCommission(e.target.value)}
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    className="w-32"
-                  />
-                  <span className="text-gray-600">%</span>
-                </div>
-              )}
             </div>
           </div>
 

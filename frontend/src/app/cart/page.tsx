@@ -7,7 +7,7 @@ import { Footer } from '@/components/Footer';
 import { useAuthStore } from '@/store/authStore';
 import { useCartStore } from '@/store/cartStore';
 import { Button } from '@/components/ui/button';
-import { Trash2, Plus, Minus, ShoppingBag, ArrowLeft, ShieldCheck, Truck, CreditCard, Store } from 'lucide-react';
+import { Trash2, Plus, Minus, ShoppingBag, ArrowLeft, ShieldCheck, Truck, CreditCard, Store, ArrowUpCircle, Mail } from 'lucide-react';
 import Link from 'next/link';
 
 export default function CartPage() {
@@ -152,7 +152,33 @@ export default function CartPage() {
                                 {formatPrice(item.price)}
                               </span>
                             )}
+                            {/* UPGRADE badge */}
+                            {item.productType === 'UPGRADE' && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
+                                <ArrowUpCircle className="w-3 h-3" />
+                                Upgrade
+                              </span>
+                            )}
                           </div>
+
+                          {/* Buyer provided data for UPGRADE products */}
+                          {item.productType === 'UPGRADE' && item.buyerProvidedData && (
+                            <div className="mb-3 p-2.5 bg-purple-50 rounded-lg border border-purple-100">
+                              <div className="flex items-center gap-1.5 text-xs text-purple-600 mb-1">
+                                <Mail className="w-3.5 h-3.5" />
+                                <span className="font-medium">Tài khoản cần nâng cấp:</span>
+                              </div>
+                              <div className="text-sm text-purple-800">
+                                {Object.entries(item.buyerProvidedData).map(([key, value]) => (
+                                  <div key={key}>
+                                    {key === 'email' && <span>{value}</span>}
+                                    {key === 'username' && <span>@{value}</span>}
+                                    {key === 'password' && <span>••••••••</span>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
 
                           {/* Quantity Controls */}
                           <div className="flex items-center justify-between">

@@ -1,7 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  
+
+  // Redirect /favicon.ico to logo so Google Search shows custom icon
+  async redirects() {
+    return [
+      { source: '/favicon.ico', destination: '/images/bachhoa.png', permanent: true },
+    ];
+  },
+
   // Add headers to prevent Cloudflare from caching dynamic pages
   async headers() {
     return [

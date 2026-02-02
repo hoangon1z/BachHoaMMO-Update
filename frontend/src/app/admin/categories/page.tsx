@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, Edit, Trash2, FolderOpen, Package, X } from 'lucide-react';
+import { Plus, Edit, Trash2, FolderOpen, Package, X, ChevronRight, Folder } from 'lucide-react';
 import { PageHeader, StatsCard, EmptyState, ConfirmDialog } from '@/components/admin';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,9 @@ interface Category {
   description?: string;
   icon?: string;
   image?: string;
+  parentId?: string | null;
+  parent?: Category | null;
+  children?: Category[];
   _count?: { products: number };
 }
 
@@ -32,7 +35,15 @@ export default function AdminCategoriesPage() {
     description: '',
     icon: '',
     image: '',
+    parentId: '',
   });
+
+  // Get parent categories (categories without parentId)
+  const parentCategories = categories.filter(c => !c.parentId);
+  
+  // Get child categories count
+  const getChildrenCount = (parentId: string) => 
+    categories.filter(c => c.parentId === parentId).length;
 
   useEffect(() => {
     fetchCategories();
@@ -124,7 +135,7 @@ export default function AdminCategoriesPage() {
 
   const resetForm = () => {
     setEditingCategory(null);
-    setFormData({ name: '', slug: '', description: '', icon: '', image: '' });
+    setFormData({ name: '', slug: '', description: '', icon: '', image: '', parentId: '' });
   };
 
   const openEditModal = (category: Category) => {
@@ -135,6 +146,7 @@ export default function AdminCategoriesPage() {
       description: category.description || '',
       icon: category.icon || '',
       image: category.image || '',
+      parentId: category.parentId || '',
     });
     setShowModal(true);
   };
@@ -196,50 +208,132 @@ export default function AdminCategoriesPage() {
           />
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {categories.map((category) => (
-            <div key={category.id} className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-lg hover:border-gray-200 transition-all group">
-              <div className="flex items-start justify-between mb-4">
-                <div className="w-14 h-14 bg-amber-500 rounded-2xl flex items-center justify-center shadow-md">
-                  <FolderOpen className="w-7 h-7 text-white" />
+        <div className="space-y-6">
+          {/* Parent Categories */}
+          {parentCategories.map((parent) => {
+            const children = categories.filter(c => c.parentId === parent.id);
+            return (
+              <div key={parent.id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                {/* Parent Header */}
+                <div className="p-6 border-b border-gray-100 hover:bg-gray-50 transition-all group">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 bg-gradient-to-br from-amber-500 to-orange-500 rounded-2xl flex items-center justify-center shadow-md">
+                        <FolderOpen className="w-7 h-7 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-900">{parent.name}</h3>
+                        <p className="text-sm text-gray-500">{parent.slug}</p>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                            {children.length} danh mục con
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {parent._count?.products || 0} sản phẩm
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="sm" className="hover:bg-blue-50 hover:text-blue-600" onClick={() => openEditModal(parent)}>
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="hover:bg-red-50 hover:text-red-600"
+                        onClick={() => setDeleteModal({ isOpen: true, categoryId: parent.id })}
+                        disabled={(parent._count?.products || 0) > 0 || children.length > 0}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button variant="ghost" size="sm" className="hover:bg-blue-50 hover:text-blue-600" onClick={() => openEditModal(category)}>
-                    <Edit className="w-4 h-4" />
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="hover:bg-red-50 hover:text-red-600"
-                    onClick={() => setDeleteModal({ isOpen: true, categoryId: category.id })}
-                    disabled={(category._count?.products || 0) > 0}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-              
-              <h3 className="text-lg font-bold text-gray-900 mb-1">{category.name}</h3>
-              <p className="text-sm text-gray-500 mb-3">{category.slug}</p>
-              {category.description && (
-                <p className="text-sm text-gray-600 mb-4 line-clamp-2">{category.description}</p>
-              )}
-              
-              <div className="pt-4 border-t border-gray-100 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Package className="w-4 h-4 text-gray-400" />
-                  <span className="text-sm font-medium text-gray-600">
-                    {category._count?.products || 0} sản phẩm
-                  </span>
-                </div>
-                {(category._count?.products || 0) > 0 && (
-                  <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
-                    Không thể xóa
-                  </span>
+                
+                {/* Children */}
+                {children.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-gray-50/50">
+                    {children.map((child) => (
+                      <div key={child.id} className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md hover:border-gray-200 transition-all group">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                            <Folder className="w-5 h-5 text-blue-600" />
+                          </div>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600" onClick={() => openEditModal(child)}>
+                              <Edit className="w-3 h-3" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600"
+                              onClick={() => setDeleteModal({ isOpen: true, categoryId: child.id })}
+                              disabled={(child._count?.products || 0) > 0}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        
+                        <h4 className="font-semibold text-gray-900 mb-1">{child.name}</h4>
+                        <p className="text-xs text-gray-500 mb-2">{child.slug}</p>
+                        
+                        <div className="flex items-center gap-2 text-xs text-gray-600">
+                          <Package className="w-3 h-3 text-gray-400" />
+                          <span>{child._count?.products || 0} sản phẩm</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
+            );
+          })}
+          
+          {/* Orphan categories (no parent) that are not parent themselves */}
+          {categories.filter(c => !c.parentId && !parentCategories.some(p => 
+            categories.some(child => child.parentId === c.id)
+          ) && categories.filter(child => child.parentId === c.id).length === 0).length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+              <div className="p-4 border-b border-gray-100 bg-gray-50">
+                <h3 className="font-semibold text-gray-700">Danh mục chưa phân loại</h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
+                {categories.filter(c => !c.parentId && categories.filter(child => child.parentId === c.id).length === 0).map((category) => (
+                  <div key={category.id} className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-all group">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center">
+                        <Folder className="w-5 h-5 text-gray-500" />
+                      </div>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600" onClick={() => openEditModal(category)}>
+                          <Edit className="w-3 h-3" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600"
+                          onClick={() => setDeleteModal({ isOpen: true, categoryId: category.id })}
+                          disabled={(category._count?.products || 0) > 0}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <h4 className="font-semibold text-gray-900 mb-1">{category.name}</h4>
+                    <p className="text-xs text-gray-500 mb-2">{category.slug}</p>
+                    
+                    <div className="flex items-center gap-2 text-xs text-gray-600">
+                      <Package className="w-3 h-3 text-gray-400" />
+                      <span>{category._count?.products || 0} sản phẩm</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
+          )}
         </div>
       )}
 
@@ -257,6 +351,26 @@ export default function AdminCategoriesPage() {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {/* Parent Category Selection */}
+              <div className="space-y-2">
+                <Label className="text-gray-700 font-medium">Danh mục cha</Label>
+                <select
+                  value={formData.parentId}
+                  onChange={(e) => setFormData({ ...formData, parentId: e.target.value })}
+                  className="w-full h-11 px-3 border border-gray-200 rounded-xl bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  <option value="">-- Không có (Danh mục gốc) --</option>
+                  {parentCategories
+                    .filter(c => c.id !== editingCategory?.id) // Exclude self when editing
+                    .map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500">
+                  Để trống nếu đây là danh mục cha (cấp cao nhất)
+                </p>
+              </div>
+
               <div className="space-y-2">
                 <Label className="text-gray-700 font-medium">Tên danh mục *</Label>
                 <Input
