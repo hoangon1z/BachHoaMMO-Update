@@ -53,6 +53,12 @@ export class WafService {
     },
   ];
 
+  /** Routes where body may contain command-like text (mô tả, code, tags) - skip COMMAND_INJECTION on body only */
+  private readonly bodyCommandInjectionExemptPaths = [
+    { method: 'POST', pathPrefix: '/seller/products' },
+    { method: 'PUT', pathPrefix: '/seller/products/' },
+  ];
+
   /**
    * Main WAF check - analyzes request for threats
    */
@@ -141,6 +147,11 @@ export class WafService {
     }
 
     // 6. Scan body for threats
+    const pathOnly = url.split('?')[0];
+    const skipBodyCommandInjection = this.bodyCommandInjectionExemptPaths.some(
+      (r) => r.method === method && pathOnly.startsWith(r.pathPrefix),
+    );
+
     if (body) {
       const bodyString = typeof body === 'string' ? body : JSON.stringify(body);
       
@@ -154,7 +165,8 @@ export class WafService {
         };
       }
 
-      const bodyThreats = this.scanForThreats(bodyString);
+      const bodyExclude = skipBodyCommandInjection ? ['COMMAND_INJECTION'] : undefined;
+      const bodyThreats = this.scanForThreats(bodyString, bodyExclude);
       threats.push(...bodyThreats.threats.map(t => `BODY_${t}`));
       if (bodyThreats.blocked) {
         blocked = true;
@@ -164,7 +176,7 @@ export class WafService {
 
       // Deep scan object values
       if (typeof body === 'object') {
-        const deepThreats = this.deepScanObject(body);
+        const deepThreats = this.deepScanObject(body, 0, bodyExclude);
         threats.push(...deepThreats.threats);
         if (deepThreats.blocked) {
           blocked = true;
@@ -195,14 +207,17 @@ export class WafService {
 
   /**
    * Scan string for threat patterns
+   * @param excludeThreatNames skip these threat types (e.g. COMMAND_INJECTION for seller product body)
    */
-  private scanForThreats(input: string): WafCheckResult {
+  private scanForThreats(input: string, excludeThreatNames?: string[]): WafCheckResult {
     const threats: string[] = [];
     let riskLevel = RiskLevel.LOW;
     let blocked = false;
     let reason: string | undefined;
+    const excludeSet = new Set(excludeThreatNames ?? []);
 
     for (const signature of this.threatSignatures) {
+      if (excludeSet.has(signature.name)) continue;
       for (const pattern of signature.patterns) {
         if (pattern.test(input)) {
           threats.push(signature.name);
@@ -222,8 +237,9 @@ export class WafService {
 
   /**
    * Deep scan object recursively
+   * @param excludeThreatNames skip these threat types when scanning values (e.g. COMMAND_INJECTION)
    */
-  private deepScanObject(obj: any, depth: number = 0): WafCheckResult {
+  private deepScanObject(obj: any, depth: number = 0, excludeThreatNames?: string[]): WafCheckResult {
     const threats: string[] = [];
     let riskLevel = RiskLevel.LOW;
     let blocked = false;
@@ -244,7 +260,7 @@ export class WafService {
     }
 
     for (const [key, value] of Object.entries(obj)) {
-      // Check key for threats
+      // Check key for threats (no exemption for keys)
       const keyThreats = this.scanForThreats(key);
       threats.push(...keyThreats.threats.map(t => `KEY_${t}`));
       if (keyThreats.blocked) {
@@ -255,7 +271,7 @@ export class WafService {
 
       // Check value
       if (typeof value === 'string') {
-        const valueThreats = this.scanForThreats(value);
+        const valueThreats = this.scanForThreats(value, excludeThreatNames);
         threats.push(...valueThreats.threats);
         if (valueThreats.blocked) {
           blocked = true;
@@ -263,7 +279,7 @@ export class WafService {
           riskLevel = this.getHigherRiskLevel(riskLevel, valueThreats.riskLevel);
         }
       } else if (typeof value === 'object' && value !== null) {
-        const deepThreats = this.deepScanObject(value, depth + 1);
+        const deepThreats = this.deepScanObject(value, depth + 1, excludeThreatNames);
         threats.push(...deepThreats.threats);
         if (deepThreats.blocked) {
           blocked = true;

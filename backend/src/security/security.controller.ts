@@ -240,4 +240,21 @@ export class SecurityController {
     this.rateLimitService.blockIp(ip, durationSeconds, 'Admin manual block');
     return { success: true, message: `IP ${ip} blocked for ${durationSeconds} seconds` };
   }
+
+  /**
+   * Unblock IP (admin only) - dùng query ?ip=::1 vì ::1 có dấu :
+   */
+  @Post('unblock-ip')
+  @UseGuards(JwtAuthGuard)
+  @Roles('ADMIN')
+  async unblockIp(@Query('ip') ip: string) {
+    if (!ip?.trim()) {
+      return { success: false, message: 'Thiếu tham số ip' };
+    }
+    const wasBlocked = this.rateLimitService.unblockIp(ip.trim());
+    return {
+      success: true,
+      message: wasBlocked ? `Đã gỡ block IP ${ip}` : `IP ${ip} không nằm trong danh sách block`,
+    };
+  }
 }

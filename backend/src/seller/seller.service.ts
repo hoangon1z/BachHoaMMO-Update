@@ -145,10 +145,15 @@ export class SellerService {
 
     const { variants, hasVariants, ...productData } = dto;
     const { originalPrice, ...productDataForPrisma } = productData as any;
-    const productPayload = { ...productDataForPrisma, salePrice: originalPrice, sellerId: userId, status: 'ACTIVE' };
+    let productPayload = { ...productDataForPrisma, salePrice: originalPrice ?? null, sellerId: userId, status: 'ACTIVE' as const };
 
     // If product has variants, create product with variants
     if (hasVariants && variants && variants.length > 0) {
+      const variantOriginalPrices = variants.map((v) => (v as any).originalPrice).filter((x): x is number => x != null && x > 0);
+      const maxVariantOriginalPrice = variantOriginalPrices.length > 0 ? Math.max(...variantOriginalPrices) : null;
+      if (maxVariantOriginalPrice != null && productPayload.salePrice == null) {
+        productPayload = { ...productPayload, salePrice: maxVariantOriginalPrice };
+      }
       return this.prisma.product.create({
         data: {
           ...productPayload,
@@ -238,7 +243,16 @@ export class SellerService {
       throw new NotFoundException('Không tìm thấy sản phẩm');
     }
 
-    return product;
+    // Map salePrice -> originalPrice cho form edit (API/frontend dùng originalPrice)
+    const variants = (product.variants || []).map((v: { salePrice?: number | null; [k: string]: any }) => ({
+      ...v,
+      originalPrice: v.salePrice ?? undefined,
+    }));
+    return {
+      ...product,
+      originalPrice: product.salePrice ?? undefined,
+      variants,
+    };
   }
 
   async updateProduct(userId: string, productId: string, dto: UpdateProductDto) {
@@ -322,6 +336,18 @@ export class SellerService {
               where: { id: { in: toDelete }, productId },
             });
           }
+          // Cập nhật product.salePrice = max(variant.salePrice) để card hiển thị giá gốc/giảm giá
+          const variantsAfter = await tx.productVariant.findMany({
+            where: { productId },
+            select: { price: true, salePrice: true },
+          });
+          const minPrice = Math.min(...variantsAfter.map((v) => v.price));
+          const variantSalePrices = variantsAfter.map((v) => v.salePrice).filter((x): x is number => x != null && x > 0);
+          const maxSalePrice = variantSalePrices.length > 0 ? Math.max(...variantSalePrices) : null;
+          await tx.product.update({
+            where: { id: productId },
+            data: { price: minPrice, salePrice: maxSalePrice },
+          });
         } else if (dtoHasVariants === false || (dtoVariants !== undefined && dtoVariants.length === 0)) {
           // Remove all variants if hasVariants is explicitly set to false
           await tx.productVariant.deleteMany({ where: { productId } });

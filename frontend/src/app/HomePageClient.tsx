@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useAuthStore } from '@/store/authStore';
+import { normalizeProduct } from '@/lib/utils';
 import { Header } from '@/components/Header';
 import { HeroSection } from '@/components/HeroSection';
 import { SmartCategories } from '@/components/SmartCategories';
@@ -95,18 +96,18 @@ export default function HomePageClient({
         <SmartCategories categories={initialCategories} />
       </div>
 
-      {/* Featured Products - Data from server */}
+      {/* Featured Products - Data from server (normalize salePrice -> originalPrice) */}
       <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-6">
         <FeaturedProducts 
-          products={initialFeaturedProducts} 
+          products={(initialFeaturedProducts || []).map((p: any) => normalizeProduct(p))} 
           title="Sản phẩm nổi bật"
         />
       </div>
 
-      {/* Latest Products - Data from server */}
+      {/* Latest Products - Data from server (có giảm giá: giá bán + giá gốc gạch ngang + badge % khi có originalPrice) */}
       <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-6">
         <FeaturedProducts 
-          products={initialLatestProducts} 
+          products={(initialLatestProducts || []).map((p: any) => normalizeProduct(p))} 
           title="Sản phẩm mới nhất"
         />
       </div>

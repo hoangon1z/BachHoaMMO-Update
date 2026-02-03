@@ -327,16 +327,16 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
                     </div>
                   )}
 
-                  {/* Price */}
+                  {/* Price: giá bán (currentPrice) chính, giá gốc (currentSalePrice) gạch ngang khi có giảm */}
                   <div className="mb-4 pb-4 border-b border-gray-100">
                     <div className="flex items-baseline gap-3">
-                      {currentSalePrice ? (
+                      {currentSalePrice && currentSalePrice > currentPrice ? (
                         <>
                           <span className="text-2xl font-bold text-red-500">
-                            {formatPrice(currentSalePrice)}
+                            {formatPrice(currentPrice)}
                           </span>
                           <span className="text-base text-gray-400 line-through">
-                            {formatPrice(currentPrice)}
+                            {formatPrice(currentSalePrice)}
                           </span>
                         </>
                       ) : (
@@ -345,9 +345,9 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
                         </span>
                       )}
                     </div>
-                    {currentSalePrice && (
+                    {currentSalePrice && currentSalePrice > currentPrice && (
                       <p className="text-sm text-green-600 mt-2">
-                        Tiết kiệm {formatPrice(currentPrice - currentSalePrice)}
+                        Tiết kiệm {formatPrice(currentSalePrice - currentPrice)}
                       </p>
                     )}
                   </div>

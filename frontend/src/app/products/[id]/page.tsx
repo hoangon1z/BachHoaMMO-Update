@@ -13,7 +13,7 @@ function ProductStructuredData({ product, productUrl }: { product: any; productU
     ? (images[0].startsWith('http') ? images[0] : `${SITE_URL}${images[0]}`)
     : `${SITE_URL}/images/logobachhoa.png`;
 
-  const price = product.originalPrice || product.price;
+  const price = product.price; // Giá bán (khách trả) cho SEO
   const description = typeof product.description === 'string'
     ? product.description.replace(/<[^>]*>/g, '').slice(0, 500)
     : '';

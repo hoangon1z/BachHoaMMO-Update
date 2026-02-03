@@ -128,6 +128,19 @@ export class RateLimitService {
   }
 
   /**
+   * Unblock IP (gỡ block thủ công)
+   */
+  unblockIp(ip: string): boolean {
+    const had = this.blockedIps.has(ip);
+    this.blockedIps.delete(ip);
+    if (had) {
+      this.suspiciousActivity.delete(ip); // reset suspicious count
+      this.logger.log(`Unblocked IP: ${ip}`);
+    }
+    return had;
+  }
+
+  /**
    * Track suspicious activity
    */
   trackSuspiciousActivity(ip: string): number {
