@@ -8,7 +8,7 @@ interface CartItem {
   variantName?: string;
   title: string;
   price: number;
-  salePrice?: number;
+  originalPrice?: number;
   image: string;
   quantity: number;
   stock: number;
@@ -101,13 +101,10 @@ export const useCartStore = create<CartState>()(
       },
 
       getTotalPrice: () => {
-        // Filter out invalid items (quantity <= 0)
+        // Filter out invalid items (quantity <= 0). Giá tính tiền = giá bán (price)
         return get().items
           .filter(item => item.quantity > 0)
-          .reduce((total, item) => {
-            const price = item.salePrice || item.price;
-            return total + price * item.quantity;
-          }, 0);
+          .reduce((total, item) => total + item.price * item.quantity, 0);
       },
     }),
     {

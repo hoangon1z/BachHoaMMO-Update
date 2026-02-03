@@ -50,7 +50,7 @@ interface ProductCardProps {
     id: string;
     title: string;
     price: number;
-    salePrice?: number;
+    originalPrice?: number;
     thumbnail?: string;
     images: string;
     seller: {
@@ -80,8 +80,9 @@ export function ProductCard({ product }: ProductCardProps) {
     images = [];
   }
   const thumbnail = getImageUrl(images[0] || product.thumbnail || '');
-  const discount = product.salePrice 
-    ? Math.round(((product.price - product.salePrice) / product.price) * 100)
+  // Giá bán (price) = khách trả, giá gốc (originalPrice) = gạch ngang. Giảm % khi originalPrice > price
+  const discount = product.originalPrice && product.originalPrice > product.price
+    ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
     : 0;
 
   const formatPrice = (price: number) => {
@@ -175,13 +176,13 @@ export function ProductCard({ product }: ProductCardProps) {
           
           {/* Price */}
           <div className="flex items-baseline gap-1.5 flex-wrap">
-            {product.salePrice ? (
+            {product.originalPrice && product.originalPrice > product.price ? (
               <>
                 <span className="text-sm sm:text-lg font-bold text-red-500">
-                  {formatPrice(product.salePrice)}
+                  {formatPrice(product.price)}
                 </span>
                 <span className="text-[10px] sm:text-sm text-gray-400 line-through">
-                  {formatPrice(product.price)}
+                  {formatPrice(product.originalPrice)}
                 </span>
               </>
             ) : (

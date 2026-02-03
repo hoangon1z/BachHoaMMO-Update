@@ -8,7 +8,7 @@ interface Product {
   id: string;
   title: string;
   price: number;
-  salePrice?: number;
+  originalPrice?: number;
   image: string;
   rating: number;
   sold: number;
@@ -29,7 +29,7 @@ export function RelatedProducts({ categoryId, currentProductId }: RelatedProduct
         id: '2',
         title: 'Spotify Premium 1 Tháng',
         price: 50000,
-        salePrice: 39000,
+        originalPrice: 39000,
         image: 'https://picsum.photos/seed/spotify/300/300',
         rating: 4.7,
         sold: 523,
@@ -38,7 +38,7 @@ export function RelatedProducts({ categoryId, currentProductId }: RelatedProduct
         id: '3',
         title: 'YouTube Premium 1 Tháng',
         price: 80000,
-        salePrice: 69000,
+        originalPrice: 69000,
         image: 'https://picsum.photos/seed/youtube/300/300',
         rating: 4.9,
         sold: 892,
@@ -55,7 +55,7 @@ export function RelatedProducts({ categoryId, currentProductId }: RelatedProduct
         id: '5',
         title: 'Amazon Prime Video',
         price: 70000,
-        salePrice: 59000,
+        originalPrice: 59000,
         image: 'https://picsum.photos/seed/amazon/300/300',
         rating: 4.5,
         sold: 345,
@@ -77,9 +77,9 @@ export function RelatedProducts({ categoryId, currentProductId }: RelatedProduct
     return null;
   }
 
-  const discount = (price: number, salePrice?: number) => {
-    if (!salePrice) return 0;
-    return Math.round(((price - salePrice) / price) * 100);
+  const discount = (price: number, originalPrice?: number) => {
+    if (!originalPrice || originalPrice <= price) return 0;
+    return Math.round(((originalPrice - price) / originalPrice) * 100);
   };
 
   return (
@@ -93,9 +93,9 @@ export function RelatedProducts({ categoryId, currentProductId }: RelatedProduct
                 alt={product.title}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform"
               />
-              {product.salePrice && (
+              {product.originalPrice && (
                 <div className="absolute top-2 left-2 px-2 py-1 bg-red-600 text-white text-xs font-bold rounded">
-                  -{discount(product.price, product.salePrice)}%
+                  -{discount(product.price, product.originalPrice)}%
                 </div>
               )}
             </div>
@@ -111,11 +111,11 @@ export function RelatedProducts({ categoryId, currentProductId }: RelatedProduct
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="text-base font-bold text-red-600">
-                  {(product.salePrice || product.price).toLocaleString('vi-VN')}đ
+                  {product.price.toLocaleString('vi-VN')}đ
                 </span>
-                {product.salePrice && (
+                {product.originalPrice && product.originalPrice > product.price && (
                   <span className="text-xs text-muted-foreground line-through">
-                    {product.price.toLocaleString('vi-VN')}đ
+                    {product.originalPrice.toLocaleString('vi-VN')}đ
                   </span>
                 )}
               </div>

@@ -55,13 +55,14 @@ const getCategoryIcon = (slug: string) => {
 };
 import Link from 'next/link';
 import { apiFetch } from '@/lib/config';
+import { normalizeProduct } from '@/lib/utils';
 
 interface Product {
   id: string;
   title: string;
   description: string;
   price: number;
-  salePrice?: number;
+  originalPrice?: number;
   images: string;
   stock: number;
   sales: number;
@@ -193,7 +194,7 @@ function ExplorePageContent() {
       const response = await apiFetch(`/products?${params}`);
       if (response.ok) {
         const data = await response.json();
-        setProducts(data.products || []);
+        setProducts((data.products || []).map((p: any) => normalizeProduct(p)));
         // API returns total, page, totalPages directly in response (not nested in pagination)
         setPagination(prev => ({
           ...prev,
@@ -511,8 +512,8 @@ function ExplorePageContent() {
                   {products.map((product) => {
                     let images: string[] = [];
                     try { images = JSON.parse(product.images); } catch {}
-                    const discount = product.salePrice && product.price > product.salePrice
-                      ? Math.round((1 - product.salePrice / product.price) * 100)
+                    const discount = product.originalPrice && product.originalPrice > product.price
+                      ? Math.round((1 - product.price / product.originalPrice) * 100)
                       : 0;
 
                     return (
@@ -543,11 +544,11 @@ function ExplorePageContent() {
                             </div>
                             <div className="flex items-baseline gap-2">
                               <span className="text-lg font-bold text-blue-600">
-                                {(product.salePrice || product.price).toLocaleString('vi-VN')}đ
+                                {product.price.toLocaleString('vi-VN')}đ
                               </span>
-                              {product.salePrice && product.salePrice < product.price && (
+                              {product.originalPrice && product.originalPrice > product.price && (
                                 <span className="text-xs text-gray-400 line-through">
-                                  {product.price.toLocaleString('vi-VN')}đ
+                                  {product.originalPrice.toLocaleString('vi-VN')}đ
                                 </span>
                               )}
                             </div>
@@ -588,11 +589,11 @@ function ExplorePageContent() {
                             </div>
                             <div className="flex items-baseline gap-2">
                               <span className="text-xl font-bold text-blue-600">
-                                {(product.salePrice || product.price).toLocaleString('vi-VN')}đ
+                                {product.price.toLocaleString('vi-VN')}đ
                               </span>
-                              {product.salePrice && product.salePrice < product.price && (
+                              {product.originalPrice && product.originalPrice > product.price && (
                                 <span className="text-sm text-gray-400 line-through">
-                                  {product.price.toLocaleString('vi-VN')}đ
+                                  {product.originalPrice.toLocaleString('vi-VN')}đ
                                 </span>
                               )}
                             </div>

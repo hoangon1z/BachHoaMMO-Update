@@ -1,8 +1,9 @@
 'use client';
 
-import { Store, Star, Package, Clock } from 'lucide-react';
+import { Store, Star, Package, Clock, MessageCircle } from 'lucide-react';
 import { Button } from './ui/button';
 import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/store/authStore';
 
 interface Seller {
   id: string;
@@ -15,14 +16,35 @@ interface Seller {
 
 interface SellerInfoProps {
   seller: Seller;
+  productId?: string;
+  productTitle?: string;
 }
 
-export function SellerInfo({ seller }: SellerInfoProps) {
+export function SellerInfo({ seller, productId, productTitle }: SellerInfoProps) {
   const router = useRouter();
+  const { user } = useAuthStore();
 
   const joinedMonths = Math.floor(
     (new Date().getTime() - new Date(seller.joinDate).getTime()) / (1000 * 60 * 60 * 24 * 30)
   );
+
+  const handleChatWithSeller = () => {
+    if (!user) {
+      router.push('/login?redirect=' + encodeURIComponent(window.location.pathname));
+      return;
+    }
+
+    // Navigate to messages page with seller info
+    const params = new URLSearchParams({
+      seller: seller.id,
+      sellerName: seller.name,
+    });
+    
+    if (productId) params.append('productId', productId);
+    if (productTitle) params.append('productTitle', productTitle);
+    
+    router.push(`/messages?${params.toString()}`);
+  };
 
   return (
     <div className="bg-card rounded-lg border p-6">
@@ -89,9 +111,15 @@ export function SellerInfo({ seller }: SellerInfoProps) {
           className="w-full"
           onClick={() => router.push(`/shop/${seller.id}`)}
         >
+          <Store className="w-4 h-4 mr-2" />
           Xem shop
         </Button>
-        <Button variant="outline" className="w-full">
+        <Button 
+          variant="default" 
+          className="w-full"
+          onClick={handleChatWithSeller}
+        >
+          <MessageCircle className="w-4 h-4 mr-2" />
           Chat với shop
         </Button>
       </div>

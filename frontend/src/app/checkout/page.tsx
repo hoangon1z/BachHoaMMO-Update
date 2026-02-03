@@ -113,7 +113,7 @@ export default function CheckoutPage() {
           items: items.map(item => ({
             productId: item.productId,
             quantity: item.quantity,
-            price: item.salePrice || item.price,
+            price: item.originalPrice || item.price,
             // Include buyer provided data for UPGRADE products
             buyerProvidedData: item.buyerProvidedData 
               ? JSON.stringify(item.buyerProvidedData) 
@@ -227,7 +227,7 @@ export default function CheckoutPage() {
                           <h3 className="font-medium text-gray-900 truncate">{item.title}</h3>
                           <p className="text-sm text-gray-500 mt-1">Số lượng: {item.quantity}</p>
                           <p className="text-blue-600 font-semibold mt-2">
-                            {((item.salePrice || item.price) * item.quantity).toLocaleString('vi-VN')}đ
+                            {((item.originalPrice || item.price) * item.quantity).toLocaleString('vi-VN')}đ
                           </p>
                         </div>
                       </div>

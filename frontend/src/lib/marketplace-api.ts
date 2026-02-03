@@ -17,7 +17,7 @@ export interface Product {
   title: string;
   description: string;
   price: number;
-  salePrice?: number;
+  originalPrice?: number;
   thumbnail?: string;
   images: string;
   stock: number;
@@ -105,7 +105,7 @@ export const marketplaceApi = {
     title: string;
     description: string;
     price: number;
-    salePrice?: number;
+    originalPrice?: number;
     stock: number;
     images: string;
     categoryId: string;

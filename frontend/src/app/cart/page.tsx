@@ -138,13 +138,13 @@ export default function CartPage() {
                           </Link>
                           
                           <div className="flex items-center gap-3 mb-3">
-                            {item.salePrice ? (
+                            {item.originalPrice && item.originalPrice > item.price ? (
                               <>
                                 <span className="text-lg font-bold text-red-500">
-                                  {formatPrice(item.salePrice)}
+                                  {formatPrice(item.price)}
                                 </span>
                                 <span className="text-sm text-gray-400 line-through">
-                                  {formatPrice(item.price)}
+                                  {formatPrice(item.originalPrice)}
                                 </span>
                               </>
                             ) : (

@@ -15,7 +15,7 @@ interface ProductVariant {
   id: string;
   name: string;
   price: number;
-  salePrice?: number;
+  originalPrice?: number;
   stock: number;
 }
 
@@ -24,7 +24,7 @@ interface Product {
   title: string;
   description: string;
   price: number;
-  salePrice?: number;
+  originalPrice?: number;
   stock: number;
   images: string[];
   hasVariants?: boolean;
@@ -82,11 +82,15 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
         body: JSON.stringify({
           sellerId: product.seller.id,
           productId: product.id,
+          message: `Xin chào! Tôi quan tâm đến sản phẩm: ${product.title}`,
         }),
       });
 
       const data = await response.json();
+      console.log('[ProductDetail] Start chat response:', data);
+      
       if (data.success && data.conversation) {
+        console.log('[ProductDetail] Redirecting to conversation:', data.conversation._id);
         // Redirect to messages page with conversation ID
         router.push(`/messages?id=${data.conversation._id}`);
       } else {
@@ -119,7 +123,7 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
 
   // Get current price and stock based on variant selection
   const currentPrice = selectedVariant?.price ?? product.price;
-  const currentSalePrice = selectedVariant?.salePrice ?? product.salePrice;
+  const currentSalePrice = selectedVariant?.originalPrice ?? product.originalPrice;
   const currentStock = selectedVariant?.stock ?? product.stock;
   
   // Check if product can be purchased
@@ -164,7 +168,7 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
       variantName: selectedVariant?.name,
       title: selectedVariant ? `${product.title} - ${selectedVariant.name}` : product.title,
       price: currentPrice,
-      salePrice: currentSalePrice,
+      originalPrice: currentSalePrice,
       image: product.images[0] || '',
       stock: isUpgradeProduct ? 999 : currentStock, // UPGRADE products don't need stock limit
       sellerId: product.seller.id,

@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/Toast';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import {
   ArrowLeft,
   Upload,
@@ -110,6 +111,14 @@ export default function InventoryPage() {
 
   // Selected items for bulk actions
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+
+  // Delete confirmation dialogs
+  const [deleteDialog, setDeleteDialog] = useState<{
+    isOpen: boolean;
+    type: 'single' | 'bulk' | null;
+    inventoryId: string | null;
+  }>({ isOpen: false, type: null, inventoryId: null });
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -275,55 +284,59 @@ export default function InventoryPage() {
     }
   };
 
-  const handleDeleteItem = async (inventoryId: string) => {
-    if (!confirm('Bạn có chắc muốn xóa tài khoản này?')) return;
+  const handleDeleteItemClick = (inventoryId: string) => {
+    setDeleteDialog({ isOpen: true, type: 'single', inventoryId });
+  };
 
+  const handleBulkDeleteClick = () => {
+    if (selectedItems.size === 0) return;
+    setDeleteDialog({ isOpen: true, type: 'bulk', inventoryId: null });
+  };
+
+  const handleDeleteConfirm = async () => {
+    setIsDeleting(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`/api/seller/inventory/${inventoryId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
 
-      if (res.ok) {
-        fetchInventory();
-        toast.success('Đã xóa', 'Tài khoản đã được xóa khỏi kho');
-      } else {
-        const data = await res.json();
-        toast.error('Lỗi', data.message || 'Không thể xóa tài khoản');
+      if (deleteDialog.type === 'single' && deleteDialog.inventoryId) {
+        const res = await fetch(`/api/seller/inventory/${deleteDialog.inventoryId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (res.ok) {
+          fetchInventory();
+          toast.success('Đã xóa', 'Tài khoản đã được xóa khỏi kho');
+          setDeleteDialog({ isOpen: false, type: null, inventoryId: null });
+        } else {
+          const data = await res.json();
+          toast.error('Lỗi', data.message || 'Không thể xóa tài khoản');
+        }
+      } else if (deleteDialog.type === 'bulk') {
+        const res = await fetch(`/api/seller/products/${productId}/inventory`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ inventoryIds: Array.from(selectedItems) }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          toast.success('Đã xóa', `Đã xóa ${data.deleted} tài khoản khỏi kho`);
+          setSelectedItems(new Set());
+          fetchInventory();
+          setDeleteDialog({ isOpen: false, type: null, inventoryId: null });
+        } else {
+          toast.error('Lỗi', 'Không thể xóa các tài khoản đã chọn');
+        }
       }
     } catch (error) {
       console.error('Delete failed:', error);
-      toast.error('Lỗi', 'Không thể xóa tài khoản. Vui lòng thử lại.');
-    }
-  };
-
-  const handleBulkDelete = async () => {
-    if (selectedItems.size === 0) return;
-    if (!confirm(`Bạn có chắc muốn xóa ${selectedItems.size} tài khoản?`)) return;
-
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`/api/seller/products/${productId}/inventory`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ inventoryIds: Array.from(selectedItems) }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        toast.success('Đã xóa', `Đã xóa ${data.deleted} tài khoản khỏi kho`);
-        setSelectedItems(new Set());
-        fetchInventory();
-      } else {
-        toast.error('Lỗi', 'Không thể xóa các tài khoản đã chọn');
-      }
-    } catch (error) {
-      console.error('Bulk delete failed:', error);
       toast.error('Lỗi', 'Không thể xóa. Vui lòng thử lại.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -534,7 +547,7 @@ export default function InventoryPage() {
           {selectedItems.size > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-500">Đã chọn {selectedItems.size}</span>
-              <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
+              <Button variant="destructive" size="sm" onClick={handleBulkDeleteClick}>
                 <Trash2 className="w-4 h-4 mr-1" />
                 Xóa
               </Button>
@@ -643,7 +656,7 @@ export default function InventoryPage() {
                           variant="ghost"
                           size="sm"
                           className="text-red-600 hover:text-red-700"
-                          onClick={() => handleDeleteItem(item.id)}
+                          onClick={() => handleDeleteItemClick(item.id)}
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -826,6 +839,24 @@ export default function InventoryPage() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={deleteDialog.isOpen}
+        onClose={() => setDeleteDialog({ isOpen: false, type: null, inventoryId: null })}
+        onConfirm={handleDeleteConfirm}
+        title={deleteDialog.type === 'bulk' ? 'Xóa nhiều tài khoản' : 'Xóa tài khoản'}
+        description={
+          deleteDialog.type === 'bulk'
+            ? `Bạn có chắc muốn xóa ${selectedItems.size} tài khoản đã chọn? Hành động này không thể hoàn tác.`
+            : 'Bạn có chắc muốn xóa tài khoản này? Hành động này không thể hoàn tác.'
+        }
+        confirmText="Xóa"
+        cancelText="Hủy"
+        variant="danger"
+        isLoading={isDeleting}
+        icon={<Trash2 className="w-7 h-7" />}
+      />
     </div>
   );
 }

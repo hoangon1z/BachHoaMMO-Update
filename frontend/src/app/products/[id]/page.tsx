@@ -13,7 +13,7 @@ function ProductStructuredData({ product, productUrl }: { product: any; productU
     ? (images[0].startsWith('http') ? images[0] : `${SITE_URL}${images[0]}`)
     : `${SITE_URL}/images/logobachhoa.png`;
 
-  const price = product.salePrice || product.price;
+  const price = product.originalPrice || product.price;
   const description = typeof product.description === 'string'
     ? product.description.replace(/<[^>]*>/g, '').slice(0, 500)
     : '';
@@ -169,7 +169,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
     title: data.title,
     description: data.description,
     price: data.price,
-    salePrice: data.salePrice,
+    originalPrice: data.originalPrice ?? data.salePrice,
     stock: data.stock,
     images: images || [],
     category: { 
@@ -198,7 +198,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
       id: v.id,
       name: v.name,
       price: v.price,
-      salePrice: v.salePrice,
+      originalPrice: v.originalPrice ?? v.salePrice,
       stock: v.stock,
       sku: v.sku,
       attributes: v.attributes,

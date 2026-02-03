@@ -27,7 +27,9 @@ export function ConversationList({ onSelectConversation, selectedId, filter, cha
   const { user } = useAuthStore();
   const { conversations, isLoading, loadConversations } = chatHook;
 
+  // Load conversations on mount and when filter changes
   useEffect(() => {
+    console.log('[ConversationList] Loading conversations with filter:', filter);
     loadConversations(filter);
   }, [filter?.status, filter?.type]);
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { PageHeader } from '@/components/admin';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { 
   Gavel, 
@@ -60,6 +61,11 @@ export default function AdminAuctionPage() {
   const [auctions, setAuctions] = useState<Auction[]>([]);
   const [currentAuction, setCurrentAuction] = useState<CurrentAuction | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    type: 'finalize' | 'cancel' | null;
+    auctionId: string | null;
+  }>({ isOpen: false, type: null, auctionId: null });
 
   useEffect(() => {
     const init = async () => {
@@ -101,45 +107,31 @@ export default function AdminAuctionPage() {
     }
   };
 
-  const handleFinalize = async (auctionId: string) => {
-    if (!confirm('Bạn có chắc muốn kết thúc đấu giá này? Hành động này không thể hoàn tác.')) {
-      return;
-    }
-
-    setIsProcessing(true);
-    try {
-      const res = await fetch(`/api/admin/auction/${auctionId}/finalize`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      
-      if (res.ok) {
-        fetchData();
-      }
-    } catch (error) {
-      console.error('Error finalizing auction:', error);
-    } finally {
-      setIsProcessing(false);
-    }
+  const handleFinalizeClick = (auctionId: string) => {
+    setConfirmDialog({ isOpen: true, type: 'finalize', auctionId });
   };
 
-  const handleCancel = async (auctionId: string) => {
-    if (!confirm('Bạn có chắc muốn hủy đấu giá này? Tất cả tiền đặt cọc sẽ được hoàn lại.')) {
-      return;
-    }
+  const handleCancelClick = (auctionId: string) => {
+    setConfirmDialog({ isOpen: true, type: 'cancel', auctionId });
+  };
+
+  const handleConfirmAction = async () => {
+    if (!confirmDialog.auctionId || !confirmDialog.type) return;
 
     setIsProcessing(true);
     try {
-      const res = await fetch(`/api/admin/auction/${auctionId}/cancel`, {
+      const endpoint = confirmDialog.type === 'finalize' ? 'finalize' : 'cancel';
+      const res = await fetch(`/api/admin/auction/${confirmDialog.auctionId}/${endpoint}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
       
       if (res.ok) {
         fetchData();
+        setConfirmDialog({ isOpen: false, type: null, auctionId: null });
       }
     } catch (error) {
-      console.error('Error cancelling auction:', error);
+      console.error(`Error ${confirmDialog.type}ing auction:`, error);
     } finally {
       setIsProcessing(false);
     }
@@ -270,7 +262,7 @@ export default function AdminAuctionPage() {
             {currentAuction.status === 'ACTIVE' && (
               <div className="flex gap-3">
                 <Button
-                  onClick={() => handleFinalize(currentAuction.id)}
+                  onClick={() => handleFinalizeClick(currentAuction.id)}
                   disabled={isProcessing}
                   className="flex-1"
                 >
@@ -278,7 +270,7 @@ export default function AdminAuctionPage() {
                   Kết thúc ngay
                 </Button>
                 <Button
-                  onClick={() => handleCancel(currentAuction.id)}
+                  onClick={() => handleCancelClick(currentAuction.id)}
                   disabled={isProcessing}
                   variant="destructive"
                   className="flex-1"
@@ -415,6 +407,24 @@ export default function AdminAuctionPage() {
           </table>
         </div>
       </div>
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog({ isOpen: false, type: null, auctionId: null })}
+        onConfirm={handleConfirmAction}
+        title={confirmDialog.type === 'finalize' ? 'Kết thúc đấu giá' : 'Hủy đấu giá'}
+        description={
+          confirmDialog.type === 'finalize'
+            ? 'Bạn có chắc muốn kết thúc đấu giá này? Hành động này không thể hoàn tác.'
+            : 'Bạn có chắc muốn hủy đấu giá này? Tất cả tiền đặt cọc sẽ được hoàn lại.'
+        }
+        confirmText={confirmDialog.type === 'finalize' ? 'Kết thúc' : 'Hủy đấu giá'}
+        cancelText="Đóng"
+        variant={confirmDialog.type === 'finalize' ? 'warning' : 'danger'}
+        isLoading={isProcessing}
+        icon={confirmDialog.type === 'finalize' ? <CheckCircle className="w-7 h-7" /> : <XCircle className="w-7 h-7" />}
+      />
     </div>
   );
 }

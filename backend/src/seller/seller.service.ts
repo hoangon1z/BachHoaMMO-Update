@@ -61,6 +61,13 @@ export class SellerService {
             name: true,
             balance: true,
             createdAt: true,
+            _count: {
+              select: {
+                sales: {
+                  where: { status: 'COMPLETED' },
+                },
+              },
+            },
           },
         },
       },
@@ -70,7 +77,22 @@ export class SellerService {
       throw new NotFoundException('Không tìm thấy cửa hàng');
     }
 
-    return store;
+    // Get review count and average rating from reviews
+    const reviewStats = await this.prisma.review.aggregate({
+      where: {
+        sellerId: userId,
+      },
+      _avg: { rating: true },
+      _count: { rating: true },
+    });
+
+    // Return store with computed real data
+    return {
+      ...store,
+      totalSales: store.user._count.sales || store.totalSales || 0,
+      rating: reviewStats._avg.rating || store.rating || 0,
+      reviewCount: reviewStats._count.rating || 0,
+    };
   }
 
   async updateStore(userId: string, dto: UpdateStoreDto) {
@@ -122,23 +144,23 @@ export class SellerService {
     }
 
     const { variants, hasVariants, ...productData } = dto;
+    const { originalPrice, ...productDataForPrisma } = productData as any;
+    const productPayload = { ...productDataForPrisma, salePrice: originalPrice, sellerId: userId, status: 'ACTIVE' };
 
     // If product has variants, create product with variants
     if (hasVariants && variants && variants.length > 0) {
       return this.prisma.product.create({
         data: {
-          ...productData,
-          sellerId: userId,
-          status: 'ACTIVE',
+          ...productPayload,
           hasVariants: true,
           variants: {
             create: variants.map((v, index) => ({
               name: v.name,
               price: v.price,
-              salePrice: v.salePrice,
+              salePrice: (v as any).originalPrice ?? null,
               stock: v.stock,
-              sku: v.sku,
-              attributes: v.attributes,
+              sku: (v as any).sku,
+              attributes: (v as any).attributes,
               position: index,
             })),
           },
@@ -154,11 +176,7 @@ export class SellerService {
 
     // No variants - create simple product
     return this.prisma.product.create({
-      data: {
-        ...productData,
-        sellerId: userId,
-        status: 'ACTIVE',
-      },
+      data: productPayload,
       include: {
         category: true,
         variants: true,
@@ -169,9 +187,12 @@ export class SellerService {
   async getProducts(userId: string, page = 1, limit = 10, status?: string) {
     const skip = (page - 1) * limit;
     const where: any = { sellerId: userId };
-    
+
+    // Mặc định chỉ hiển thị đang bán + hết hàng (không hiện "ngừng bán" / đã xóa)
     if (status) {
       where.status = status;
+    } else {
+      where.status = { in: ['ACTIVE', 'OUT_OF_STOCK'] };
     }
 
     const [products, total] = await Promise.all([
@@ -206,6 +227,10 @@ export class SellerService {
       },
       include: {
         category: true,
+        variants: {
+          where: { isActive: true },
+          orderBy: { position: 'asc' },
+        },
       },
     });
 
@@ -222,19 +247,109 @@ export class SellerService {
         id: productId,
         sellerId: userId,
       },
+      include: { variants: true },
     });
 
     if (!product) {
       throw new NotFoundException('Không tìm thấy sản phẩm');
     }
 
-    return this.prisma.product.update({
-      where: { id: productId },
-      data: dto,
-      include: {
-        category: true,
-      },
-    });
+    const { variants: dtoVariants, hasVariants: dtoHasVariants, ...productData } = dto;
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Build update data: API dùng originalPrice, Prisma dùng salePrice
+        const { originalPrice, ...rest } = productData as any;
+        const updateData: any = { ...rest, ...(originalPrice !== undefined && { salePrice: originalPrice }) };
+        if (dtoHasVariants !== undefined) {
+          updateData.hasVariants = dtoHasVariants;
+        }
+
+        // Update product fields (no variants - relation handled below)
+        await tx.product.update({
+          where: { id: productId },
+          data: updateData,
+        });
+
+        // Sync variants if provided
+        if (dtoHasVariants === true && dtoVariants && dtoVariants.length > 0) {
+          // Validate variants data
+          for (const v of dtoVariants) {
+            if (!v.name || v.name.trim().length === 0) {
+              throw new BadRequestException('Tên phân loại không được để trống');
+            }
+            if (v.price === undefined || v.price < 0) {
+              throw new BadRequestException('Giá phân loại không hợp lệ');
+            }
+            if (v.stock === undefined || v.stock < 0) {
+              throw new BadRequestException('Số lượng phân loại không hợp lệ');
+            }
+          }
+
+          const existingIds = product.variants.map((v) => v.id);
+          const dtoIds = dtoVariants.filter((v) => v.id).map((v) => v.id!);
+
+          // Update existing variants, create new ones
+          for (let i = 0; i < dtoVariants.length; i++) {
+            const v = dtoVariants[i];
+            const payload = {
+              name: v.name,
+              price: v.price,
+              salePrice: (v as any).originalPrice ?? null,
+              stock: v.stock,
+              position: i,
+            };
+            
+            if (v.id && existingIds.includes(v.id)) {
+              await tx.productVariant.update({
+                where: { id: v.id },
+                data: payload,
+              });
+            } else {
+              await tx.productVariant.create({
+                data: {
+                  productId,
+                  ...payload,
+                },
+              });
+            }
+          }
+
+          // Delete variants removed from list
+          const toDelete = existingIds.filter((id) => !dtoIds.includes(id));
+          if (toDelete.length > 0) {
+            await tx.productVariant.deleteMany({
+              where: { id: { in: toDelete }, productId },
+            });
+          }
+        } else if (dtoHasVariants === false || (dtoVariants !== undefined && dtoVariants.length === 0)) {
+          // Remove all variants if hasVariants is explicitly set to false
+          await tx.productVariant.deleteMany({ where: { productId } });
+          await tx.product.update({
+            where: { id: productId },
+            data: { hasVariants: false },
+          });
+        }
+
+        return tx.product.findUniqueOrThrow({
+          where: { id: productId },
+          include: { category: true, variants: { orderBy: { position: 'asc' } } },
+        });
+      });
+    } catch (error) {
+      // Log error for debugging
+      console.error('Error updating product:', error);
+      
+      // Re-throw BadRequestException as-is
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        throw error;
+      }
+      
+      // Wrap other errors in BadRequestException
+      throw new BadRequestException(
+        error?.message || 'Không thể cập nhật sản phẩm. Vui lòng kiểm tra dữ liệu và thử lại.'
+      );
+    }
   }
 
   async updateStock(userId: string, productId: string, dto: UpdateStockDto) {
@@ -266,16 +381,25 @@ export class SellerService {
         id: productId,
         sellerId: userId,
       },
+      include: {
+        orderItems: { take: 1 },
+      },
     });
 
     if (!product) {
       throw new NotFoundException('Không tìm thấy sản phẩm');
     }
 
-    // Soft delete by setting status to INACTIVE
-    return this.prisma.product.update({
+    // Không cho xóa hẳn nếu sản phẩm đã có trong đơn hàng
+    if (product.orderItems && product.orderItems.length > 0) {
+      throw new BadRequestException(
+        'Không thể xóa sản phẩm đã có đơn hàng. Vui lòng chọn "Ngừng bán" thay vì xóa.',
+      );
+    }
+
+    // Xóa hẳn khỏi DB (cascade: variants, cart items, inventory)
+    return this.prisma.product.delete({
       where: { id: productId },
-      data: { status: 'INACTIVE' },
     });
   }
 

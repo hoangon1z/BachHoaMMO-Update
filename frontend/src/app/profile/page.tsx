@@ -117,13 +117,18 @@ export default function ProfilePage() {
     // Validate file type
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
-      setSaveMessage({ type: 'error', text: 'Chỉ chấp nhận file ảnh (jpeg, jpg, png, gif, webp)' });
+      setSaveMessage({ type: 'error', text: 'Chỉ chấp nhận file ảnh (JPG, PNG, GIF, WEBP)' });
       return;
     }
 
-    // Validate file size (5MB max)
-    if (file.size > 5 * 1024 * 1024) {
-      setSaveMessage({ type: 'error', text: 'File ảnh không được vượt quá 5MB' });
+    // Validate file size (5MB max - backend/server limit)
+    const maxSize = 5 * 1024 * 1024; // 5MB for all file types
+    if (file.size > maxSize) {
+      const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+      setSaveMessage({ 
+        type: 'error', 
+        text: `File quá lớn (${fileSizeMB}MB). Vui lòng chọn file nhỏ hơn 5MB${file.type === 'image/gif' ? '. Tip: Nén GIF tại ezgif.com' : ''}` 
+      });
       return;
     }
 
@@ -226,11 +231,13 @@ export default function ProfilePage() {
                     accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
                     className="hidden"
                     onChange={handleAvatarUpload}
+                    title="Chọn ảnh đại diện (JPG, PNG, GIF, WEBP)"
                   />
                   <button 
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isUploadingAvatar}
                     className="absolute bottom-0 right-0 w-9 h-9 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-full flex items-center justify-center shadow-lg transition-colors"
+                    title="Chọn ảnh đại diện (hỗ trợ GIF động)"
                   >
                     <Camera className="w-4 h-4" />
                   </button>

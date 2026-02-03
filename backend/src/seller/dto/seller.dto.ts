@@ -43,7 +43,7 @@ export class ProductVariantDto {
   @IsOptional()
   @Min(0)
   @Max(999999999)
-  salePrice?: number;
+  originalPrice?: number;
 
   @IsNumber()
   @Min(0)
@@ -57,6 +57,36 @@ export class ProductVariantDto {
   @IsString()
   @IsOptional()
   attributes?: string;
+
+  @IsNumber()
+  @IsOptional()
+  position?: number;
+}
+
+// Product Variant DTO for update (optional id for existing variants)
+export class UpdateProductVariantDto {
+  @IsString()
+  @IsOptional()
+  id?: string;
+
+  @IsString()
+  name: string;
+
+  @IsNumber()
+  @Min(0)
+  @Max(999999999)
+  price: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(999999999)
+  originalPrice?: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(999999)
+  stock: number;
 
   @IsNumber()
   @IsOptional()
@@ -86,7 +116,7 @@ export class CreateProductDto {
   @IsOptional()
   @Min(0)
   @Max(999999999)
-  salePrice?: number;
+  originalPrice?: number;
 
   @IsNumber()
   @Min(0)
@@ -154,7 +184,7 @@ export class UpdateProductDto {
   @IsOptional()
   @Min(0)
   @Max(999999999)
-  salePrice?: number;
+  originalPrice?: number;
 
   @IsNumber()
   @IsOptional()
@@ -197,6 +227,16 @@ export class UpdateProductDto {
   @IsString()
   @IsOptional()
   requiredBuyerFields?: string; // JSON array các trường buyer cần cung cấp
+
+  @IsBoolean()
+  @IsOptional()
+  hasVariants?: boolean;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdateProductVariantDto)
+  @IsOptional()
+  variants?: UpdateProductVariantDto[];
 }
 
 export class UpdateStockDto {

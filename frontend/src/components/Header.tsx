@@ -9,7 +9,7 @@ import { UserProfileMenu } from './UserProfileMenu';
 import { useCartStore } from '@/store/cartStore';
 import { 
   ShoppingCart, Menu, X, Phone, Mail, ChevronDown, ChevronRight, User, LogIn, Shield, Gavel, Loader2,
-  Folder, MonitorPlay, Cpu, Music, MessageCircle, Video, GraduationCap, Globe, Package, Layers
+  Folder, MonitorPlay, Cpu, Music, MessageCircle, Video, GraduationCap, Globe, Package, Layers, Wrench
 } from 'lucide-react';
 import { NotificationDropdown } from './NotificationDropdown';
 import { apiFetch } from '@/lib/config';
@@ -249,13 +249,17 @@ export function Header({ user, onLogout, onSearch }: HeaderProps) {
 
             {/* Right Actions */}
             <div className="flex items-center gap-1 sm:gap-2 lg:gap-3">
-              {/* Contact - Desktop only */}
-              {/* <div className="hidden xl:flex items-center gap-4 mr-2 pr-4 border-r border-gray-200">
-                <a href="tel:0123456789" className="flex items-center gap-2 text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                  <Phone className="w-4 h-4" />
-                  <span></span>
-                </a>
-              </div> */}
+              {/* Tools Link - Desktop */}
+              <Link href="/tools" className="hidden lg:block">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-10 px-3 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-colors"
+                >
+                  <Wrench className="w-4 h-4 mr-1.5" />
+                  Công cụ
+                </Button>
+              </Link>
 
               {isLoading ? (
                 <div className="flex items-center gap-1 sm:gap-2">
@@ -420,6 +424,18 @@ export function Header({ user, onLogout, onSearch }: HeaderProps) {
               </div>
             </div>
             
+            {/* Tools Link - Mobile */}
+            <div className="pt-4 border-t border-gray-100">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Công cụ</p>
+              <button
+                className="w-full px-3 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors text-left font-medium flex items-center gap-2"
+                onClick={() => { setMobileMenuOpen(false); router.push('/tools'); }}
+              >
+                <Wrench className="w-4 h-4" />
+                Công cụ tiện ích (2FA, Check FB)
+              </button>
+            </div>
+
             {/* Quick Links */}
             <div className="pt-4 border-t border-gray-100">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Liên hệ</p>

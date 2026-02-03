@@ -80,6 +80,27 @@ export function ChatWindow({
     }
   }, [initialConversationId, sellerId, productId]);
 
+  // Auto-focus input when conversation is ready
+  useEffect(() => {
+    if (currentConversation && !isLoading) {
+      // Delay focus to ensure DOM is ready
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
+    }
+  }, [currentConversation?._id, isLoading]);
+
+  // Auto-focus on mount when conversation ID is provided
+  useEffect(() => {
+    if (initialConversationId || sellerId) {
+      // Focus after a short delay to ensure component is fully mounted
+      const timer = setTimeout(() => {
+        inputRef.current?.focus();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [initialConversationId, sellerId]);
+
   // Auto scroll to bottom on new messages
   const prevMessageCountRef = useRef(0);
   const isInitialLoadRef = useRef(true);
@@ -271,10 +292,18 @@ export function ChatWindow({
       setInputValue('');
       setSelectedImages([]);
       setImagePreviews([]);
-      inputRef.current?.focus();
+      
+      // Focus input after state updates complete
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 0);
     } catch (error) {
       console.error('Send message error:', error);
       setSendError('Không thể gửi tin nhắn. Vui lòng thử lại!');
+      // Focus input even on error
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 0);
     } finally {
       setIsSending(false);
       setIsUploading(false);

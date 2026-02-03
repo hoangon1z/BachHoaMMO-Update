@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 
 interface Withdrawal {
   id: string;
@@ -90,6 +91,11 @@ export default function SellerWithdrawalsPage() {
     bankHolder: '',
   });
   const [error, setError] = useState('');
+  const [cancelDialog, setCancelDialog] = useState<{ isOpen: boolean; withdrawalId: string | null }>({
+    isOpen: false,
+    withdrawalId: null,
+  });
+  const [isCanceling, setIsCanceling] = useState(false);
 
   useEffect(() => {
     fetchWithdrawals();
@@ -178,13 +184,18 @@ export default function SellerWithdrawalsPage() {
     }
   };
 
-  const handleCancel = async (id: string) => {
-    if (!confirm('Bạn có chắc muốn hủy yêu cầu rút tiền này?')) return;
+  const handleCancelClick = (id: string) => {
+    setCancelDialog({ isOpen: true, withdrawalId: id });
+  };
 
+  const handleCancelConfirm = async () => {
+    if (!cancelDialog.withdrawalId) return;
+
+    setIsCanceling(true);
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `/api/seller/withdrawals/${id}`,
+        `/api/seller/withdrawals/${cancelDialog.withdrawalId}`,
         {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` },
@@ -193,10 +204,13 @@ export default function SellerWithdrawalsPage() {
 
       if (response.ok) {
         fetchWithdrawals();
+        setCancelDialog({ isOpen: false, withdrawalId: null });
         window.location.reload();
       }
     } catch (error) {
       console.error('Error canceling withdrawal:', error);
+    } finally {
+      setIsCanceling(false);
     }
   };
 
@@ -301,7 +315,7 @@ export default function SellerWithdrawalsPage() {
                       variant="outline"
                       size="sm"
                       className="text-red-600 border-red-200 hover:bg-red-50"
-                      onClick={() => handleCancel(withdrawal.id)}
+                      onClick={() => handleCancelClick(withdrawal.id)}
                     >
                       Hủy
                     </Button>
@@ -428,6 +442,20 @@ export default function SellerWithdrawalsPage() {
           </div>
         </div>
       )}
+
+      {/* Cancel Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={cancelDialog.isOpen}
+        onClose={() => setCancelDialog({ isOpen: false, withdrawalId: null })}
+        onConfirm={handleCancelConfirm}
+        title="Hủy yêu cầu rút tiền"
+        description="Bạn có chắc muốn hủy yêu cầu rút tiền này? Số tiền sẽ được hoàn lại vào tài khoản của bạn."
+        confirmText="Hủy yêu cầu"
+        cancelText="Đóng"
+        variant="warning"
+        isLoading={isCanceling}
+        icon={<XCircle className="w-7 h-7" />}
+      />
     </div>
   );
 }

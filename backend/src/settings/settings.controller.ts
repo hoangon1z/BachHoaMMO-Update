@@ -1,9 +1,11 @@
 import { Controller, Get, Put, Body, UseGuards } from '@nestjs/common';
 import { SettingsService } from './settings.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Public } from '../security/decorators/security.decorators';
 
 // Public controller for site settings (no auth required)
 @Controller('settings')
+@Public()
 export class PublicSettingsController {
   constructor(private settingsService: SettingsService) {}
 

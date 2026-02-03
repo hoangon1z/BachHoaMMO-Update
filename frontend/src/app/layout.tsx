@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { Be_Vietnam_Pro } from "next/font/google";
+import { Inter } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://bachhoammo.store";
 
-const beVietnamPro = Be_Vietnam_Pro({ 
+const inter = Inter({ 
   subsets: ["latin", "vietnamese"],
   weight: ["300", "400", "500", "600", "700"],
 });
@@ -14,19 +14,28 @@ const beVietnamPro = Be_Vietnam_Pro({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "BachHoaMMO - Chợ MMO mua bán tài khoản game uy tín",
+    default: "BachHoaMMO - Mua tài khoản CapCut, Canva, Netflix, Spotify giá rẻ uy tín",
     template: "%s | BachHoaMMO",
   },
-  description: "Nền tảng mua bán tài khoản game, vật phẩm game, dịch vụ MMO uy tín hàng đầu Việt Nam. Mua bán Netflix, Spotify, game account an toàn, bảo hành.",
+  description: "Mua tài khoản CapCut Pro, Canva Pro, Netflix Premium, Spotify Premium, ChatGPT Plus, Adobe giá rẻ uy tín. Giao hàng tự động 24/7. Bảo hành trọn đời. Chợ MMO #1 Việt Nam.",
   keywords: [
-    "mua bán tài khoản game",
-    "chợ MMO",
-    "tài khoản game giá rẻ",
-    "BachHoaMMO",
+    "mua tài khoản CapCut",
+    "mua tài khoản CapCut Pro",
+    "tài khoản CapCut giá rẻ",
+    "mua tài khoản Canva",
+    "mua tài khoản Canva Pro",
+    "tài khoản Canva giá rẻ",
     "mua tài khoản Netflix",
-    "tài khoản Spotify",
-    "game account",
-    "MMO Việt Nam",
+    "Netflix Premium giá rẻ",
+    "mua tài khoản Spotify",
+    "Spotify Premium giá rẻ",
+    "mua tài khoản ChatGPT",
+    "ChatGPT Plus giá rẻ",
+    "mua tài khoản Adobe",
+    "chợ MMO",
+    "BachHoaMMO",
+    "tài khoản game giá rẻ",
+    "mua key game Steam",
   ],
   authors: [{ name: "BachHoaMMO", url: SITE_URL }],
   creator: "BachHoaMMO",
@@ -37,14 +46,14 @@ export const metadata: Metadata = {
     locale: "vi_VN",
     url: SITE_URL,
     siteName: "BachHoaMMO",
-    title: "BachHoaMMO - Chợ MMO mua bán tài khoản game uy tín",
-    description: "Nền tảng mua bán tài khoản game, vật phẩm game, dịch vụ MMO uy tín hàng đầu Việt Nam.",
+    title: "BachHoaMMO - Mua tài khoản CapCut, Canva, Netflix, Spotify giá rẻ",
+    description: "Mua tài khoản CapCut Pro, Canva Pro, Netflix, Spotify, ChatGPT Plus giá rẻ uy tín. Giao hàng tự động 24/7. Bảo hành trọn đời.",
     images: [{ url: "/images/logobachhoa.png", width: 512, height: 512, alt: "BachHoaMMO Logo" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "BachHoaMMO - Chợ MMO mua bán tài khoản game",
-    description: "Nền tảng mua bán tài khoản game, vật phẩm game uy tín hàng đầu Việt Nam.",
+    title: "BachHoaMMO - Mua tài khoản CapCut, Canva, Netflix giá rẻ",
+    description: "Mua tài khoản CapCut Pro, Canva Pro, Netflix, Spotify giá rẻ uy tín. Giao hàng tự động 24/7.",
     images: ["/images/logobachhoa.png"],
   },
   robots: {
@@ -85,7 +94,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
-      <body className={beVietnamPro.className}>
+      <body className={inter.className}>
         {/* Telegram Mini App SDK */}
         <Script 
           src="https://telegram.org/js/telegram-web-app.js" 

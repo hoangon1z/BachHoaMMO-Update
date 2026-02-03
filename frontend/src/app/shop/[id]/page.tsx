@@ -1,4 +1,5 @@
 import { serverMarketplaceApi } from '@/lib/server-api';
+import { normalizeProduct } from '@/lib/utils';
 import ShopPageClient from './ShopPageClient';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
@@ -101,7 +102,7 @@ export default async function ShopPage({ params }: PageProps) {
     joinDate: shopData.joinDate || new Date().toISOString(),
   };
 
-  const products = productsData.products || [];
+  const products = (productsData.products || []).map((p: any) => normalizeProduct(p));
   const pagination = productsData.pagination || { page: 1, limit: 12, total: 0, totalPages: 0 };
   const shopUrl = `${SITE_URL}/shop/${id}`;
 

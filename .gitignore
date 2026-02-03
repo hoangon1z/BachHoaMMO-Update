@@ -40,3 +40,9 @@ prisma/migrations/
 
 # Redis
 dump.rdb
+
+# Uploads (user content)
+backend/uploads/
+
+# Temp / test files
+frontend/tmp_*

@@ -127,7 +127,7 @@ export function Footer() {
                   <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#2579f2' }}>
                     <Send className="w-4 h-4" />
                   </div>
-                  <a href={telegramLink} target="_blank" rel="noopener noreferrer" className="text-gray-200 hover:text-white">{telegramBot}</a>
+                  <a href={telegramLink} target="_blank" rel="noopener noreferrer" className="text-gray-200 hover:text-white">@{telegramLink.replace(/^https?:\/\/(t\.me|telegram\.me)\//, '')}</a>
                 </li>
               )}
               {contactEmail && (

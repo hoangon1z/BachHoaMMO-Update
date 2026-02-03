@@ -1,0 +1,44 @@
+# BachHoaMMO Robots.txt
+# https://bachhoammo.store
+
+User-Agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /seller/
+Disallow: /dashboard
+Disallow: /checkout
+Disallow: /cart
+Disallow: /messages
+Disallow: /orders/
+Disallow: /profile
+Disallow: /settings
+Disallow: /wallet/
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+
+User-Agent: Googlebot
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /seller/
+Disallow: /dashboard
+Disallow: /checkout
+Disallow: /cart
+Disallow: /messages
+Disallow: /orders/
+Disallow: /profile
+Disallow: /settings
+Disallow: /wallet/
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+
+User-Agent: Bingbot
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /seller/
+
+Sitemap: https://bachhoammo.store/sitemap.xml

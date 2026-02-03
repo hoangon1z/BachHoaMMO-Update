@@ -94,11 +94,11 @@ model Category {
 }
 
 model Product {
-  id          String   @id @default(uuid())
-  title       String
-  description String
-  price       Float
-  salePrice   Float?
+  id            String   @id @default(uuid())
+  title         String
+  description   String
+  price       Float    // Giá bán (khách trả)
+  salePrice   Float?   // Giá gốc (gạch ngang) - API trả về dưới tên originalPrice
   stock       Int      @default(0)
   status      String   @default("ACTIVE") // ACTIVE, INACTIVE, OUT_OF_STOCK
   images      String // JSON array of image URLs
@@ -141,14 +141,14 @@ model Product {
 
 // Phân loại sản phẩm (VD: 1 tháng, 2 tháng, 1 năm)
 model ProductVariant {
-  id          String   @id @default(uuid())
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  name        String   // "1 tháng", "2 tháng", "1 năm"
-  price       Float
-  salePrice   Float?
-  stock       Int      @default(0)
-  position    Int      @default(0)  // Thứ tự hiển thị
+  id            String   @id @default(uuid())
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name      String   // "1 tháng", "2 tháng", "1 năm"
+  price     Float    // Giá bán
+  salePrice Float?   // Giá gốc (gạch ngang) - API trả về dưới tên originalPrice
+  stock     Int      @default(0)
+  position  Int      @default(0)  // Thứ tự hiển thị
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

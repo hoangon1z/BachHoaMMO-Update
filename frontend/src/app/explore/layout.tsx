@@ -3,22 +3,31 @@ import type { Metadata } from 'next';
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://bachhoammo.store';
 
 export const metadata: Metadata = {
-  title: 'Khám phá sản phẩm số - Tài khoản game, Netflix, Spotify | BachHoaMMO',
-  description: 'Khám phá hàng ngàn sản phẩm số chất lượng: tài khoản Netflix, Spotify, game Steam, Origin, Epic Games, phần mềm bản quyền. Giá tốt nhất, uy tín hàng đầu Việt Nam.',
+  title: 'Mua tài khoản CapCut, Canva, Netflix, Spotify, ChatGPT giá rẻ | BachHoaMMO',
+  description: 'Mua tài khoản CapCut Pro, Canva Pro, Netflix Premium, Spotify Premium, ChatGPT Plus, Adobe Creative Cloud giá rẻ uy tín. Giao hàng tự động 24/7. Bảo hành trọn đời.',
   keywords: [
+    'mua tài khoản CapCut',
+    'mua tài khoản CapCut Pro',
+    'tài khoản CapCut giá rẻ',
+    'mua tài khoản Canva Pro',
+    'tài khoản Canva giá rẻ',
     'mua tài khoản Netflix',
+    'Netflix Premium giá rẻ',
     'mua tài khoản Spotify',
+    'Spotify Premium giá rẻ',
+    'mua tài khoản ChatGPT',
+    'ChatGPT Plus giá rẻ',
+    'mua tài khoản Adobe',
+    'Adobe Creative Cloud giá rẻ',
     'tài khoản game giá rẻ',
     'mua key game Steam',
-    'tài khoản Origin',
-    'Epic Games account',
     'phần mềm bản quyền',
-    'sản phẩm số',
     'chợ MMO Việt Nam',
+    'BachHoaMMO',
   ],
   openGraph: {
-    title: 'Khám phá sản phẩm số | BachHoaMMO',
-    description: 'Hàng ngàn sản phẩm số chất lượng - Netflix, Spotify, game accounts, phần mềm bản quyền',
+    title: 'Mua tài khoản CapCut, Canva, Netflix, Spotify giá rẻ | BachHoaMMO',
+    description: 'Mua tài khoản CapCut Pro, Canva Pro, Netflix, Spotify, ChatGPT Plus giá rẻ uy tín. Giao hàng tự động 24/7.',
     url: `${SITE_URL}/explore`,
     type: 'website',
     images: [{ url: `${SITE_URL}/images/logobachhoa.png`, width: 512, height: 512, alt: 'BachHoaMMO' }],
@@ -31,8 +40,8 @@ function ExploreStructuredData() {
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'CollectionPage',
-    name: 'Khám phá sản phẩm số',
-    description: 'Danh sách sản phẩm số: tài khoản game, Netflix, Spotify, phần mềm bản quyền',
+    name: 'Mua tài khoản CapCut, Canva, Netflix, Spotify giá rẻ',
+    description: 'Mua tài khoản CapCut Pro, Canva Pro, Netflix Premium, Spotify Premium, ChatGPT Plus giá rẻ uy tín. Giao hàng tự động 24/7. Bảo hành trọn đời.',
     url: `${SITE_URL}/explore`,
     isPartOf: {
       '@type': 'WebSite',
@@ -43,7 +52,18 @@ function ExploreStructuredData() {
       '@type': 'BreadcrumbList',
       itemListElement: [
         { '@type': 'ListItem', position: 1, name: 'Trang chủ', item: SITE_URL },
-        { '@type': 'ListItem', position: 2, name: 'Khám phá', item: `${SITE_URL}/explore` },
+        { '@type': 'ListItem', position: 2, name: 'Mua tài khoản', item: `${SITE_URL}/explore` },
+      ],
+    },
+    mainEntity: {
+      '@type': 'ItemList',
+      name: 'Sản phẩm nổi bật',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Tài khoản CapCut Pro' },
+        { '@type': 'ListItem', position: 2, name: 'Tài khoản Canva Pro' },
+        { '@type': 'ListItem', position: 3, name: 'Tài khoản Netflix Premium' },
+        { '@type': 'ListItem', position: 4, name: 'Tài khoản Spotify Premium' },
+        { '@type': 'ListItem', position: 5, name: 'Tài khoản ChatGPT Plus' },
       ],
     },
   };

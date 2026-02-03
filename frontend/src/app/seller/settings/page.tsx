@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuthStore } from '@/store/authStore';
 import { VerifyBadge } from '@/components/VerifyBadge';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
 
@@ -24,6 +25,7 @@ interface StoreData {
   shopLogo: string;
   rating?: number;
   totalSales?: number;
+  reviewCount?: number;
   isVerified?: boolean;
   createdAt?: string;
 }
@@ -50,6 +52,7 @@ export default function SellerSettingsPage() {
   const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [telegramMessage, setTelegramMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showUnlinkDialog, setShowUnlinkDialog] = useState(false);
 
   useEffect(() => {
     fetchStore();
@@ -72,6 +75,7 @@ export default function SellerSettingsPage() {
           shopLogo: data.shopLogo || '',
           rating: data.rating,
           totalSales: data.totalSales,
+          reviewCount: data.reviewCount,
           isVerified: data.isVerified,
           createdAt: data.createdAt,
         });
@@ -130,9 +134,11 @@ export default function SellerSettingsPage() {
   };
 
   // Unlink Telegram
-  const unlinkTelegram = async () => {
-    if (!confirm('Bạn có chắc muốn hủy kết nối Telegram? Bạn sẽ không nhận được thông báo nữa.')) return;
-    
+  const unlinkTelegramClick = () => {
+    setShowUnlinkDialog(true);
+  };
+
+  const unlinkTelegramConfirm = async () => {
     setIsLoadingTelegram(true);
     setTelegramMessage(null);
     
@@ -148,6 +154,7 @@ export default function SellerSettingsPage() {
         setTelegramLinkedAt(null);
         setTelegramLink(null);
         setTelegramMessage({ type: 'success', text: 'Đã hủy kết nối Telegram' });
+        setShowUnlinkDialog(false);
       } else {
         setTelegramMessage({ type: 'error', text: 'Không thể hủy kết nối' });
       }
@@ -189,7 +196,7 @@ export default function SellerSettingsPage() {
     e.preventDefault();
     
     if (!formData.shopName.trim()) {
-      setMessage({ type: 'error', text: 'Vui long nhap ten cua hang' });
+      setMessage({ type: 'error', text: 'Vui lòng nhập tên cửa hàng' });
       return;
     }
 
@@ -242,12 +249,18 @@ export default function SellerSettingsPage() {
 
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
-      setMessage({ type: 'error', text: 'Chi chap nhan file anh (jpeg, jpg, png, gif, webp)' });
+      setMessage({ type: 'error', text: 'Chỉ chấp nhận file ảnh (JPG, PNG, GIF, WEBP)' });
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setMessage({ type: 'error', text: 'File anh khong duoc vuot qua 5MB' });
+    // Validate file size (5MB max - backend/server limit)
+    const maxSize = 5 * 1024 * 1024; // 5MB for all file types
+    if (file.size > maxSize) {
+      const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+      setMessage({ 
+        type: 'error', 
+        text: `File quá lớn (${fileSizeMB}MB). Vui lòng chọn file nhỏ hơn 5MB${file.type === 'image/gif' ? '. Tip: Nén GIF tại ezgif.com' : ''}` 
+      });
       return;
     }
 
@@ -315,10 +328,10 @@ export default function SellerSettingsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
-              {hasStore ? 'Cai dat cua hang' : 'Tao cua hang'}
+              {hasStore ? 'Cài đặt cửa hàng' : 'Tạo cửa hàng'}
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              {hasStore ? 'Quan ly thong tin cua hang cua ban' : 'Tao cua hang de bat dau ban hang'}
+              {hasStore ? 'Quản lý thông tin cửa hàng của bạn' : 'Tạo cửa hàng để bắt đầu bán hàng'}
             </p>
           </div>
         </div>
@@ -374,14 +387,15 @@ export default function SellerSettingsPage() {
                 <div className="p-4 text-center">
                   <div className="flex items-center justify-center gap-1.5 text-gray-500 mb-1">
                     <Star className="w-4 h-4" />
-                    <span className="text-xs font-medium uppercase tracking-wide">Danh gia</span>
+                    <span className="text-xs font-medium uppercase tracking-wide">Đánh giá</span>
                   </div>
                   <p className="text-xl font-bold text-gray-900">{formData.rating?.toFixed(1) || '0.0'}</p>
+                  <p className="text-xs text-gray-500">({formData.reviewCount || 0} đánh giá)</p>
                 </div>
                 <div className="p-4 text-center">
                   <div className="flex items-center justify-center gap-1.5 text-gray-500 mb-1">
                     <ShoppingBag className="w-4 h-4" />
-                    <span className="text-xs font-medium uppercase tracking-wide">Da ban</span>
+                    <span className="text-xs font-medium uppercase tracking-wide">Đã bán</span>
                   </div>
                   <p className="text-xl font-bold text-gray-900">{formData.totalSales || 0}</p>
                 </div>
@@ -401,14 +415,14 @@ export default function SellerSettingsPage() {
         <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200">
           {/* Form Header */}
           <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-base font-semibold text-gray-900">Thong tin cua hang</h3>
-            <p className="text-sm text-gray-500 mt-0.5">Cap nhat thong tin co ban cua cua hang</p>
+            <h3 className="text-base font-semibold text-gray-900">Thông tin cửa hàng</h3>
+            <p className="text-sm text-gray-500 mt-0.5">Cập nhật thông tin cơ bản của cửa hàng</p>
           </div>
 
           <div className="p-6 space-y-6">
             {/* Logo Upload */}
             <div>
-              <Label className="text-sm font-medium text-gray-700 mb-3 block">Logo cua hang</Label>
+              <Label className="text-sm font-medium text-gray-700 mb-3 block">Logo cửa hàng</Label>
               <div className="flex items-start gap-5">
                 <div className="relative">
                   <div className="w-24 h-24 rounded-lg bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden">
@@ -429,6 +443,7 @@ export default function SellerSettingsPage() {
                     className="hidden"
                     onChange={handleLogoUpload}
                     disabled={isUploadingLogo}
+                    title="Chọn logo cửa hàng (JPG, PNG, GIF, WEBP)"
                   />
                   <button
                     type="button"
@@ -441,7 +456,7 @@ export default function SellerSettingsPage() {
                 </div>
                 <div className="flex-1 pt-1">
                   <p className="text-sm text-gray-600 mb-3">
-                    Tai len logo cho cua hang. Khuyen nghi anh vuong, kich thuoc toi thieu 200x200px.
+                    Tải lên logo cho cửa hàng. Khuyến nghị ảnh vuông, kích thước tối thiểu 200x200px.
                   </p>
                   <Button 
                     type="button" 
@@ -463,7 +478,7 @@ export default function SellerSettingsPage() {
                       </>
                     )}
                   </Button>
-                  <p className="text-xs text-gray-400 mt-2">JPEG, PNG, GIF, WebP - Toi da 5MB</p>
+                  <p className="text-xs text-gray-400 mt-2">JPG, PNG, GIF (động), WEBP - Tối đa 5MB. GIF lớn có thể nén tại <a href="https://ezgif.com/optimize" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">ezgif.com</a></p>
                 </div>
               </div>
             </div>
@@ -471,7 +486,7 @@ export default function SellerSettingsPage() {
             {/* Shop Name */}
             <div>
               <Label htmlFor="shopName" className="text-sm font-medium text-gray-700 mb-2 block">
-                Ten cua hang <span className="text-red-500">*</span>
+                Tên cửa hàng <span className="text-red-500">*</span>
               </Label>
               <Input
                 id="shopName"
@@ -486,11 +501,11 @@ export default function SellerSettingsPage() {
             {/* Shop Description */}
             <div>
               <Label htmlFor="shopDescription" className="text-sm font-medium text-gray-700 mb-2 block">
-                Mo ta cua hang
+                Mô tả cửa hàng
               </Label>
               <textarea
                 id="shopDescription"
-                placeholder="Gioi thieu ngan ve cua hang cua ban..."
+                placeholder="Giới thiệu ngắn về shop của bạn"
                 value={formData.shopDescription}
                 onChange={(e) => setFormData(prev => ({ ...prev, shopDescription: e.target.value }))}
                 rows={4}
@@ -591,7 +606,7 @@ export default function SellerSettingsPage() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={unlinkTelegram}
+                      onClick={unlinkTelegramClick}
                       disabled={isLoadingTelegram}
                       className="gap-2 text-red-600 border-red-200 hover:bg-red-50"
                     >
@@ -712,6 +727,20 @@ export default function SellerSettingsPage() {
           </div>
         )}
       </div>
+
+      {/* Unlink Telegram Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showUnlinkDialog}
+        onClose={() => setShowUnlinkDialog(false)}
+        onConfirm={unlinkTelegramConfirm}
+        title="Hủy kết nối Telegram"
+        description="Bạn có chắc muốn hủy kết nối Telegram? Bạn sẽ không nhận được thông báo nữa."
+        confirmText="Hủy kết nối"
+        cancelText="Đóng"
+        variant="warning"
+        isLoading={isLoadingTelegram}
+        icon={<Unlink className="w-7 h-7" />}
+      />
     </div>
   );
 }

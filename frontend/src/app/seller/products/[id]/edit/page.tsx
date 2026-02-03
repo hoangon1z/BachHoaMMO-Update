@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Save, Image, Plus, X, Trash2, Info } from 'lucide-react';
+import { ArrowLeft, Save, Image, Plus, X, Trash2, Info, AlertCircle, CheckCircle, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
+import { validateImageUrl } from '@/lib/image-validation';
 
 interface Category {
   id: string;
@@ -14,6 +16,15 @@ interface Category {
   slug: string;
   parentId?: string | null;
   children?: Category[];
+}
+
+interface Variant {
+  id?: string;
+  name: string;
+  price: string;
+  originalPrice: string;
+  stock: string;
+  position?: number;
 }
 
 // Platform fixed commission rate
@@ -29,17 +40,24 @@ export default function EditProductPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState('');
   const [autoDelivery, setAutoDelivery] = useState(true); // Chế độ giao hàng
+  const [hasVariants, setHasVariants] = useState(false);
+  const [variants, setVariants] = useState<Variant[]>([
+    { name: '', price: '', originalPrice: '', stock: '' }
+  ]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     price: '',
-    salePrice: '',
+    originalPrice: '',
     stock: '',
     categoryId: '',
     status: 'ACTIVE',
     images: [''],
     tags: '',
   });
+  const [imageValidations, setImageValidations] = useState<{ [key: number]: { validating: boolean; error?: string; valid?: boolean } }>({});
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     Promise.all([fetchCategories(), fetchProduct()]);
@@ -92,11 +110,27 @@ export default function EditProductPage() {
           if (images.length === 0) images = [''];
         } catch {}
 
+        // Check if product has variants
+        const productHasVariants = product.hasVariants || (product.variants && product.variants.length > 0);
+        setHasVariants(productHasVariants);
+
+        // Load variants if available
+        if (productHasVariants && product.variants && product.variants.length > 0) {
+          setVariants(product.variants.map((v: any) => ({
+            id: v.id,
+            name: v.name || '',
+            price: v.price?.toString() || '',
+            originalPrice: v.originalPrice?.toString() || '',
+            stock: v.stock?.toString() || '',
+            position: v.position,
+          })));
+        }
+
         setFormData({
           title: product.title || '',
           description: product.description || '',
           price: product.price?.toString() || '',
-          salePrice: product.salePrice?.toString() || '',
+          originalPrice: product.originalPrice?.toString() || '',
           stock: product.stock?.toString() || '',
           categoryId: product.categoryId || '',
           status: product.status || 'ACTIVE',
@@ -128,26 +162,148 @@ export default function EditProductPage() {
     }));
   };
 
-  const handleImageChange = (index: number, value: string) => {
+  // Variant handlers
+  const handleAddVariant = () => {
+    setVariants(prev => [...prev, { name: '', price: '', originalPrice: '', stock: '' }]);
+  };
+
+  const handleRemoveVariant = (index: number) => {
+    if (variants.length > 1) {
+      setVariants(prev => prev.filter((_, i) => i !== index));
+    }
+  };
+
+  const handleVariantChange = (index: number, field: keyof Variant, value: string) => {
+    setVariants(prev => prev.map((v, i) => i === index ? { ...v, [field]: value } : v));
+  };
+
+  const handleImageChange = async (index: number, value: string) => {
     setFormData(prev => ({
       ...prev,
       images: prev.images.map((img, i) => (i === index ? value : img)),
     }));
+
+    // Clear previous validation
+    setImageValidations(prev => ({
+      ...prev,
+      [index]: { validating: false, error: undefined, valid: undefined }
+    }));
+
+    // Only validate if URL is not empty
+    if (value.trim()) {
+      // Set validating state
+      setImageValidations(prev => ({
+        ...prev,
+        [index]: { validating: true }
+      }));
+
+      // Debounce validation
+      setTimeout(async () => {
+        const result = await validateImageUrl(value);
+        setImageValidations(prev => ({
+          ...prev,
+          [index]: {
+            validating: false,
+            error: result.error,
+            valid: result.valid
+          }
+        }));
+      }, 500);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (!formData.title || !formData.description || !formData.price || !formData.stock || !formData.categoryId) {
+    if (!formData.title || !formData.description || !formData.categoryId) {
       setError('Vui lòng điền đầy đủ thông tin bắt buộc');
       return;
+    }
+
+    // Validate images before submitting
+    const imageErrors = Object.entries(imageValidations)
+      .filter(([_, validation]) => validation.error)
+      .map(([index, validation]) => `Hình ${parseInt(index) + 1}: ${validation.error}`);
+    
+    if (imageErrors.length > 0) {
+      setError(`Vui lòng sửa lỗi hình ảnh:\\n${imageErrors.join('\\n')}`);
+      return;
+    }
+
+    // Validate variants if enabled
+    if (hasVariants) {
+      const validVariants = variants.filter(v => v.name && v.price && v.stock);
+      if (validVariants.length === 0) {
+        setError('Vui lòng thêm ít nhất 1 phân loại với đầy đủ thông tin');
+        return;
+      }
+      // Validate max values for variants
+      for (const v of validVariants) {
+        if (parseFloat(v.price) > 999999999) {
+          setError('Giá sản phẩm không được vượt quá 999,999,999đ');
+          return;
+        }
+        if (parseInt(v.stock) > 999999) {
+          setError('Số lượng kho không được vượt quá 999,999');
+          return;
+        }
+      }
+    } else {
+      if (!formData.price || !formData.stock) {
+        setError('Vui lòng điền giá và số lượng');
+        return;
+      }
+      // Validate max values
+      if (parseFloat(formData.price) > 999999999) {
+        setError('Giá sản phẩm không được vượt quá 999,999,999đ');
+        return;
+      }
+      if (parseInt(formData.stock) > 999999) {
+        setError('Số lượng kho không được vượt quá 999,999');
+        return;
+      }
     }
 
     setIsSaving(true);
     try {
       const token = localStorage.getItem('token');
       const validImages = formData.images.filter(img => img.trim());
+
+      const requestBody: any = {
+        title: formData.title,
+        description: formData.description,
+        categoryId: formData.categoryId,
+        status: formData.status,
+        images: JSON.stringify(validImages.length > 0 ? validImages : ['/placeholder.jpg']),
+        tags: formData.tags || null,
+        autoDelivery,
+      };
+
+      if (hasVariants) {
+        // With variants: price/stock in product is minimum price / total stock
+        const validVariants = variants.filter(v => v.name && v.price && v.stock);
+        const minPrice = Math.min(...validVariants.map(v => parseFloat(v.price)));
+        const totalStock = validVariants.reduce((sum, v) => sum + parseInt(v.stock), 0);
+
+        requestBody.price = minPrice;
+        requestBody.stock = totalStock;
+        requestBody.hasVariants = true;
+        requestBody.variants = validVariants.map((v, index) => ({
+          id: v.id, // Keep existing ID if editing
+          name: v.name,
+          price: parseFloat(v.price),
+          originalPrice: v.originalPrice ? parseFloat(v.originalPrice) : undefined,
+          stock: parseInt(v.stock),
+          position: index,
+        }));
+      } else {
+        requestBody.price = parseFloat(formData.price);
+        requestBody.originalPrice = formData.originalPrice ? parseFloat(formData.originalPrice) : null;
+        requestBody.stock = parseInt(formData.stock);
+        requestBody.hasVariants = false;
+        requestBody.variants = []; // Clear variants if disabled
+      }
 
       const response = await fetch(
         `/api/seller/products/${productId}`,
@@ -157,18 +313,7 @@ export default function EditProductPage() {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            title: formData.title,
-            description: formData.description,
-            price: parseFloat(formData.price),
-            salePrice: formData.salePrice ? parseFloat(formData.salePrice) : null,
-            stock: parseInt(formData.stock),
-            categoryId: formData.categoryId,
-            status: formData.status,
-            images: JSON.stringify(validImages.length > 0 ? validImages : ['/placeholder.jpg']),
-            tags: formData.tags || null,
-            autoDelivery, // Chế độ giao hàng
-          }),
+          body: JSON.stringify(requestBody),
         }
       );
 
@@ -186,9 +331,12 @@ export default function EditProductPage() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!confirm('Bạn có chắc muốn xóa sản phẩm này? Sản phẩm sẽ được ẩn khỏi cửa hàng.')) return;
+  const handleDeleteClick = () => {
+    setShowDeleteDialog(true);
+  };
 
+  const handleDeleteConfirm = async () => {
+    setIsDeleting(true);
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
@@ -201,9 +349,15 @@ export default function EditProductPage() {
 
       if (response.ok) {
         router.push('/seller/products');
+      } else {
+        alert('Có lỗi xảy ra khi xóa sản phẩm');
       }
     } catch (error) {
       console.error('Error deleting product:', error);
+      alert('Có lỗi xảy ra khi xóa sản phẩm');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
     }
   };
 
@@ -232,7 +386,7 @@ export default function EditProductPage() {
               <p className="text-gray-600">Cập nhật thông tin sản phẩm</p>
             </div>
           </div>
-          <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={handleDelete}>
+          <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={handleDeleteClick}>
             <Trash2 className="w-4 h-4 mr-2" />
             Xóa
           </Button>
@@ -319,47 +473,150 @@ export default function EditProductPage() {
             </div>
           </div>
 
-          {/* Pricing */}
+          {/* Variants Toggle */}
           <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-            <h2 className="font-semibold text-gray-900">Giá & Kho hàng</h2>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="price">Giá bán (VNĐ) *</Label>
-                <Input
-                  id="price"
-                  type="number"
-                  value={formData.price}
-                  onChange={(e) => setFormData(prev => ({ ...prev, price: e.target.value }))}
-                  min="0"
-                  required
-                />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                  <Layers className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-gray-900">Phân loại sản phẩm</h2>
+                  <p className="text-sm text-gray-500">Thêm các phân loại khác nhau (VD: 1 tháng, 2 tháng, 1 năm)</p>
+                </div>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="salePrice">Giá gốc</Label>
-                <Input
-                  id="salePrice"
-                  type="number"
-                  value={formData.salePrice}
-                  onChange={(e) => setFormData(prev => ({ ...prev, salePrice: e.target.value }))}
-                  min="0"
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={hasVariants}
+                  onChange={(e) => setHasVariants(e.target.checked)}
+                  className="sr-only peer"
                 />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {hasVariants && (
+              <div className="space-y-3 pt-4 border-t border-gray-200">
+                {variants.map((variant, index) => (
+                  <div key={index} className="p-4 bg-gray-50 rounded-lg space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-700">Phân loại {index + 1}</span>
+                      {variants.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveVariant(index)}
+                          className="text-red-600 hover:bg-red-50 p-1 rounded"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div>
+                        <Label className="text-xs">Tên phân loại *</Label>
+                        <Input
+                          placeholder="VD: 1 tháng"
+                          value={variant.name}
+                          onChange={(e) => handleVariantChange(index, 'name', e.target.value)}
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Giá bán (VNĐ) *</Label>
+                        <Input
+                          type="number"
+                          placeholder="200000"
+                          value={variant.price}
+                          onChange={(e) => handleVariantChange(index, 'price', e.target.value)}
+                          min="0"
+                          max="999999999"
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Giá gốc</Label>
+                        <Input
+                          type="number"
+                          placeholder="300000"
+                          value={variant.originalPrice}
+                          onChange={(e) => handleVariantChange(index, 'originalPrice', e.target.value)}
+                          min="0"
+                          max="999999999"
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Số lượng *</Label>
+                        <Input
+                          type="number"
+                          placeholder="10"
+                          value={variant.stock}
+                          onChange={(e) => handleVariantChange(index, 'stock', e.target.value)}
+                          min="0"
+                          max="999999"
+                          className="mt-1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <Button type="button" variant="outline" size="sm" onClick={handleAddVariant}>
+                  <Plus className="w-4 h-4 mr-1" />
+                  Thêm phân loại
+                </Button>
               </div>
+            )}
+          </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="stock">Số lượng kho *</Label>
-                <Input
-                  id="stock"
-                  type="number"
-                  value={formData.stock}
-                  onChange={(e) => setFormData(prev => ({ ...prev, stock: e.target.value }))}
-                  min="0"
-                  required
-                />
+          {/* Pricing (only show if no variants) */}
+          {!hasVariants && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+              <h2 className="font-semibold text-gray-900">Giá & Kho hàng</h2>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="price">Giá bán (VNĐ) *</Label>
+                  <Input
+                    id="price"
+                    type="number"
+                    value={formData.price}
+                    onChange={(e) => setFormData(prev => ({ ...prev, price: e.target.value }))}
+                    min="0"
+                    max="999999999"
+                    required={!hasVariants}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="originalPrice">Giá gốc (nếu có)</Label>
+                  <Input
+                    id="originalPrice"
+                    type="number"
+                    value={formData.originalPrice}
+                    onChange={(e) => setFormData(prev => ({ ...prev, originalPrice: e.target.value }))}
+                    min="0"
+                    max="999999999"
+                  />
+                  <p className="text-xs text-gray-500">Hiển thị giá gạch ngang</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="stock">Số lượng kho *</Label>
+                  <Input
+                    id="stock"
+                    type="number"
+                    value={formData.stock}
+                    onChange={(e) => setFormData(prev => ({ ...prev, stock: e.target.value }))}
+                    min="0"
+                    max="999999"
+                    required={!hasVariants}
+                  />
+                  <p className="text-xs text-gray-500">Tối đa 999,999</p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Delivery Mode */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -473,31 +730,79 @@ export default function EditProductPage() {
             </div>
 
             <div className="space-y-3">
-              {formData.images.map((img, index) => (
-                <div key={index} className="flex gap-3">
-                  <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
-                    {img ? (
-                      <img src={img} alt="" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.style.display = 'none')} />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Image className="w-6 h-6 text-gray-400" />
+              {formData.images.map((img, index) => {
+                const validation = imageValidations[index];
+                const hasError = validation?.error;
+                const isValid = validation?.valid;
+                const isValidating = validation?.validating;
+
+                return (
+                  <div key={index} className="space-y-2">
+                    <div className="flex gap-3">
+                      <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0 relative">
+                        {img ? (
+                          <>
+                            <img src={img} alt="" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.style.display = 'none')} />
+                            {isValidating && (
+                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Image className="w-6 h-6 text-gray-400" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 relative">
+                        <Input
+                          placeholder="Nhập URL hình ảnh (jpg, png, gif, webp...)"
+                          value={img}
+                          onChange={(e) => handleImageChange(index, e.target.value)}
+                          className={`pr-10 ${hasError ? 'border-red-500 focus:ring-red-500' : isValid ? 'border-green-500 focus:ring-green-500' : ''}`}
+                        />
+                        {isValidating && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                          </div>
+                        )}
+                        {!isValidating && isValid && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <CheckCircle className="w-5 h-5 text-green-600" />
+                          </div>
+                        )}
+                        {!isValidating && hasError && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <AlertCircle className="w-5 h-5 text-red-600" />
+                          </div>
+                        )}
+                      </div>
+                      {formData.images.length > 1 && (
+                        <Button type="button" variant="ghost" size="sm" onClick={() => handleImageRemove(index)} className="text-red-600 hover:bg-red-50">
+                          <X className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                    {hasError && (
+                      <div className="flex items-start gap-2 text-sm text-red-600 ml-[76px]">
+                        <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        <span>{validation.error}</span>
+                      </div>
+                    )}
+                    {isValid && (
+                      <div className="flex items-start gap-2 text-sm text-green-600 ml-[76px]">
+                        <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        <span>Hình ảnh hợp lệ</span>
                       </div>
                     )}
                   </div>
-                  <Input
-                    placeholder="URL hình ảnh"
-                    value={img}
-                    onChange={(e) => handleImageChange(index, e.target.value)}
-                    className="flex-1"
-                  />
-                  {formData.images.length > 1 && (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => handleImageRemove(index)} className="text-red-600">
-                      <X className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
+            <p className="text-xs text-gray-500">
+              Hỗ trợ URL hình ảnh từ các nguồn bên ngoài. Định dạng: jpg, jpeg, png, gif, webp, svg, bmp, ico
+            </p>
           </div>
 
           {/* Submit */}
@@ -515,6 +820,20 @@ export default function EditProductPage() {
             </Button>
           </div>
         </form>
+
+        {/* Delete Confirmation Dialog */}
+        <ConfirmDialog
+          isOpen={showDeleteDialog}
+          onClose={() => setShowDeleteDialog(false)}
+          onConfirm={handleDeleteConfirm}
+          title="Xóa sản phẩm"
+          description={`Bạn có chắc muốn xóa sản phẩm "${formData.title}"? Sản phẩm sẽ được ẩn khỏi cửa hàng.`}
+          confirmText="Xóa sản phẩm"
+          cancelText="Hủy"
+          variant="danger"
+          isLoading={isDeleting}
+          icon={<Trash2 className="w-7 h-7" />}
+        />
       </div>
     </div>
   );

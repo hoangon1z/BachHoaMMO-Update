@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 interface ConfirmDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm?: () => void;
   title: string;
   description?: string;
   confirmText?: string;
@@ -15,6 +15,8 @@ interface ConfirmDialogProps {
   variant?: 'danger' | 'warning' | 'info';
   isLoading?: boolean;
   icon?: ReactNode;
+  /** Chế độ thông báo: chỉ hiển thị nút Đóng (không có Hủy / Xác nhận) */
+  alertMode?: boolean;
 }
 
 export function ConfirmDialog({
@@ -28,6 +30,7 @@ export function ConfirmDialog({
   variant = 'danger',
   isLoading = false,
   icon,
+  alertMode = false,
 }: ConfirmDialogProps) {
   if (!isOpen) return null;
 
@@ -38,6 +41,13 @@ export function ConfirmDialog({
   };
 
   const styles = variantStyles[variant];
+  const handleConfirm = () => {
+    if (alertMode) {
+      onClose();
+    } else {
+      onConfirm?.();
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -53,9 +63,15 @@ export function ConfirmDialog({
           <h3 className="text-lg font-bold text-gray-900 mb-2">{title}</h3>
           {description && <p className="text-gray-500 text-sm mb-6">{description}</p>}
           <div className="flex items-center gap-3 w-full">
-            <Button variant="outline" className="flex-1" onClick={onClose} disabled={isLoading}>{cancelText}</Button>
-            <Button className={`flex-1 text-white ${styles.button}`} onClick={onConfirm} disabled={isLoading}>
-              {isLoading ? 'Đang xử lý...' : confirmText}
+            {!alertMode && (
+              <Button variant="outline" className="flex-1" onClick={onClose} disabled={isLoading}>{cancelText}</Button>
+            )}
+            <Button
+              className={`flex-1 text-white ${styles.button} ${alertMode ? 'w-full' : ''}`}
+              onClick={handleConfirm}
+              disabled={isLoading}
+            >
+              {isLoading ? 'Đang xử lý...' : alertMode ? 'Đóng' : confirmText}
             </Button>
           </div>
         </div>

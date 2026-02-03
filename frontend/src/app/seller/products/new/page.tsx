@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Save, Image, Plus, X, Layers, Info, Package, ArrowUpCircle, Mail } from 'lucide-react';
+import { ArrowLeft, Save, Image, Plus, X, Layers, Info, Package, ArrowUpCircle, Mail, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { validateImageUrl } from '@/lib/image-validation';
 
 type ProductType = 'STANDARD' | 'UPGRADE';
 
@@ -21,7 +22,7 @@ interface Category {
 interface Variant {
   name: string;
   price: string;
-  salePrice: string;
+  originalPrice: string;
   stock: string;
 }
 
@@ -35,7 +36,7 @@ export default function NewProductPage() {
   const [error, setError] = useState('');
   const [hasVariants, setHasVariants] = useState(false);
   const [variants, setVariants] = useState<Variant[]>([
-    { name: '', price: '', salePrice: '', stock: '' }
+    { name: '', price: '', originalPrice: '', stock: '' }
   ]);
   const [autoDelivery, setAutoDelivery] = useState(true); // Chế độ giao hàng
   const [productType, setProductType] = useState<ProductType>('STANDARD'); // Loại sản phẩm
@@ -44,12 +45,13 @@ export default function NewProductPage() {
     title: '',
     description: '',
     price: '',
-    salePrice: '',
+    originalPrice: '',
     stock: '',
     categoryId: '',
     images: [''],
     tags: '',
   });
+  const [imageValidations, setImageValidations] = useState<{ [key: number]: { validating: boolean; error?: string; valid?: boolean } }>({});
 
   useEffect(() => {
     fetchCategories();
@@ -98,16 +100,44 @@ export default function NewProductPage() {
     }));
   };
 
-  const handleImageChange = (index: number, value: string) => {
+  const handleImageChange = async (index: number, value: string) => {
     setFormData(prev => ({
       ...prev,
       images: prev.images.map((img, i) => (i === index ? value : img)),
     }));
+
+    // Clear previous validation
+    setImageValidations(prev => ({
+      ...prev,
+      [index]: { validating: false, error: undefined, valid: undefined }
+    }));
+
+    // Only validate if URL is not empty
+    if (value.trim()) {
+      // Set validating state
+      setImageValidations(prev => ({
+        ...prev,
+        [index]: { validating: true }
+      }));
+
+      // Debounce validation
+      setTimeout(async () => {
+        const result = await validateImageUrl(value);
+        setImageValidations(prev => ({
+          ...prev,
+          [index]: {
+            validating: false,
+            error: result.error,
+            valid: result.valid
+          }
+        }));
+      }, 500);
+    }
   };
 
   // Variant handlers
   const handleAddVariant = () => {
-    setVariants(prev => [...prev, { name: '', price: '', salePrice: '', stock: '' }]);
+    setVariants(prev => [...prev, { name: '', price: '', originalPrice: '', stock: '' }]);
   };
 
   const handleRemoveVariant = (index: number) => {
@@ -126,6 +156,16 @@ export default function NewProductPage() {
 
     if (!formData.title || !formData.description || !formData.categoryId) {
       setError('Vui lòng điền đầy đủ thông tin bắt buộc');
+      return;
+    }
+
+    // Validate images before submitting
+    const imageErrors = Object.entries(imageValidations)
+      .filter(([_, validation]) => validation.error)
+      .map(([index, validation]) => `Hình ${parseInt(index) + 1}: ${validation.error}`);
+    
+    if (imageErrors.length > 0) {
+      setError(`Vui lòng sửa lỗi hình ảnh:\n${imageErrors.join('\n')}`);
       return;
     }
 
@@ -191,13 +231,13 @@ export default function NewProductPage() {
         requestBody.variants = validVariants.map((v, index) => ({
           name: v.name,
           price: parseFloat(v.price),
-          salePrice: v.salePrice ? parseFloat(v.salePrice) : undefined,
+          originalPrice: v.originalPrice ? parseFloat(v.originalPrice) : undefined,
           stock: parseInt(v.stock),
           position: index,
         }));
       } else {
         requestBody.price = parseFloat(formData.price);
-        requestBody.salePrice = formData.salePrice ? parseFloat(formData.salePrice) : undefined;
+        requestBody.originalPrice = formData.originalPrice ? parseFloat(formData.originalPrice) : undefined;
         requestBody.stock = parseInt(formData.stock);
       }
 
@@ -498,8 +538,8 @@ export default function NewProductPage() {
                         <Input
                           type="number"
                           placeholder="300000"
-                          value={variant.salePrice}
-                          onChange={(e) => handleVariantChange(index, 'salePrice', e.target.value)}
+                          value={variant.originalPrice}
+                          onChange={(e) => handleVariantChange(index, 'originalPrice', e.target.value)}
                           min="0"
                           max="999999999"
                           className="mt-1"
@@ -637,13 +677,13 @@ export default function NewProductPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="salePrice">Giá gốc (nếu có)</Label>
+                  <Label htmlFor="originalPrice">Giá gốc (nếu có)</Label>
                   <Input
-                    id="salePrice"
+                    id="originalPrice"
                     type="number"
                     placeholder="150000"
-                    value={formData.salePrice}
-                    onChange={(e) => setFormData(prev => ({ ...prev, salePrice: e.target.value }))}
+                    value={formData.originalPrice}
+                    onChange={(e) => setFormData(prev => ({ ...prev, originalPrice: e.target.value }))}
                     min="0"
                     max="999999999"
                   />
@@ -694,38 +734,85 @@ export default function NewProductPage() {
             </div>
 
             <div className="space-y-3">
-              {formData.images.map((img, index) => (
-                <div key={index} className="flex gap-3">
-                  <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
-                    {img ? (
-                      <img src={img} alt="" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.src = '')} />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Image className="w-6 h-6 text-gray-400" />
+              {formData.images.map((img, index) => {
+                const validation = imageValidations[index];
+                const hasError = validation?.error;
+                const isValid = validation?.valid;
+                const isValidating = validation?.validating;
+
+                return (
+                  <div key={index} className="space-y-2">
+                    <div className="flex gap-3">
+                      <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0 relative">
+                        {img ? (
+                          <>
+                            <img src={img} alt="" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.src = '')} />
+                            {isValidating && (
+                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Image className="w-6 h-6 text-gray-400" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 relative">
+                        <Input
+                          placeholder="Nhập URL hình ảnh (jpg, png, gif, webp...)"
+                          value={img}
+                          onChange={(e) => handleImageChange(index, e.target.value)}
+                          className={`pr-10 ${hasError ? 'border-red-500 focus:ring-red-500' : isValid ? 'border-green-500 focus:ring-green-500' : ''}`}
+                        />
+                        {isValidating && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                          </div>
+                        )}
+                        {!isValidating && isValid && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <CheckCircle className="w-5 h-5 text-green-600" />
+                          </div>
+                        )}
+                        {!isValidating && hasError && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <AlertCircle className="w-5 h-5 text-red-600" />
+                          </div>
+                        )}
+                      </div>
+                      {formData.images.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleImageRemove(index)}
+                          className="text-red-600 hover:bg-red-50"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                    {hasError && (
+                      <div className="flex items-start gap-2 text-sm text-red-600 ml-[76px]">
+                        <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        <span>{validation.error}</span>
+                      </div>
+                    )}
+                    {isValid && (
+                      <div className="flex items-start gap-2 text-sm text-green-600 ml-[76px]">
+                        <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        <span>Hình ảnh hợp lệ</span>
                       </div>
                     )}
                   </div>
-                  <Input
-                    placeholder="Nhập URL hình ảnh"
-                    value={img}
-                    onChange={(e) => handleImageChange(index, e.target.value)}
-                    className="flex-1"
-                  />
-                  {formData.images.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleImageRemove(index)}
-                      className="text-red-600 hover:bg-red-50"
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
-            <p className="text-xs text-gray-500">Hỗ trợ URL hình ảnh từ các nguồn bên ngoài</p>
+            <p className="text-xs text-gray-500">
+              Hỗ trợ URL hình ảnh từ các nguồn bên ngoài. Định dạng: jpg, jpeg, png, gif, webp, svg, bmp, ico
+            </p>
           </div>
 
           {/* Submit */}

@@ -15,12 +15,14 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
+import { normalizeProduct } from '@/lib/utils';
 
 interface Product {
   id: string;
   title: string;
   price: number;
-  salePrice?: number;
+  originalPrice?: number;
   stock: number;
   status: string;
   images: string;
@@ -37,6 +39,13 @@ export default function SellerProductsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; productId: string | null; productTitle: string }>({
+    isOpen: false,
+    productId: null,
+    productTitle: '',
+  });
+  const [errorDialog, setErrorDialog] = useState<{ isOpen: boolean; message: string }>({ isOpen: false, message: '' });
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     fetchProducts();
@@ -60,7 +69,7 @@ export default function SellerProductsPage() {
 
       if (response.ok) {
         const data = await response.json();
-        setProducts(data.products);
+        setProducts((data.products || []).map((p: any) => normalizeProduct(p)));
         setPagination(prev => ({ ...prev, ...data.pagination }));
       }
     } catch (error) {
@@ -70,13 +79,50 @@ export default function SellerProductsPage() {
     }
   };
 
-  const handleDelete = async (productId: string) => {
-    if (!confirm('Bạn có chắc muốn xóa sản phẩm này?')) return;
-
+  const handleToggleStatus = async (productId: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'INACTIVE' ? 'ACTIVE' : 'INACTIVE';
+    
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || '/api'}/seller/products/${productId}`,
+        {
+          method: 'PUT',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
+
+      if (response.ok) {
+        // Update product in local state without refetching
+        setProducts(prev => prev.map(p => 
+          p.id === productId ? { ...p, status: newStatus } : p
+        ));
+      } else {
+        alert('Có lỗi xảy ra khi cập nhật trạng thái');
+      }
+    } catch (error) {
+      console.error('Error updating product status:', error);
+      alert('Có lỗi xảy ra khi cập nhật trạng thái');
+    }
+  };
+
+  const handleDeleteClick = (productId: string, productTitle: string) => {
+    setDeleteDialog({ isOpen: true, productId, productTitle });
+    setOpenMenu(null);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteDialog.productId) return;
+
+    setIsDeleting(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || '/api'}/seller/products/${deleteDialog.productId}`,
         {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` },
@@ -84,12 +130,22 @@ export default function SellerProductsPage() {
       );
 
       if (response.ok) {
-        fetchProducts();
+        // Xóa khỏi danh sách (sản phẩm đã bị xóa hẳn khỏi DB)
+        setProducts(prev => prev.filter(p => p.id !== deleteDialog.productId));
+        setPagination(prev => ({ ...prev, total: Math.max(0, prev.total - 1) }));
+        setDeleteDialog({ isOpen: false, productId: null, productTitle: '' });
+      } else {
+        const data = await response.json().catch(() => ({}));
+        setDeleteDialog(prev => ({ ...prev, isOpen: false }));
+        setErrorDialog({ isOpen: true, message: data.message || 'Có lỗi xảy ra khi xóa sản phẩm' });
       }
     } catch (error) {
       console.error('Error deleting product:', error);
+      setDeleteDialog(prev => ({ ...prev, isOpen: false }));
+      setErrorDialog({ isOpen: true, message: 'Có lỗi xảy ra khi xóa sản phẩm' });
+    } finally {
+      setIsDeleting(false);
     }
-    setOpenMenu(null);
   };
 
   const handleUpdateStock = async (productId: string, newStock: number) => {
@@ -229,8 +285,8 @@ export default function SellerProductsPage() {
                         <td className="px-4 py-4">
                           <div>
                             <p className="font-semibold text-gray-900">{product.price.toLocaleString('vi-VN')}đ</p>
-                            {product.salePrice && (
-                              <p className="text-sm text-gray-500 line-through">{product.salePrice.toLocaleString('vi-VN')}đ</p>
+                            {product.originalPrice && (
+                              <p className="text-sm text-gray-500 line-through">{product.originalPrice.toLocaleString('vi-VN')}đ</p>
                             )}
                           </div>
                         </td>
@@ -271,7 +327,7 @@ export default function SellerProductsPage() {
                             <Button 
                               variant="ghost" 
                               size="sm"
-                              onClick={() => handleDelete(product.id)}
+                              onClick={() => handleDeleteClick(product.id, product.title)}
                               className="text-red-600 hover:text-red-700 hover:bg-red-50"
                               title="Xóa"
                             >
@@ -331,7 +387,7 @@ export default function SellerProductsPage() {
                               Chỉnh sửa
                             </Link>
                             <button 
-                              onClick={() => handleDelete(product.id)}
+                              onClick={() => handleDeleteClick(product.id, product.title)}
                               className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                             >
                               Xóa
@@ -374,6 +430,31 @@ export default function SellerProductsPage() {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={deleteDialog.isOpen}
+        onClose={() => setDeleteDialog({ isOpen: false, productId: null, productTitle: '' })}
+        onConfirm={handleDeleteConfirm}
+        title="Xóa sản phẩm"
+        description={`Bạn có chắc muốn xóa sản phẩm "${deleteDialog.productTitle}"? Hành động này không thể hoàn tác.`}
+        confirmText="Xóa sản phẩm"
+        cancelText="Hủy"
+        variant="danger"
+        isLoading={isDeleting}
+        icon={<Trash2 className="w-7 h-7" />}
+      />
+
+      {/* Error Dialog (khi xóa thất bại, VD: sản phẩm đã có đơn hàng) */}
+      <ConfirmDialog
+        isOpen={errorDialog.isOpen}
+        onClose={() => setErrorDialog({ isOpen: false, message: '' })}
+        title="Không thể xóa"
+        description={errorDialog.message}
+        variant="warning"
+        alertMode
+        icon={<AlertCircle className="w-7 h-7" />}
+      />
     </div>
   );
 }

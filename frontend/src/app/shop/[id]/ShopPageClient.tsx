@@ -57,7 +57,7 @@ interface Product {
   title: string;
   description: string;
   price: number;
-  salePrice?: number;
+  originalPrice?: number;
   images: string;
   stock: number;
   sales: number;
@@ -145,7 +145,7 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
       productId: product.id,
       title: product.title,
       price: product.price,
-      salePrice: product.salePrice,
+      originalPrice: product.originalPrice,
       image: images[0] || '',
       stock: product.stock,
       sellerId: shop.id,
@@ -355,8 +355,8 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
               {products.map((product) => {
                 const images = typeof product.images === 'string' ? JSON.parse(product.images) : product.images;
                 const imageUrl = images[0] ? getImageUrl(images[0]) : '';
-                const discount = product.salePrice 
-                  ? Math.round((1 - product.salePrice / product.price) * 100) 
+                const discount = product.originalPrice && product.originalPrice > product.price
+                  ? Math.round((1 - product.price / product.originalPrice) * 100) 
                   : 0;
                 const isHovered = hoveredProduct === product.id;
 
@@ -431,14 +431,14 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
                           <span className="text-xs text-gray-500">{product.sales} đã bán</span>
                         </div>
 
-                        {/* Price */}
+                        {/* Price: giá bán (price) chính, giá gốc (originalPrice) gạch ngang */}
                         <div className="flex items-baseline gap-2">
                           <span className="text-lg font-bold text-red-500">
-                            {formatPrice(product.salePrice || product.price)}
+                            {formatPrice(product.price)}
                           </span>
-                          {product.salePrice && (
+                          {product.originalPrice && product.originalPrice > product.price && (
                             <span className="text-sm text-gray-400 line-through">
-                              {formatPrice(product.price)}
+                              {formatPrice(product.originalPrice)}
                             </span>
                           )}
                         </div>
@@ -454,8 +454,8 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
               {products.map((product) => {
                 const images = typeof product.images === 'string' ? JSON.parse(product.images) : product.images;
                 const imageUrl = images[0] ? getImageUrl(images[0]) : '';
-                const discount = product.salePrice 
-                  ? Math.round((1 - product.salePrice / product.price) * 100) 
+                const discount = product.originalPrice && product.originalPrice > product.price
+                  ? Math.round((1 - product.price / product.originalPrice) * 100) 
                   : 0;
 
                 return (
@@ -503,11 +503,11 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
                         <div className="flex items-center justify-between">
                           <div className="flex items-baseline gap-2">
                             <span className="text-2xl font-bold text-red-500">
-                              {formatPrice(product.salePrice || product.price)}
+                              {formatPrice(product.price)}
                             </span>
-                            {product.salePrice && (
+                            {product.originalPrice && product.originalPrice > product.price && (
                               <span className="text-base text-gray-400 line-through">
-                                {formatPrice(product.price)}
+                                {formatPrice(product.originalPrice)}
                               </span>
                             )}
                           </div>

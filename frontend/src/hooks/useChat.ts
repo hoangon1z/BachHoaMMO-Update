@@ -202,24 +202,33 @@ export function useChat(): UseChatReturn {
       
       // Update conversation preview and unread count
       setConversations((prev) => {
-        const updated = prev.map((conv) =>
-          conv._id === conversationId
-            ? {
-                ...conv,
-                lastMessageAt: message.createdAt,
-                lastMessagePreview: message.content,
-                unreadCount: isFromOther ? (conv.unreadCount || 0) + 1 : conv.unreadCount,
-              }
-            : conv
-        );
+        const existingIndex = prev.findIndex(conv => conv._id === conversationId);
         
-        // Calculate total unread for tab title
-        if (isFromOther) {
-          const totalUnread = updated.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
-          updateTabTitle(totalUnread, true);
+        if (existingIndex >= 0) {
+          // Update existing conversation
+          const updated = prev.map((conv) =>
+            conv._id === conversationId
+              ? {
+                  ...conv,
+                  lastMessageAt: message.createdAt,
+                  lastMessagePreview: message.content,
+                  unreadCount: isFromOther ? (conv.unreadCount || 0) + 1 : conv.unreadCount,
+                }
+              : conv
+          );
+          
+          // Calculate total unread for tab title
+          if (isFromOther) {
+            const totalUnread = updated.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+            updateTabTitle(totalUnread, true);
+          }
+          
+          return updated;
+        } else {
+          // Conversation not in list yet - fetch it and add to list
+          console.log('[Chat] New conversation detected, will be added on next loadConversations');
+          return prev;
         }
-        
-        return updated;
       });
     });
 
@@ -492,6 +501,21 @@ export function useChat(): UseChatReturn {
     if (data.success) {
       setCurrentConversation(data.conversation);
       socketRef.current?.emit('conversation:join', { conversationId: data.conversation._id });
+      
+      // Add conversation to list if not already present
+      setConversations((prev) => {
+        const exists = prev.some(conv => conv._id === data.conversation._id);
+        if (exists) {
+          // Update existing conversation
+          return prev.map(conv => 
+            conv._id === data.conversation._id ? data.conversation : conv
+          );
+        } else {
+          // Add new conversation at the top
+          return [data.conversation, ...prev];
+        }
+      });
+      
       return data.conversation;
     }
     throw new Error(data.message || 'Failed to start conversation');
@@ -515,6 +539,21 @@ export function useChat(): UseChatReturn {
     if (data.success) {
       setCurrentConversation(data.conversation);
       socketRef.current?.emit('conversation:join', { conversationId: data.conversation._id });
+      
+      // Add conversation to list if not already present
+      setConversations((prev) => {
+        const exists = prev.some(conv => conv._id === data.conversation._id);
+        if (exists) {
+          // Update existing conversation
+          return prev.map(conv => 
+            conv._id === data.conversation._id ? data.conversation : conv
+          );
+        } else {
+          // Add new conversation at the top
+          return [data.conversation, ...prev];
+        }
+      });
+      
       return data.conversation;
     }
     throw new Error(data.message || 'Failed to start conversation');
