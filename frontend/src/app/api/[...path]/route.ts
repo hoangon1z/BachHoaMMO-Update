@@ -32,7 +32,12 @@ async function proxyRequest(request: NextRequest, pathSegments: string[], method
     const path = pathSegments.join('/');
     const url = new URL(request.url);
     const searchParams = url.searchParams.toString();
-    const backendUrl = `${BACKEND_URL}/${path}${searchParams ? `?${searchParams}` : ''}`;
+    
+    // For Public Seller API routes (/api/v1/*), keep the full path including /api
+    // Otherwise, strip /api prefix (legacy behavior)
+    const isPublicApi = pathSegments[0] === 'v1';
+    const backendPath = isPublicApi ? `/api/${path}` : `/${path}`;
+    const backendUrl = `${BACKEND_URL}${backendPath}${searchParams ? `?${searchParams}` : ''}`;
 
     // Get headers from original request
     const headers: Record<string, string> = {
@@ -44,6 +49,14 @@ async function proxyRequest(request: NextRequest, pathSegments: string[], method
     if (authHeader) {
       headers['Authorization'] = authHeader;
     }
+    
+    // Forward Public API headers (X-API-Key, X-Timestamp, X-Signature)
+    const apiKey = request.headers.get('X-API-Key');
+    const timestamp = request.headers.get('X-Timestamp');
+    const signature = request.headers.get('X-Signature');
+    if (apiKey) headers['X-API-Key'] = apiKey;
+    if (timestamp) headers['X-Timestamp'] = timestamp;
+    if (signature) headers['X-Signature'] = signature;
 
     // Prepare fetch options
     const fetchOptions: RequestInit = {

@@ -7,7 +7,7 @@ import { Footer } from '@/components/Footer';
 import { useAuthStore } from '@/store/authStore';
 import { useCartStore } from '@/store/cartStore';
 import { Button } from '@/components/ui/button';
-import { Star, ShoppingCart, Heart, MessageCircle, Shield, Zap, Check, Minus, Plus, ChevronRight, Store, Clock, Eye, Share2, BadgeCheck, TrendingUp, Package, ThumbsUp, ExternalLink, AlertCircle, X, Loader2, ArrowUpCircle, Mail, User, Key } from 'lucide-react';
+import { Star, ShoppingCart, Heart, MessageCircle, Shield, Zap, Check, Minus, Plus, ChevronRight, Store, Clock, Share2, BadgeCheck, TrendingUp, Package, ThumbsUp, ExternalLink, AlertCircle, X, Loader2, ArrowUpCircle, Mail, User, Key } from 'lucide-react';
 import Link from 'next/link';
 import { VerifyBadge } from '@/components/VerifyBadge';
 
@@ -288,15 +288,6 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
                     </div>
                     <div className="w-px h-4 bg-gray-200"></div>
                     <span className="text-sm text-gray-500">Đã bán {product.totalSold}</span>
-                    {product.views && (
-                      <>
-                        <div className="w-px h-4 bg-gray-200"></div>
-                        <div className="flex items-center gap-1 text-sm text-gray-500">
-                          <Eye className="w-3.5 h-3.5" />
-                          {product.views.toLocaleString()}
-                        </div>
-                      </>
-                    )}
                   </div>
 
                   {/* Variants Selection */}

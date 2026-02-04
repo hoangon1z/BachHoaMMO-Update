@@ -55,6 +55,7 @@ model User {
   auctionBids        AuctionBid[]
   notifications      Notification[]
   devices            UserDevice[]
+  apiKeys            SellerApiKey[]
 
   @@map("users")
 }
@@ -572,6 +573,38 @@ model SellerApplication {
   @@index([userId])
   @@index([status])
   @@map("seller_applications")
+}
+
+// ============================================
+// SELLER API KEY SYSTEM
+// ============================================
+
+model SellerApiKey {
+  id          String    @id @default(uuid())
+  sellerId    String
+  seller      User      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  
+  apiKey      String    @unique  // Prefix: "bhmmo_" + random 32 chars
+  secretHash  String              // SHA256 hash of secret (không lưu plaintext)
+  name        String    @default("Default API Key")
+  
+  // Permissions (đơn giản - full access cho phase 1)
+  isActive    Boolean   @default(true)
+  
+  // Rate limiting
+  rateLimit   Int       @default(100)  // requests per minute
+  
+  // Tracking
+  lastUsedAt  DateTime?
+  lastUsedIp  String?
+  totalCalls  Int       @default(0)
+  
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?              // null = never expires
+  
+  @@index([sellerId])
+  @@index([apiKey])
+  @@map("seller_api_keys")
 }
 
 // ============================================

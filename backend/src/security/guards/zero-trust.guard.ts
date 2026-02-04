@@ -41,6 +41,12 @@ export class ZeroTrustGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest();
+    
+    // Skip for Public Seller API routes (they have their own API Key authentication)
+    const path = request.path || request.url?.split('?')[0] || '';
+    if (path.startsWith('/api/v1/')) {
+      return true;
+    }
     const ip = this.getClientIp(request);
     const userAgent = request.headers['user-agent'] || '';
 

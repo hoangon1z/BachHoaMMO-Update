@@ -12,6 +12,7 @@ interface User {
   role?: string;
   isSeller?: boolean;
   balance?: number;
+  twoFactorEnabled?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -35,6 +36,7 @@ interface LoginResult {
   success: boolean;
   requires2FA?: boolean;
   message?: string;
+  user?: User;
 }
 
 interface AuthState {
@@ -78,10 +80,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       
       const { access_token, user } = response.data;
+      const transformedUser = transformUserData(user);
       
       localStorage.setItem('token', access_token);
-      set({ user: transformUserData(user), token: access_token, isLoading: false, pendingEmail: null });
-      return { success: true };
+      set({ user: transformedUser, token: access_token, isLoading: false, pendingEmail: null });
+      return { success: true, user: transformedUser };
     } catch (error: any) {
       set({ 
         error: error.response?.data?.message || 'Login failed', 

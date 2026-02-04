@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Star, Eye, ShoppingCart, Heart, Package } from 'lucide-react';
+import { Star, ShoppingCart, Heart, Package } from 'lucide-react';
 import { useState } from 'react';
 import { VerifyBadge } from './VerifyBadge';
 

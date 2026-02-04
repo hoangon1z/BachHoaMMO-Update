@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { randomBytes, createHash } from 'crypto';
 import {
   CreateStoreDto,
   UpdateStoreDto,
@@ -1905,5 +1906,163 @@ export class SellerService {
       where: { isActive: true },
       orderBy: { name: 'asc' },
     });
+  }
+
+  // ==================== API KEY MANAGEMENT ====================
+
+  /**
+   * Get seller's API keys (without secrets)
+   */
+  async getApiKeys(userId: string) {
+    const keys = await this.prisma.sellerApiKey.findMany({
+      where: { sellerId: userId },
+      select: {
+        id: true,
+        apiKey: true,
+        name: true,
+        isActive: true,
+        rateLimit: true,
+        lastUsedAt: true,
+        lastUsedIp: true,
+        totalCalls: true,
+        createdAt: true,
+        expiresAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Mask API keys (show only first 12 chars)
+    return keys.map((key) => ({
+      ...key,
+      apiKey: key.apiKey.substring(0, 12) + '...',
+    }));
+  }
+
+  /**
+   * Generate new API key for seller
+   * Returns the full API key and secret (secret shown only once!)
+   */
+  async generateApiKey(userId: string, name?: string) {
+    // Check if seller has store
+    const store = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!store) {
+      throw new BadRequestException('Bạn cần có cửa hàng để sử dụng API');
+    }
+
+    // Limit to 3 API keys per seller
+    const existingCount = await this.prisma.sellerApiKey.count({
+      where: { sellerId: userId },
+    });
+
+    if (existingCount >= 3) {
+      throw new BadRequestException('Bạn chỉ có thể tạo tối đa 3 API key. Vui lòng xóa key cũ trước.');
+    }
+
+    // Generate API key: bhmmo_ + 32 random chars
+    const apiKey = 'bhmmo_' + randomBytes(24).toString('base64url');
+    
+    // Generate secret: random hex string (this IS the secret used for HMAC)
+    // We store this directly - client will use this same value to compute signatures
+    const secretKey = randomBytes(32).toString('hex');
+
+    // Create API key record
+    const record = await this.prisma.sellerApiKey.create({
+      data: {
+        sellerId: userId,
+        apiKey,
+        secretHash: secretKey, // Store the secret key directly (used for HMAC verification)
+        name: name || 'Default API Key',
+        isActive: true,
+        rateLimit: 100,
+      },
+    });
+
+    // Return full credentials (secret shown only once!)
+    return {
+      id: record.id,
+      apiKey: record.apiKey,
+      secret: secretKey, // ⚠️ Secret is shown only once! Client uses this for HMAC
+      name: record.name,
+      rateLimit: record.rateLimit,
+      createdAt: record.createdAt,
+      message: 'Lưu ý: Secret chỉ hiển thị một lần duy nhất. Hãy lưu lại ngay!',
+    };
+  }
+
+  /**
+   * Revoke (delete) an API key
+   */
+  async revokeApiKey(userId: string, apiKeyId: string) {
+    // Find and verify ownership
+    const apiKey = await this.prisma.sellerApiKey.findFirst({
+      where: { id: apiKeyId, sellerId: userId },
+    });
+
+    if (!apiKey) {
+      throw new NotFoundException('API key không tồn tại');
+    }
+
+    await this.prisma.sellerApiKey.delete({
+      where: { id: apiKeyId },
+    });
+
+    return { message: 'Đã xóa API key thành công' };
+  }
+
+  /**
+   * Toggle API key active status
+   */
+  async toggleApiKeyStatus(userId: string, apiKeyId: string) {
+    // Find and verify ownership
+    const apiKey = await this.prisma.sellerApiKey.findFirst({
+      where: { id: apiKeyId, sellerId: userId },
+    });
+
+    if (!apiKey) {
+      throw new NotFoundException('API key không tồn tại');
+    }
+
+    const updated = await this.prisma.sellerApiKey.update({
+      where: { id: apiKeyId },
+      data: { isActive: !apiKey.isActive },
+    });
+
+    return {
+      id: updated.id,
+      isActive: updated.isActive,
+      message: updated.isActive ? 'Đã bật API key' : 'Đã tắt API key',
+    };
+  }
+
+  /**
+   * Regenerate API key secret (keeps same API key, new secret)
+   */
+  async regenerateApiKeySecret(userId: string, apiKeyId: string) {
+    // Find and verify ownership
+    const apiKey = await this.prisma.sellerApiKey.findFirst({
+      where: { id: apiKeyId, sellerId: userId },
+    });
+
+    if (!apiKey) {
+      throw new NotFoundException('API key không tồn tại');
+    }
+
+    // Generate new secret key (used directly for HMAC)
+    const secretKey = randomBytes(32).toString('hex');
+
+    await this.prisma.sellerApiKey.update({
+      where: { id: apiKeyId },
+      data: { secretHash: secretKey },
+    });
+
+    return {
+      id: apiKey.id,
+      apiKey: apiKey.apiKey,
+      secret: secretKey, // ⚠️ Secret is shown only once!
+      message: 'Đã tạo secret mới. Lưu ý: Secret chỉ hiển thị một lần duy nhất!',
+    };
   }
 }

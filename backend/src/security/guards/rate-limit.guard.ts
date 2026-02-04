@@ -25,6 +25,12 @@ export class RateLimitGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const response = context.switchToHttp().getResponse();
     
+    // Skip for Public Seller API routes (they have their own rate limiting)
+    const path = request.path || request.url?.split('?')[0] || '';
+    if (path.startsWith('/api/v1/')) {
+      return true;
+    }
+    
     const ip = this.getClientIp(request);
     const userAgent = request.headers['user-agent'] || '';
     const endpoint = request.path;

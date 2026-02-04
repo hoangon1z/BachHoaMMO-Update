@@ -21,6 +21,7 @@ import { AuctionModule } from './auction/auction.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { EmailModule } from './email/email.module';
 import { TelegramModule } from './telegram/telegram.module';
+import { PublicApiModule } from './public-api/public-api.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { TelegramModule } from './telegram/telegram.module';
     AuctionModule, // Auction system
     NotificationsModule, // Notification system
     TelegramModule, // Telegram notifications
+    PublicApiModule, // Public Seller API (tách biệt, không qua WAF/ZeroTrust)
   ],
 })
 export class AppModule {}

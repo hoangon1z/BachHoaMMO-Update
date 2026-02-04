@@ -1,0 +1,549 @@
+{
+  "info": {
+    "_postman_id": "bachhoammo-seller-api",
+    "name": "BachHoaMMO Seller API",
+    "description": "# BachHoaMMO Seller API\n\nAPI cho seller quản lý kho hàng, sản phẩm và đơn hàng trên BachHoaMMO.\n\n## Authentication\n\nMỗi request cần 3 headers:\n- `X-API-Key`: API Key của bạn (bắt đầu bằng `bhmmo_`)\n- `X-Timestamp`: Unix timestamp (giây)\n- `X-Signature`: HMAC-SHA256 signature\n\n### Tính signature\n\n```javascript\nconst crypto = require('crypto');\n\nconst signaturePayload = timestamp + method + path + body;\nconst signature = crypto\n  .createHmac('sha256', secretHash)\n  .update(signaturePayload)\n  .digest('hex');\n```\n\n## Rate Limits\n\n- Default: 100 requests/phút\n- Headers trả về: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`\n\n## Error Response\n\n```json\n{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"ERROR_CODE\",\n    \"message\": \"Error description\"\n  }\n}\n```\n\n## Support\n\n- Website: https://bachhoammo.store\n- Email: support@bachhoammo.store",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://bachhoammo.store",
+      "type": "string"
+    },
+    {
+      "key": "api_key",
+      "value": "bhmmo_your_api_key_here",
+      "type": "string"
+    },
+    {
+      "key": "api_secret",
+      "value": "your_secret_here",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// BachHoaMMO API - Auto-generate signature",
+          "const timestamp = Math.floor(Date.now() / 1000).toString();",
+          "const method = pm.request.method.toUpperCase();",
+          "const path = pm.request.url.getPath();",
+          "",
+          "// Get body and minify (remove whitespace/newlines to match server)",
+          "let body = '';",
+          "if (pm.request.body && pm.request.body.raw) {",
+          "    try {",
+          "        const parsed = JSON.parse(pm.request.body.raw);",
+          "        body = JSON.stringify(parsed);",
+          "    } catch (e) {",
+          "        body = pm.request.body.raw;",
+          "    }",
+          "}",
+          "",
+          "// Get API secret from collection variables",
+          "const secret = pm.collectionVariables.get('api_secret') || pm.variables.get('api_secret');",
+          "",
+          "// Create signature payload: timestamp + method + path + body",
+          "const signaturePayload = timestamp + method + path + body;",
+          "",
+          "// Generate HMAC-SHA256 signature",
+          "const signature = CryptoJS.HmacSHA256(signaturePayload, secret).toString();",
+          "",
+          "// Debug log (check in Postman Console)",
+          "console.log('=== Signature Debug ===');",
+          "console.log('Timestamp:', timestamp);",
+          "console.log('Method:', method);",
+          "console.log('Path:', path);",
+          "console.log('Body:', body);",
+          "console.log('Payload:', signaturePayload);",
+          "console.log('Signature:', signature);",
+          "",
+          "// Set headers",
+          "pm.request.headers.add({ key: 'X-API-Key', value: pm.collectionVariables.get('api_key') || pm.variables.get('api_key') });",
+          "pm.request.headers.add({ key: 'X-Timestamp', value: timestamp });",
+          "pm.request.headers.add({ key: 'X-Signature', value: signature });",
+          "pm.request.headers.add({ key: 'Content-Type', value: 'application/json' });"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Info",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "health"]
+            },
+            "description": "Kiểm tra API có hoạt động không. Endpoint này không cần authentication."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{base_url}}/api/v1/health"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"status\": \"ok\",\n    \"version\": \"1.0.0\",\n    \"timestamp\": \"2024-01-30T10:00:00.000Z\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get My Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "me"]
+            },
+            "description": "Lấy thông tin seller và shop."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": \"user-uuid\",\n    \"email\": \"seller@example.com\",\n    \"name\": \"Shop Name\",\n    \"balance\": 1000000,\n    \"shop\": {\n      \"name\": \"My Shop\",\n      \"description\": \"Shop description\",\n      \"logo\": \"/uploads/logo.png\",\n      \"rating\": 4.5,\n      \"totalSales\": 100,\n      \"isVerified\": true\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "stats"]
+            },
+            "description": "Thống kê tổng quan: sản phẩm, đơn hàng, kho hàng."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"products\": 15,\n    \"orders\": {\n      \"total\": 100,\n      \"pending\": 5,\n      \"processing\": 3,\n      \"completed\": 90,\n      \"cancelled\": 2,\n      \"revenue\": 5000000\n    },\n    \"inventory\": {\n      \"total\": 500,\n      \"available\": 450,\n      \"sold\": 50\n    },\n    \"recentOrders\": 12\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Inventory",
+      "item": [
+        {
+          "name": "Get Inventory",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/inventory?limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "inventory"],
+              "query": [
+                {
+                  "key": "productId",
+                  "value": "",
+                  "description": "Filter by product ID",
+                  "disabled": true
+                },
+                {
+                  "key": "variantId",
+                  "value": "",
+                  "description": "Filter by variant ID",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "AVAILABLE",
+                  "description": "AVAILABLE, RESERVED, SOLD, DISABLED",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Max 100"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Lấy danh sách kho hàng. Có thể filter theo productId, status."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": \"inv-uuid\",\n        \"productId\": \"product-uuid\",\n        \"variantId\": null,\n        \"status\": \"AVAILABLE\",\n        \"createdAt\": \"2024-01-30T10:00:00.000Z\"\n      }\n    ],\n    \"stats\": {\n      \"total\": 100,\n      \"available\": 90,\n      \"reserved\": 5,\n      \"sold\": 5,\n      \"disabled\": 0\n    },\n    \"pagination\": {\n      \"limit\": 50,\n      \"offset\": 0,\n      \"total\": 100,\n      \"hasMore\": true\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Add Inventory (Bulk)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"your-product-id\",\n  \"variantId\": null,\n  \"items\": [\n    \"username1|password1|email1@gmail.com\",\n    \"username2|password2|email2@gmail.com\",\n    \"username3|password3|email3@gmail.com\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/inventory",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "inventory"]
+            },
+            "description": "Thêm nhiều tài khoản vào kho cùng lúc.\n\n**Body:**\n- `productId` (required): ID sản phẩm\n- `variantId` (optional): ID phân loại\n- `items` (required): Mảng các tài khoản (mỗi dòng là một tài khoản)"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"added\": 3,\n    \"duplicates\": 0,\n    \"errors\": []\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Delete Single Inventory",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/inventory/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "inventory", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "inventory-id-here"
+                }
+              ]
+            },
+            "description": "Xóa một item trong kho. Không thể xóa item đã bán."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"deleted\": true\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Delete Multiple Inventory",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\n    \"inventory-id-1\",\n    \"inventory-id-2\",\n    \"inventory-id-3\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/inventory",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "inventory"]
+            },
+            "description": "Xóa nhiều items trong kho cùng lúc."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"deleted\": 3,\n    \"skipped\": 0\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "Get Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products"],
+              "query": [
+                {
+                  "key": "categoryId",
+                  "value": "",
+                  "description": "Filter by category",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE",
+                  "description": "ACTIVE, INACTIVE, OUT_OF_STOCK",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Lấy danh sách sản phẩm của seller."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": \"product-uuid\",\n        \"title\": \"Premium Account\",\n        \"description\": \"Description here\",\n        \"price\": 50000,\n        \"originalPrice\": 100000,\n        \"stock\": 50,\n        \"status\": \"ACTIVE\",\n        \"images\": [\"https://...\"],\n        \"categoryId\": \"cat-uuid\",\n        \"categoryName\": \"Tài khoản Premium\",\n        \"views\": 100,\n        \"sales\": 20,\n        \"rating\": 4.5,\n        \"autoDelivery\": true,\n        \"productType\": \"STANDARD\",\n        \"hasVariants\": false,\n        \"variants\": [],\n        \"createdAt\": \"2024-01-30T10:00:00.000Z\",\n        \"updatedAt\": \"2024-01-30T10:00:00.000Z\"\n      }\n    ],\n    \"pagination\": {\n      \"limit\": 20,\n      \"offset\": 0,\n      \"total\": 15,\n      \"hasMore\": false\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Product Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "product-id-here"
+                }
+              ]
+            },
+            "description": "Lấy chi tiết một sản phẩm."
+          }
+        },
+        {
+          "name": "Create Product",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Premium Netflix Account\",\n  \"description\": \"Tài khoản Netflix Premium 1 tháng\",\n  \"price\": 50000,\n  \"originalPrice\": 100000,\n  \"stock\": 0,\n  \"categoryId\": \"your-category-id\",\n  \"images\": [\"https://example.com/image.jpg\"],\n  \"tags\": [\"netflix\", \"premium\"],\n  \"autoDelivery\": true,\n  \"productType\": \"STANDARD\",\n  \"hasVariants\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/products",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products"]
+            },
+            "description": "Tạo sản phẩm mới.\n\n**Body:**\n- `title` (required): Tên sản phẩm\n- `description` (required): Mô tả\n- `price` (required): Giá bán\n- `originalPrice` (optional): Giá gốc (gạch ngang)\n- `categoryId` (required): ID danh mục\n- `images` (required): Mảng URL ảnh\n- `productType`: STANDARD hoặc UPGRADE"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": \"new-product-uuid\",\n    \"title\": \"Premium Netflix Account\",\n    \"...other fields\": \"...\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Update Product",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated Title\",\n  \"price\": 60000,\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "product-id-here"
+                }
+              ]
+            },
+            "description": "Cập nhật sản phẩm. Chỉ cần gửi các field muốn update."
+          }
+        },
+        {
+          "name": "Update Stock",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stock\": 100\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id/stock",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products", ":id", "stock"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "product-id-here"
+                }
+              ]
+            },
+            "description": "Cập nhật stock của sản phẩm (không phụ thuộc inventory)."
+          }
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "product-id-here"
+                }
+              ]
+            },
+            "description": "Xóa sản phẩm (soft delete - chuyển status thành INACTIVE)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "Get Orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "orders"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "PENDING",
+                  "description": "PENDING, PROCESSING, COMPLETED, CANCELLED, REFUNDED, DISPUTED",
+                  "disabled": true
+                },
+                {
+                  "key": "productId",
+                  "value": "",
+                  "description": "Filter by product",
+                  "disabled": true
+                },
+                {
+                  "key": "fromDate",
+                  "value": "2024-01-01",
+                  "description": "ISO date string",
+                  "disabled": true
+                },
+                {
+                  "key": "toDate",
+                  "value": "2024-12-31",
+                  "description": "ISO date string",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Lấy danh sách đơn hàng. Có thể filter theo status, productId, ngày."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": \"order-uuid\",\n        \"orderNumber\": \"ORD-123456\",\n        \"status\": \"PENDING\",\n        \"subtotal\": 100000,\n        \"commission\": 5000,\n        \"total\": 100000,\n        \"buyerName\": \"Buyer Name\",\n        \"items\": [\n          {\n            \"id\": \"item-uuid\",\n            \"productId\": \"product-uuid\",\n            \"productTitle\": \"Product Name\",\n            \"variantId\": null,\n            \"variantName\": null,\n            \"quantity\": 2,\n            \"price\": 50000,\n            \"total\": 100000,\n            \"deliveredQuantity\": 0,\n            \"productType\": \"STANDARD\"\n          }\n        ],\n        \"createdAt\": \"2024-01-30T10:00:00.000Z\",\n        \"deliveredAt\": null\n      }\n    ],\n    \"pagination\": {\n      \"limit\": 20,\n      \"offset\": 0,\n      \"total\": 50,\n      \"hasMore\": true\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Order Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "orders", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "order-id-here"
+                }
+              ]
+            },
+            "description": "Lấy chi tiết đơn hàng, bao gồm các items đã giao."
+          }
+        },
+        {
+          "name": "Manual Deliver",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderItemId\": \"order-item-id\",\n  \"accountData\": [\n    \"username1|password1|email1@gmail.com\",\n    \"username2|password2|email2@gmail.com\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/:id/deliver",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "orders", ":id", "deliver"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "order-id-here"
+                }
+              ]
+            },
+            "description": "Giao hàng thủ công cho đơn hàng.\n\n**Body:**\n- `orderItemId` (required): ID của order item cần giao\n- `accountData` (required): Mảng tài khoản cần giao"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"delivered\": 2,\n    \"remaining\": 0,\n    \"orderStatus\": \"COMPLETED\"\n  }\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -95,6 +95,10 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body className={inter.className}>
+        {/* Suppress Telegram WebApp console logs */}
+        <Script id="suppress-telegram-logs" strategy="beforeInteractive">
+          {`(function(){var o=console.log;console.log=function(){if(arguments[0]&&typeof arguments[0]==='string'&&arguments[0].includes('[Telegram.WebView]'))return;o.apply(console,arguments)};})();`}
+        </Script>
         {/* Telegram Mini App SDK */}
         <Script 
           src="https://telegram.org/js/telegram-web-app.js" 

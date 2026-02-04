@@ -373,4 +373,58 @@ export class SellerController {
   ) {
     return this.sellerService.deleteMultipleInventory(req.user.id, productId, inventoryIds);
   }
+
+  // ==================== API KEY MANAGEMENT ====================
+
+  /**
+   * Get seller's API keys
+   */
+  @Get('api-keys')
+  async getApiKeys(@Request() req) {
+    return this.sellerService.getApiKeys(req.user.id);
+  }
+
+  /**
+   * Generate new API key
+   */
+  @Post('api-keys')
+  async generateApiKey(
+    @Request() req,
+    @Body('name') name?: string,
+  ) {
+    return this.sellerService.generateApiKey(req.user.id, name);
+  }
+
+  /**
+   * Revoke (delete) an API key
+   */
+  @Delete('api-keys/:id')
+  async revokeApiKey(
+    @Request() req,
+    @Param('id') apiKeyId: string,
+  ) {
+    return this.sellerService.revokeApiKey(req.user.id, apiKeyId);
+  }
+
+  /**
+   * Toggle API key active status
+   */
+  @Put('api-keys/:id/toggle')
+  async toggleApiKeyStatus(
+    @Request() req,
+    @Param('id') apiKeyId: string,
+  ) {
+    return this.sellerService.toggleApiKeyStatus(req.user.id, apiKeyId);
+  }
+
+  /**
+   * Regenerate API key secret
+   */
+  @Post('api-keys/:id/regenerate')
+  async regenerateApiKeySecret(
+    @Request() req,
+    @Param('id') apiKeyId: string,
+  ) {
+    return this.sellerService.regenerateApiKeySecret(req.user.id, apiKeyId);
+  }
 }
