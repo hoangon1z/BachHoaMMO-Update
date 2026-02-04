@@ -31,7 +31,8 @@ export function ConversationList({ onSelectConversation, selectedId, filter, cha
   useEffect(() => {
     console.log('[ConversationList] Loading conversations with filter:', filter);
     loadConversations(filter);
-  }, [filter?.status, filter?.type]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter?.status, filter?.type, loadConversations]);
 
   const formatTime = (dateString?: string) => {
     if (!dateString) return '';

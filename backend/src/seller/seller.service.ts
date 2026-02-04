@@ -432,12 +432,20 @@ export class SellerService {
 
   // ==================== ORDER MANAGEMENT ====================
 
-  async getOrders(userId: string, page = 1, limit = 10, status?: string) {
+  async getOrders(userId: string, page = 1, limit = 10, status?: string, search?: string) {
     const skip = (page - 1) * limit;
     const where: any = { sellerId: userId };
     
     if (status) {
       where.status = status;
+    }
+
+    if (search) {
+      where.OR = [
+        { orderNumber: { contains: search, mode: 'insensitive' } },
+        { buyer: { name: { contains: search, mode: 'insensitive' } } },
+        { buyer: { email: { contains: search, mode: 'insensitive' } } },
+      ];
     }
 
     const [orders, total] = await Promise.all([

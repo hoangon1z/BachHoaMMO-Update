@@ -1,9 +1,17 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
-// Telegram Bot Token
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8531940203:AAHcPL43LGFS3ZlmMJSEXgeSxgPs6fzJG1w';
-const TELEGRAM_API_URL = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
+// Telegram Bot Tokens - Split into 2 bots for different purposes
+// Bot 1: Order notifications (main bot)
+const TELEGRAM_ORDER_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8531940203:AAHcPL43LGFS3ZlmMJSEXgeSxgPs6fzJG1w';
+// Bot 2: Message notifications (chat bot)
+const TELEGRAM_CHAT_BOT_TOKEN = process.env.TELEGRAM_CHAT_BOT_TOKEN || '8228936352:AAENIWyI0iWnr96Yc1CY-ZtciIEMjomrEm8';
+
+const TELEGRAM_ORDER_API_URL = `https://api.telegram.org/bot${TELEGRAM_ORDER_BOT_TOKEN}`;
+const TELEGRAM_CHAT_API_URL = `https://api.telegram.org/bot${TELEGRAM_CHAT_BOT_TOKEN}`;
+
+// Legacy alias for backward compatibility
+const TELEGRAM_API_URL = TELEGRAM_ORDER_API_URL;
 
 export interface TelegramMessage {
   chat_id: string | number;
@@ -39,45 +47,82 @@ export interface TelegramUpdate {
 @Injectable()
 export class TelegramService implements OnModuleInit {
   private readonly logger = new Logger(TelegramService.name);
-  private pollingInterval: NodeJS.Timeout | null = null;
-  private lastUpdateId = 0;
+  private orderBotPollingInterval: NodeJS.Timeout | null = null;
+  private chatBotPollingInterval: NodeJS.Timeout | null = null;
+  private orderBotLastUpdateId = 0;
+  private chatBotLastUpdateId = 0;
 
   constructor(private prisma: PrismaService) {}
 
   async onModuleInit() {
-    // Start polling for updates when module initializes
-    this.startPolling();
-    this.logger.log('Telegram bot started polling for updates');
+    // Start polling for both bots
+    this.startOrderBotPolling();
+    this.startChatBotPolling();
+    this.logger.log('Telegram Order Bot started polling for updates');
+    this.logger.log('Telegram Chat Bot started polling for updates');
   }
 
   /**
-   * Start polling for Telegram updates (to handle /start command)
+   * Start polling for Order Bot updates
    */
-  private startPolling() {
-    // Poll every 3 seconds
-    this.pollingInterval = setInterval(async () => {
+  private startOrderBotPolling() {
+    this.orderBotPollingInterval = setInterval(async () => {
       try {
-        await this.getUpdates();
+        await this.getOrderBotUpdates();
       } catch (error) {
-        this.logger.error('Error polling Telegram updates:', error.message);
+        this.logger.error('Error polling Order Bot updates:', error.message);
       }
     }, 3000);
   }
 
   /**
-   * Get updates from Telegram (long polling)
+   * Start polling for Chat Bot updates
    */
-  private async getUpdates() {
+  private startChatBotPolling() {
+    this.chatBotPollingInterval = setInterval(async () => {
+      try {
+        await this.getChatBotUpdates();
+      } catch (error) {
+        this.logger.error('Error polling Chat Bot updates:', error.message);
+      }
+    }, 3000);
+  }
+
+  /**
+   * Get updates from Order Bot (long polling)
+   */
+  private async getOrderBotUpdates() {
     try {
       const response = await fetch(
-        `${TELEGRAM_API_URL}/getUpdates?offset=${this.lastUpdateId + 1}&timeout=1`,
+        `${TELEGRAM_ORDER_API_URL}/getUpdates?offset=${this.orderBotLastUpdateId + 1}&timeout=1`,
       );
       const data = await response.json();
 
       if (data.ok && data.result && data.result.length > 0) {
         for (const update of data.result as TelegramUpdate[]) {
-          this.lastUpdateId = update.update_id;
-          await this.handleUpdate(update);
+          this.orderBotLastUpdateId = update.update_id;
+          await this.handleUpdate(update, 'order');
+        }
+      }
+    } catch (error) {
+      // Silently ignore polling errors
+    }
+  }
+
+  /**
+   * Get updates from Chat Bot (long polling)
+   */
+  private async getChatBotUpdates() {
+    try {
+      const response = await fetch(
+        `${TELEGRAM_CHAT_API_URL}/getUpdates?offset=${this.chatBotLastUpdateId + 1}&timeout=1`,
+      );
+      const data = await response.json();
+
+      if (data.ok && data.result && data.result.length > 0) {
+        for (const update of data.result as TelegramUpdate[]) {
+          this.chatBotLastUpdateId = update.update_id;
+          await this.handleUpdate(update, 'chat');
         }
       }
     } catch (error) {
@@ -87,15 +132,22 @@ export class TelegramService implements OnModuleInit {
 
   /**
    * Handle incoming Telegram update
+   * @param botType - 'order' for order bot, 'chat' for chat bot
    */
-  private async handleUpdate(update: TelegramUpdate) {
+  private async handleUpdate(update: TelegramUpdate, botType: 'order' | 'chat' = 'order') {
     if (!update.message?.text) return;
 
     const chatId = update.message.chat.id;
     const text = update.message.text;
     const username = update.message.from.username || update.message.from.first_name;
+    const botName = botType === 'chat' ? 'Chat Bot' : 'Order Bot';
 
-    this.logger.log(`Received message from ${username} (${chatId}): ${text}`);
+    this.logger.log(`[${botName}] Received message from ${username} (${chatId}): ${text}`);
+
+    // Choose which send method to use based on bot type
+    const sendFn = botType === 'chat' 
+      ? (msg: TelegramMessage) => this.sendChatBotMessage(msg)
+      : (msg: TelegramMessage) => this.sendMessage(msg);
 
     // Handle /start command with linking code
     if (text.startsWith('/start')) {
@@ -103,19 +155,27 @@ export class TelegramService implements OnModuleInit {
       if (parts.length > 1) {
         // /start <linking_code>
         const linkingCode = parts[1];
-        await this.handleLinkingCode(chatId.toString(), linkingCode, username);
+        await this.handleLinkingCode(chatId.toString(), linkingCode, username, botType);
       } else {
         // Just /start without code
-        await this.sendMessage({
+        const welcomeMsg = botType === 'chat'
+          ? `🎉 Chào mừng ${username} đến với <b>BachHoaMMO Chat Bot</b>!\n\n💬 Bot này sẽ gửi thông báo khi bạn có <b>tin nhắn mới</b> từ khách hàng.\n\nĐể nhận thông báo, vui lòng truy cập trang Cài đặt Shop trên website và nhấn "Kết nối Telegram Chat".`
+          : `🎉 Chào mừng ${username} đến với <b>BachHoaMMO Order Bot</b>!\n\n🛒 Bot này sẽ gửi thông báo khi bạn có:\n• Đơn hàng mới\n• Khiếu nại từ khách hàng\n• Thông báo từ Admin\n\nĐể nhận thông báo, vui lòng truy cập trang Cài đặt Shop trên website và nhấn "Kết nối Telegram".`;
+        
+        await sendFn({
           chat_id: chatId,
-          text: `🎉 Chào mừng ${username} đến với BachHoaMMO Bot!\n\nĐể nhận thông báo đơn hàng, vui lòng truy cập trang Cài đặt Shop trên website và nhấn "Kết nối Telegram".\n\n📱 Bạn sẽ nhận được mã liên kết để kết nối tài khoản.`,
+          text: welcomeMsg,
           parse_mode: 'HTML',
         });
       }
     } else if (text === '/help') {
-      await this.sendMessage({
+      const helpMsg = botType === 'chat'
+        ? `📚 <b>Hướng dẫn sử dụng BachHoaMMO Chat Bot</b>\n\n💬 Bot này chuyên gửi <b>thông báo tin nhắn mới</b>.\n\n🔗 <b>Kết nối tài khoản:</b>\n1. Truy cập website BachHoaMMO\n2. Vào Seller Dashboard > Cài đặt\n3. Nhấn "Kết nối Telegram Chat"\n\n❓ Có thắc mắc? Liên hệ Admin qua website.`
+        : `📚 <b>Hướng dẫn sử dụng BachHoaMMO Order Bot</b>\n\n🔗 <b>Kết nối tài khoản:</b>\n1. Truy cập website BachHoaMMO\n2. Vào Seller Dashboard > Cài đặt\n3. Nhấn "Kết nối Telegram"\n4. Nhấn vào link được cung cấp\n\n📬 <b>Thông báo bạn sẽ nhận:</b>\n• Đơn hàng mới\n• Khiếu nại từ khách hàng\n• Thông báo từ Admin\n\n❓ Có thắc mắc? Liên hệ Admin qua website.`;
+      
+      await sendFn({
         chat_id: chatId,
-        text: `📚 <b>Hướng dẫn sử dụng BachHoaMMO Bot</b>\n\n🔗 <b>Kết nối tài khoản:</b>\n1. Truy cập website BachHoaMMO\n2. Vào Seller Dashboard > Cài đặt\n3. Nhấn "Kết nối Telegram"\n4. Nhấn vào link được cung cấp\n\n📬 <b>Thông báo bạn sẽ nhận:</b>\n• Đơn hàng mới\n• Khiếu nại từ khách hàng\n• Tin nhắn mới\n• Thông báo từ Admin\n\n❓ Có thắc mắc? Liên hệ Admin qua website.`,
+        text: helpMsg,
         parse_mode: 'HTML',
       });
     } else if (text === '/status') {
@@ -126,13 +186,13 @@ export class TelegramService implements OnModuleInit {
       });
 
       if (user) {
-        await this.sendMessage({
+        await sendFn({
           chat_id: chatId,
           text: `✅ <b>Đã kết nối</b>\n\n👤 Tài khoản: ${user.email}\n🏪 Shop: ${user.sellerProfile?.shopName || 'Chưa có shop'}\n📅 Kết nối lúc: ${user.telegramLinkedAt?.toLocaleString('vi-VN') || 'N/A'}`,
           parse_mode: 'HTML',
         });
       } else {
-        await this.sendMessage({
+        await sendFn({
           chat_id: chatId,
           text: `❌ <b>Chưa kết nối</b>\n\nTài khoản Telegram của bạn chưa được liên kết với BachHoaMMO.\n\nVui lòng truy cập website để kết nối.`,
           parse_mode: 'HTML',
@@ -143,12 +203,18 @@ export class TelegramService implements OnModuleInit {
 
   /**
    * Handle linking code from /start command
+   * @param botType - 'order' for order bot, 'chat' for chat bot
    */
-  private async handleLinkingCode(chatId: string, code: string, username: string) {
+  private async handleLinkingCode(chatId: string, code: string, username: string, botType: 'order' | 'chat' = 'order') {
+    // Choose which send method to use based on bot type
+    const sendFn = botType === 'chat' 
+      ? (msg: TelegramMessage) => this.sendChatBotMessage(msg)
+      : (msg: TelegramMessage) => this.sendMessage(msg);
+
     try {
       // Code format: link_<userId>_<timestamp>
       if (!code.startsWith('link_')) {
-        await this.sendMessage({
+        await sendFn({
           chat_id: chatId,
           text: '❌ Mã liên kết không hợp lệ. Vui lòng lấy mã mới từ website.',
         });
@@ -157,7 +223,7 @@ export class TelegramService implements OnModuleInit {
 
       const parts = code.split('_');
       if (parts.length < 3) {
-        await this.sendMessage({
+        await sendFn({
           chat_id: chatId,
           text: '❌ Mã liên kết không hợp lệ.',
         });
@@ -169,7 +235,7 @@ export class TelegramService implements OnModuleInit {
 
       // Check if code is expired (15 minutes)
       if (Date.now() - timestamp > 15 * 60 * 1000) {
-        await this.sendMessage({
+        await sendFn({
           chat_id: chatId,
           text: '❌ Mã liên kết đã hết hạn. Vui lòng lấy mã mới từ website.',
         });
@@ -183,7 +249,7 @@ export class TelegramService implements OnModuleInit {
       });
 
       if (!user) {
-        await this.sendMessage({
+        await sendFn({
           chat_id: chatId,
           text: '❌ Không tìm thấy tài khoản. Vui lòng thử lại.',
         });
@@ -196,7 +262,7 @@ export class TelegramService implements OnModuleInit {
       });
 
       if (existingUser) {
-        await this.sendMessage({
+        await sendFn({
           chat_id: chatId,
           text: `❌ Tài khoản Telegram này đã được liên kết với email ${existingUser.email}. Vui lòng hủy liên kết trước khi liên kết với tài khoản mới.`,
         });
@@ -212,16 +278,21 @@ export class TelegramService implements OnModuleInit {
         },
       });
 
-      await this.sendMessage({
+      // Different success messages for each bot
+      const successMsg = botType === 'chat'
+        ? `✅ <b>Kết nối Chat Bot thành công!</b>\n\n👤 Email: ${user.email}\n🏪 Shop: ${user.sellerProfile?.shopName || 'Chưa có shop'}\n\n💬 Bạn sẽ nhận được thông báo khi:\n• Có tin nhắn mới từ khách hàng\n\nGõ /help để xem hướng dẫn.`
+        : `✅ <b>Kết nối Order Bot thành công!</b>\n\n👤 Email: ${user.email}\n🏪 Shop: ${user.sellerProfile?.shopName || 'Chưa có shop'}\n\n🔔 Bạn sẽ nhận được thông báo khi:\n• Có đơn hàng mới\n• Có khiếu nại từ khách\n• Có thông báo từ Admin\n\nGõ /help để xem hướng dẫn.`;
+
+      await sendFn({
         chat_id: chatId,
-        text: `✅ <b>Kết nối thành công!</b>\n\n👤 Email: ${user.email}\n🏪 Shop: ${user.sellerProfile?.shopName || 'Chưa có shop'}\n\n🔔 Bạn sẽ nhận được thông báo khi:\n• Có đơn hàng mới\n• Có khiếu nại từ khách\n• Có tin nhắn mới\n• Có thông báo từ Admin\n\nGõ /help để xem hướng dẫn.`,
+        text: successMsg,
         parse_mode: 'HTML',
       });
 
-      this.logger.log(`Telegram linked: User ${user.email} -> Chat ${chatId}`);
+      this.logger.log(`Telegram ${botType} bot linked: User ${user.email} -> Chat ${chatId}`);
     } catch (error) {
       this.logger.error('Error handling linking code:', error);
-      await this.sendMessage({
+      await sendFn({
         chat_id: chatId,
         text: '❌ Có lỗi xảy ra. Vui lòng thử lại sau.',
       });
@@ -229,11 +300,11 @@ export class TelegramService implements OnModuleInit {
   }
 
   /**
-   * Send a message to a Telegram chat
+   * Send a message to a Telegram chat via Order Bot (main bot)
    */
   async sendMessage(message: TelegramMessage): Promise<boolean> {
     try {
-      const response = await fetch(`${TELEGRAM_API_URL}/sendMessage`, {
+      const response = await fetch(`${TELEGRAM_ORDER_API_URL}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(message),
@@ -241,13 +312,37 @@ export class TelegramService implements OnModuleInit {
 
       const data = await response.json();
       if (!data.ok) {
-        this.logger.error(`Telegram API error: ${data.description}`);
+        this.logger.error(`Telegram Order Bot API error: ${data.description}`);
         return false;
       }
 
       return true;
     } catch (error) {
-      this.logger.error('Error sending Telegram message:', error.message);
+      this.logger.error('Error sending Telegram message (Order Bot):', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Send a message via Chat Bot (for message notifications)
+   */
+  async sendChatBotMessage(message: TelegramMessage): Promise<boolean> {
+    try {
+      const response = await fetch(`${TELEGRAM_CHAT_API_URL}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(message),
+      });
+
+      const data = await response.json();
+      if (!data.ok) {
+        this.logger.error(`Telegram Chat Bot API error: ${data.description}`);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      this.logger.error('Error sending Telegram message (Chat Bot):', error.message);
       return false;
     }
   }
@@ -318,7 +413,7 @@ export class TelegramService implements OnModuleInit {
   }
 
   /**
-   * Notify seller about new message
+   * Notify seller about new message (via Chat Bot)
    */
   async notifyNewMessage(sellerId: string, message: {
     senderName: string;
@@ -327,9 +422,35 @@ export class TelegramService implements OnModuleInit {
     const text = `💬 <b>TIN NHẮN MỚI</b>\n\n` +
       `👤 Từ: ${message.senderName}\n` +
       `📝 Nội dung: ${message.preview.substring(0, 100)}${message.preview.length > 100 ? '...' : ''}\n\n` +
-      `Truy cập website để xem và trả lời.`;
+      `🔗 Truy cập website để xem và trả lời.`;
 
-    return this.sendToUser(sellerId, text);
+    // Use Chat Bot for message notifications
+    return this.sendToUserViaChatBot(sellerId, text);
+  }
+
+  /**
+   * Send notification to a user by their ID via Chat Bot
+   */
+  async sendToUserViaChatBot(userId: string, text: string, parseMode: 'HTML' | 'Markdown' = 'HTML'): Promise<boolean> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { telegramChatId: true },
+      });
+
+      if (!user?.telegramChatId) {
+        return false;
+      }
+
+      return this.sendChatBotMessage({
+        chat_id: user.telegramChatId,
+        text,
+        parse_mode: parseMode,
+      });
+    } catch (error) {
+      this.logger.error(`Error sending to user ${userId} via Chat Bot:`, error.message);
+      return false;
+    }
   }
 
   /**
@@ -411,10 +532,24 @@ export class TelegramService implements OnModuleInit {
 
   /**
    * Get bot link with linking code
+   * @param botType - 'order' for order notifications bot, 'chat' for message notifications bot
    */
-  getBotLinkWithCode(userId: string): string {
+  getBotLinkWithCode(userId: string, botType: 'order' | 'chat' = 'order'): string {
     const code = this.generateLinkingCode(userId);
-    return `https://t.me/bachhoammobot?start=${code}`;
+    // Order bot: bachhoammobot, Chat bot: bachhoammochat_bot
+    const botUsername = botType === 'chat' ? 'bachhoammochat_bot' : 'bachhoammobot';
+    return `https://t.me/${botUsername}?start=${code}`;
+  }
+
+  /**
+   * Get both bot links for user
+   */
+  getBotLinks(userId: string): { orderBot: string; chatBot: string } {
+    const code = this.generateLinkingCode(userId);
+    return {
+      orderBot: `https://t.me/bachhoammobot?start=${code}`,
+      chatBot: `https://t.me/bachhoammochat_bot?start=${code}`,
+    };
   }
 
   /**

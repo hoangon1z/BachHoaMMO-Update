@@ -170,12 +170,14 @@ export class SellerController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('status') status?: string,
+    @Query('search') search?: string,
   ) {
     return this.sellerService.getOrders(
       req.user.id,
       page ? parseInt(page) : 1,
       limit ? parseInt(limit) : 10,
       status,
+      search,
     );
   }
 

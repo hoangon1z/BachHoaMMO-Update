@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { 
   ArrowLeft, Mail, Calendar, Wallet, ShoppingBag, TrendingUp, 
   User as UserIcon, Eye, EyeOff, Key, Shield, Store, Save, 
-  RefreshCw, Phone, MapPin, Crown, Package, AlertCircle, CheckCircle2, X, Ban, Unlock
+  RefreshCw, Phone, MapPin, Crown, Package, AlertCircle, CheckCircle2, X, Ban, Unlock,
+  Building2, CreditCard, Clock, Activity
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -21,6 +22,12 @@ interface SellerProfile {
   totalSales: number;
   commission: number;
   isVerified: boolean;
+  // Bank information
+  bankName: string | null;
+  bankAccount: string | null;
+  bankHolder: string | null;
+  bankBranch: string | null;
+  bankInfoAddedAt: string | null;
 }
 
 interface UserDetail {
@@ -78,7 +85,7 @@ export default function UserDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [activeTab, setActiveTab] = useState<'info' | 'transactions' | 'orders' | 'sales'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'bank' | 'activity' | 'transactions' | 'orders' | 'sales'>('info');
   
   // Edit form state
   const [editMode, setEditMode] = useState(false);
@@ -441,12 +448,32 @@ export default function UserDetailPage() {
 
       {/* Tabs */}
       <div className="bg-white rounded-lg shadow mb-6">
-        <div className="border-b flex">
+        <div className="border-b flex flex-wrap">
           <button
             onClick={() => setActiveTab('info')}
             className={`px-6 py-3 text-sm font-medium ${activeTab === 'info' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Thông tin tài khoản
+          </button>
+          {user.isSeller && (
+            <button
+              onClick={() => setActiveTab('bank')}
+              className={`px-6 py-3 text-sm font-medium ${activeTab === 'bank' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <span className="flex items-center gap-1">
+                <Building2 className="w-4 h-4" />
+                Ngân hàng
+              </span>
+            </button>
+          )}
+          <button
+            onClick={() => setActiveTab('activity')}
+            className={`px-6 py-3 text-sm font-medium ${activeTab === 'activity' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            <span className="flex items-center gap-1">
+              <Activity className="w-4 h-4" />
+              Hoạt động
+            </span>
           </button>
           <button
             onClick={() => setActiveTab('transactions')}
@@ -782,6 +809,201 @@ export default function UserDetailPage() {
                   </Button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Bank Information Tab */}
+          {activeTab === 'bank' && (
+            <div>
+              {user.sellerProfile ? (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Building2 className="w-5 h-5 text-blue-600" />
+                    <h3 className="text-lg font-semibold">Thông tin ngân hàng</h3>
+                  </div>
+                  
+                  {user.sellerProfile.bankName ? (
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-500 mb-1">Ngân hàng</label>
+                          <p className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                            <Building2 className="w-5 h-5 text-blue-600" />
+                            {user.sellerProfile.bankName}
+                          </p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-500 mb-1">Chi nhánh</label>
+                          <p className="text-lg font-semibold text-gray-900">
+                            {user.sellerProfile.bankBranch || '-'}
+                          </p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-500 mb-1">Số tài khoản</label>
+                          <p className="text-lg font-mono font-semibold text-gray-900 flex items-center gap-2">
+                            <CreditCard className="w-5 h-5 text-green-600" />
+                            {user.sellerProfile.bankAccount}
+                          </p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-500 mb-1">Chủ tài khoản</label>
+                          <p className="text-lg font-semibold text-gray-900">
+                            {user.sellerProfile.bankHolder}
+                          </p>
+                        </div>
+                      </div>
+                      {user.sellerProfile.bankInfoAddedAt && (
+                        <div className="mt-4 pt-4 border-t border-blue-200">
+                          <p className="text-sm text-gray-500 flex items-center gap-2">
+                            <Clock className="w-4 h-4" />
+                            Thêm vào: {new Date(user.sellerProfile.bankInfoAddedAt).toLocaleString('vi-VN')}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 rounded-xl p-8 text-center">
+                      <Building2 className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500">Chưa có thông tin ngân hàng</p>
+                      <p className="text-sm text-gray-400 mt-1">Seller chưa thêm thông tin ngân hàng để nhận thanh toán</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-xl p-8 text-center">
+                  <Store className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500">Người dùng không phải là Seller</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Activity Tab */}
+          {activeTab === 'activity' && (
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <Activity className="w-5 h-5 text-purple-600" />
+                <h3 className="text-lg font-semibold">Lịch sử hoạt động</h3>
+              </div>
+              
+              {(() => {
+                // Combine activities from transactions, orders, and sales
+                const activities: Array<{
+                  id: string;
+                  type: 'transaction' | 'order' | 'sale';
+                  action: string;
+                  detail: string;
+                  amount?: number;
+                  status: string;
+                  createdAt: string;
+                }> = [];
+
+                // Add transactions
+                transactions.forEach((tx) => {
+                  activities.push({
+                    id: `tx-${tx.id}`,
+                    type: 'transaction',
+                    action: tx.type === 'DEPOSIT' ? 'Nạp tiền' :
+                            tx.type === 'WITHDRAW' ? 'Rút tiền' :
+                            tx.type === 'PURCHASE' ? 'Thanh toán' :
+                            tx.type === 'REFUND' ? 'Hoàn tiền' :
+                            tx.type === 'EARNING' ? 'Nhận tiền' : tx.type,
+                    detail: tx.description,
+                    amount: tx.amount,
+                    status: tx.status,
+                    createdAt: tx.createdAt,
+                  });
+                });
+
+                // Add orders (as buyer)
+                orders.forEach((order) => {
+                  activities.push({
+                    id: `order-${order.id}`,
+                    type: 'order',
+                    action: 'Đặt hàng',
+                    detail: `#${order.orderNumber}`,
+                    amount: order.total,
+                    status: order.status,
+                    createdAt: order.createdAt,
+                  });
+                });
+
+                // Add sales (as seller)
+                sales.forEach((order) => {
+                  activities.push({
+                    id: `sale-${order.id}`,
+                    type: 'sale',
+                    action: 'Bán hàng',
+                    detail: `#${order.orderNumber}`,
+                    amount: order.total,
+                    status: order.status,
+                    createdAt: order.createdAt,
+                  });
+                });
+
+                // Sort by date descending
+                activities.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+                if (activities.length === 0) {
+                  return (
+                    <div className="bg-gray-50 rounded-xl p-8 text-center">
+                      <Activity className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500">Chưa có hoạt động nào</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-4">
+                    {activities.slice(0, 20).map((activity) => (
+                      <div key={activity.id} className="flex items-start gap-4 pb-4 border-b last:border-0">
+                        <div className={`p-2 rounded-full ${
+                          activity.type === 'transaction' ? 'bg-green-100' :
+                          activity.type === 'order' ? 'bg-blue-100' : 'bg-purple-100'
+                        }`}>
+                          {activity.type === 'transaction' ? (
+                            <Wallet className={`w-4 h-4 ${
+                              activity.action === 'Nạp tiền' || activity.action === 'Nhận tiền' ? 'text-green-600' : 'text-red-600'
+                            }`} />
+                          ) : activity.type === 'order' ? (
+                            <ShoppingBag className="w-4 h-4 text-blue-600" />
+                          ) : (
+                            <Store className="w-4 h-4 text-purple-600" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-sm">{activity.action}</p>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              activity.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                              activity.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                              activity.status === 'PROCESSING' ? 'bg-blue-100 text-blue-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {activity.status}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600">{activity.detail}</p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {new Date(activity.createdAt).toLocaleString('vi-VN')}
+                          </p>
+                        </div>
+                        {activity.amount !== undefined && (
+                          <p className={`font-semibold text-sm ${
+                            activity.type === 'transaction' && (activity.action === 'Nạp tiền' || activity.action === 'Nhận tiền') ? 'text-green-600' :
+                            activity.type === 'transaction' ? 'text-red-600' :
+                            activity.type === 'sale' ? 'text-green-600' : 'text-blue-600'
+                          }`}>
+                            {activity.type === 'transaction' && (activity.action === 'Nạp tiền' || activity.action === 'Nhận tiền') ? '+' : 
+                             activity.type === 'transaction' ? '-' : ''}
+                            {activity.amount.toLocaleString('vi-VN')}đ
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
 

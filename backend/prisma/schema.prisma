@@ -57,6 +57,12 @@ model User {
   devices            UserDevice[]
   apiKeys            SellerApiKey[]
   webhooks           SellerWebhook[]
+  
+  // Blog relations
+  blogPosts          BlogPost[]
+  blogComments       BlogComment[]
+  blogLikes          BlogLike[]
+  blogBookmarks      BlogBookmark[]
 
   @@map("users")
 }
@@ -705,4 +711,107 @@ model UserDevice {
   @@unique([userId, deviceId])
   @@index([userId])
   @@map("user_devices")
+}
+
+// ============================================
+// BLOG SYSTEM (for verified sellers to share MMO knowledge)
+// ============================================
+
+model BlogPost {
+  id          String   @id @default(uuid())
+  authorId    String
+  author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  
+  title       String
+  slug        String   @unique
+  excerpt     String?  // Short description for preview
+  content     String   // Full blog content (markdown/html)
+  coverImage  String?  // Cover image URL
+  
+  // Categorization
+  tags        String?  // JSON array of tags
+  category    String?  // General category
+  
+  // Status
+  status      String   @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
+  publishedAt DateTime?
+  
+  // Engagement metrics
+  views       Int      @default(0)
+  likesCount  Int      @default(0)
+  commentsCount Int    @default(0)
+  bookmarksCount Int   @default(0)
+  
+  // SEO
+  metaTitle       String?
+  metaDescription String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  comments    BlogComment[]
+  likes       BlogLike[]
+  bookmarks   BlogBookmark[]
+
+  @@index([authorId])
+  @@index([status, publishedAt])
+  @@index([slug])
+  @@map("blog_posts")
+}
+
+model BlogComment {
+  id        String   @id @default(uuid())
+  postId    String
+  post      BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  
+  content   String
+  
+  // Reply support
+  parentId  String?
+  parent    BlogComment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   BlogComment[] @relation("CommentReplies")
+  
+  // Status
+  isHidden  Boolean  @default(false) // Admin can hide inappropriate comments
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([postId])
+  @@index([authorId])
+  @@index([parentId])
+  @@map("blog_comments")
+}
+
+model BlogLike {
+  id        String   @id @default(uuid())
+  postId    String
+  post      BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([postId])
+  @@index([userId])
+  @@map("blog_likes")
+}
+
+model BlogBookmark {
+  id        String   @id @default(uuid())
+  postId    String
+  post      BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([postId])
+  @@index([userId])
+  @@map("blog_bookmarks")
 }

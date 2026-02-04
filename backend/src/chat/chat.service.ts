@@ -554,6 +554,63 @@ export class ChatService {
     return conversation;
   }
 
+  /**
+   * Mark conversation as complete (buyer or seller confirms after resolution)
+   */
+  async markConversationComplete(conversationId: string, userId: string, userRole: string): Promise<ConversationDocument> {
+    const conversation = await this.conversationModel.findById(conversationId);
+    if (!conversation) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    // Only allow marking complete when status is RESOLVED
+    if (conversation.status !== ConversationStatus.RESOLVED) {
+      throw new BadRequestException('Chỉ có thể đánh dấu hoàn tất khi tranh chấp đã được giải quyết');
+    }
+
+    // Determine if user is buyer or seller
+    const isBuyer = conversation.buyerId === userId;
+    const isSeller = conversation.sellerId === userId;
+    const isAdmin = userRole === 'ADMIN';
+
+    if (!isBuyer && !isSeller && !isAdmin) {
+      throw new BadRequestException('Bạn không có quyền đánh dấu hoàn tất cuộc hội thoại này');
+    }
+
+    // Update the appropriate completion flag
+    if (isBuyer) {
+      conversation.buyerCompleted = true;
+    } else if (isSeller) {
+      conversation.sellerCompleted = true;
+    } else if (isAdmin) {
+      // Admin can complete for both parties
+      conversation.buyerCompleted = true;
+      conversation.sellerCompleted = true;
+    }
+
+    // Check if both parties have completed
+    if (conversation.buyerCompleted && conversation.sellerCompleted) {
+      conversation.status = ConversationStatus.ARCHIVED;
+      conversation.completedAt = new Date();
+      
+      // Send system message
+      await this.sendSystemMessage(
+        conversationId,
+        `🎉 Cả hai bên đã xác nhận hoàn tất. Cuộc hội thoại đã được đóng.`
+      );
+    } else {
+      // Send system message about partial completion
+      const completedBy = isBuyer ? 'Người mua' : 'Người bán';
+      await this.sendSystemMessage(
+        conversationId,
+        `✅ ${completedBy} đã đánh dấu cuộc hội thoại là hoàn tất.`
+      );
+    }
+
+    await conversation.save();
+    return conversation;
+  }
+
   // ============================================
   // USER STATUS METHODS
   // ============================================

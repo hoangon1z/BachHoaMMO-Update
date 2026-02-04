@@ -23,6 +23,7 @@ import { EmailModule } from './email/email.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { PublicApiModule } from './public-api/public-api.module';
 import { WebhookModule } from './webhook/webhook.module';
+import { BlogModule } from './blog/blog.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { WebhookModule } from './webhook/webhook.module';
     TelegramModule, // Telegram notifications
     WebhookModule, // Webhook system for seller integration
     PublicApiModule, // Public Seller API (tách biệt, không qua WAF/ZeroTrust)
+    BlogModule, // Blog system for verified sellers
   ],
 })
 export class AppModule {}

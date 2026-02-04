@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Send, Paperclip, Image as ImageIcon, X, Loader2, AlertTriangle } from 'lucide-react';
+import { Send, Paperclip, Image as ImageIcon, X, Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useChat, Message } from '@/hooks/useChat';
@@ -50,11 +50,13 @@ export function ChatWindow({
     markAsRead,
     startConversationWithSeller,
     openDispute,
+    markConversationComplete,
   } = chatHook;
 
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const [isMarking, setIsMarking] = useState(false);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -64,6 +66,15 @@ export function ChatWindow({
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
+
+  // Cleanup typing timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Initialize conversation
   useEffect(() => {
@@ -78,6 +89,7 @@ export function ChatWindow({
         })
         .catch(console.error);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConversationId, sellerId, productId]);
 
   // Auto-focus input when conversation is ready
@@ -143,7 +155,8 @@ export function ChatWindow({
     if (currentConversation) {
       markAsRead();
     }
-  }, [currentConversation, messages.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentConversation?._id, messages.length]);
 
   // Handle typing indicator
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -346,9 +359,9 @@ export function ChatWindow({
 
 
   return (
-    <div className={`flex flex-col ${isWidget ? 'h-[calc(500px-56px)]' : 'h-full'}`}>
+    <div className={`flex flex-col ${isWidget ? 'h-[calc(500px-56px)]' : 'h-full'} min-h-0 overflow-hidden`}>
       {/* Messages Area */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-2 sm:space-y-3 min-h-0">
         {/* Load more button */}
         {hasMoreMessages && (
           <div className="text-center">
@@ -394,38 +407,96 @@ export function ChatWindow({
         </div>
       )}
 
+      {/* Resolution Banner - Show when dispute is resolved but not yet completed by both parties */}
+      {currentConversation?.status === 'RESOLVED' && (
+        <div className="px-4 py-3 bg-green-50 border-y border-green-200">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 flex-1">
+              <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+              <div className="text-sm">
+                <span className="text-green-800 font-medium">Tranh chấp đã được giải quyết</span>
+                {currentConversation.resolution && (
+                  <p className="text-green-700 text-xs mt-0.5">{currentConversation.resolution}</p>
+                )}
+              </div>
+            </div>
+            {(() => {
+              const isBuyer = currentConversation.buyerId === user?.id;
+              const isSeller = currentConversation.sellerId === user?.id;
+              const hasCompleted = isBuyer ? currentConversation.buyerCompleted : currentConversation.sellerCompleted;
+              const otherCompleted = isBuyer ? currentConversation.sellerCompleted : currentConversation.buyerCompleted;
+              
+              if (hasCompleted) {
+                return (
+                  <span className="text-xs text-green-600 flex-shrink-0">
+                    ✓ Bạn đã xác nhận {otherCompleted ? '' : '(chờ bên kia)'}
+                  </span>
+                );
+              }
+              
+              return (
+                <button
+                  onClick={async () => {
+                    setIsMarking(true);
+                    try {
+                      await markConversationComplete();
+                    } finally {
+                      setIsMarking(false);
+                    }
+                  }}
+                  disabled={isMarking}
+                  className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors flex-shrink-0"
+                >
+                  {isMarking ? 'Đang xử lý...' : 'Đánh dấu hoàn tất'}
+                </button>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Archived/Completed Banner */}
+      {currentConversation?.status === 'ARCHIVED' && currentConversation.completedAt && (
+        <div className="px-4 py-2 bg-gray-50 border-y border-gray-200 flex items-center gap-2">
+          <CheckCircle className="w-4 h-4 text-gray-500" />
+          <span className="text-sm text-gray-600">
+            Cuộc hội thoại đã được đóng
+          </span>
+        </div>
+      )}
+
       {/* Input Area */}
-      <div className="p-3 border-t bg-gray-50">
+      <div className="p-2 sm:p-3 border-t bg-gray-50 flex-shrink-0">
         {/* Image previews */}
         {imagePreviews.length > 0 && (
-          <div className="mb-3 flex gap-2 flex-wrap">
+          <div className="mb-2 sm:mb-3 flex gap-1.5 sm:gap-2 flex-wrap">
             {imagePreviews.map((preview, idx) => (
               <div key={idx} className="relative group">
                 <img
                   src={preview}
                   alt={`Preview ${idx + 1}`}
-                  className="w-20 h-20 object-cover rounded-lg border-2 border-gray-200"
+                  className="w-14 h-14 sm:w-20 sm:h-20 object-cover rounded-lg border-2 border-gray-200"
                 />
                 <button
                   onClick={() => handleRemoveImage(idx)}
-                  className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute -top-1.5 -right-1.5 sm:-top-2 sm:-right-2 w-5 h-5 sm:w-6 sm:h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-3 h-3 sm:w-4 sm:h-4" />
                 </button>
               </div>
             ))}
             {selectedImages.length < 5 && (
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center hover:border-primary transition-colors"
+                className="w-14 h-14 sm:w-20 sm:h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center hover:border-primary transition-colors"
               >
-                <ImageIcon className="w-6 h-6 text-gray-400" />
+                <ImageIcon className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
               </button>
             )}
           </div>
         )}
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Hidden file input */}
           <input
             ref={fileInputRef}
@@ -439,7 +510,7 @@ export function ChatWindow({
           {/* Attachment button */}
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
+            className="p-1.5 sm:p-2 hover:bg-gray-200 rounded-lg transition-colors flex-shrink-0"
             disabled={isSending || selectedImages.length >= 5}
             title="Đính kèm hình ảnh"
           >
@@ -453,7 +524,7 @@ export function ChatWindow({
             onChange={handleInputChange}
             onKeyPress={handleKeyPress}
             onPaste={handlePaste}
-            placeholder={selectedImages.length > 0 ? "Thêm chú thích (không bắt buộc)..." : "Nhập tin nhắn hoặc dán hình ảnh (Ctrl+V)..."}
+            placeholder={selectedImages.length > 0 ? "Thêm chú thích..." : "Nhập tin nhắn..."}
             className="flex-1"
             disabled={isSending}
           />
@@ -463,7 +534,7 @@ export function ChatWindow({
             onClick={handleSend}
             disabled={(!inputValue.trim() && selectedImages.length === 0) || isSending}
             size="icon"
-            className="shrink-0"
+            className="shrink-0 h-9 w-9 sm:h-10 sm:w-10"
           >
             {isSending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -475,7 +546,7 @@ export function ChatWindow({
 
         {/* Upload progress */}
         {isUploading && (
-          <div className="mt-2 text-xs text-gray-500 flex items-center gap-2">
+          <div className="mt-1.5 sm:mt-2 text-xs text-gray-500 flex items-center gap-2">
             <Loader2 className="w-3 h-3 animate-spin" />
             Đang tải lên hình ảnh...
           </div>
@@ -483,7 +554,7 @@ export function ChatWindow({
 
         {/* Actions */}
         {currentConversation && currentConversation.status === 'ACTIVE' && (
-          <div className="mt-2 flex justify-end">
+          <div className="mt-1.5 sm:mt-2 flex justify-end">
             <button
               onClick={() => setShowDisputeModal(true)}
               className="text-xs text-red-500 hover:text-red-600"

@@ -289,6 +289,20 @@ export class ChatController {
     return { success: true, conversation };
   }
 
+  /**
+   * Mark conversation as complete (both parties must confirm after resolution)
+   * POST /chat/conversations/:id/complete
+   */
+  @Post('conversations/:id/complete')
+  async markComplete(@Param('id') conversationId: string, @Request() req) {
+    const conversation = await this.chatService.markConversationComplete(
+      conversationId,
+      req.user.id,
+      req.user.role,
+    );
+    return { success: true, conversation };
+  }
+
   // ============================================
   // USER STATUS ENDPOINTS
   // ============================================

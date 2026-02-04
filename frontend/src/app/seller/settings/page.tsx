@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Store, Camera, Save, Upload, Loader2, ImageIcon, Star, ShoppingBag, Clock, AlertTriangle, Bell, Send, CheckCircle, Link2, Unlink, ExternalLink, Key, Copy, Eye, EyeOff, Trash2, RefreshCw, Code } from 'lucide-react';
+import { Store, Camera, Save, Upload, Loader2, ImageIcon, Star, ShoppingBag, Clock, AlertTriangle, Bell, Send, CheckCircle, Link2, Unlink, ExternalLink, Key, Copy, Eye, EyeOff, Trash2, RefreshCw, Code, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -54,10 +54,11 @@ export default function SellerSettingsPage() {
   const [showSecret, setShowSecret] = useState(false);
   const [apiKeyMessage, setApiKeyMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Telegram states
+  // Telegram states - Support 2 bots
   const [telegramConnected, setTelegramConnected] = useState(false);
   const [telegramLinkedAt, setTelegramLinkedAt] = useState<string | null>(null);
-  const [telegramLink, setTelegramLink] = useState<string | null>(null);
+  const [telegramOrderBotLink, setTelegramOrderBotLink] = useState<string | null>(null);
+  const [telegramChatBotLink, setTelegramChatBotLink] = useState<string | null>(null);
   const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [telegramMessage, setTelegramMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -216,25 +217,35 @@ export default function SellerSettingsPage() {
     }
   };
 
-  // Get Telegram link
-  const getTelegramLink = async () => {
+  // Get Telegram links for both bots
+  const getTelegramLinks = async () => {
     setIsLoadingTelegram(true);
     setTelegramMessage(null);
     
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/telegram/link', {
+      const response = await fetch('/api/telegram/links', {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
       if (response.ok) {
         const data = await response.json();
-        setTelegramLink(data.link);
+        setTelegramOrderBotLink(data.orderBot);
+        setTelegramChatBotLink(data.chatBot);
       } else {
-        setTelegramMessage({ type: 'error', text: 'Không thể lấy link kết nối' });
+        // Fallback to old endpoint
+        const fallbackResponse = await fetch('/api/telegram/link', {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (fallbackResponse.ok) {
+          const data = await fallbackResponse.json();
+          setTelegramOrderBotLink(data.link);
+        } else {
+          setTelegramMessage({ type: 'error', text: 'Không thể lấy link kết nối' });
+        }
       }
     } catch (error) {
-      console.error('Error getting Telegram link:', error);
+      console.error('Error getting Telegram links:', error);
       setTelegramMessage({ type: 'error', text: 'Có lỗi xảy ra' });
     } finally {
       setIsLoadingTelegram(false);
@@ -260,7 +271,8 @@ export default function SellerSettingsPage() {
       if (response.ok) {
         setTelegramConnected(false);
         setTelegramLinkedAt(null);
-        setTelegramLink(null);
+        setTelegramOrderBotLink(null);
+        setTelegramChatBotLink(null);
         setTelegramMessage({ type: 'success', text: 'Đã hủy kết nối Telegram' });
         setShowUnlinkDialog(false);
       } else {
@@ -653,17 +665,17 @@ export default function SellerSettingsPage() {
           </div>
         </form>
 
-        {/* Telegram Integration */}
+        {/* Telegram Bot 1: Order Notifications */}
         {hasStore && (
           <div className="bg-white rounded-lg border border-gray-200">
             <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center">
-                  <Send className="w-4 h-4 text-white" />
+                <div className="w-8 h-8 rounded-lg bg-green-500 flex items-center justify-center">
+                  <ShoppingBag className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-gray-900">Thông báo Telegram</h3>
-                  <p className="text-sm text-gray-500">Nhận thông báo đơn hàng, tin nhắn qua Telegram</p>
+                  <h3 className="text-base font-semibold text-gray-900">Telegram - Thông báo Đơn hàng</h3>
+                  <p className="text-sm text-gray-500">@bachhoammobot - Nhận thông báo đơn hàng, khiếu nại, rút tiền</p>
                 </div>
               </div>
             </div>
@@ -719,50 +731,50 @@ export default function SellerSettingsPage() {
                       className="gap-2 text-red-600 border-red-200 hover:bg-red-50"
                     >
                       <Unlink className="w-4 h-4" />
-                      Hủy kết nối
+                      Hủy
                     </Button>
                   </div>
                 ) : (
                   <Button
                     type="button"
                     size="sm"
-                    onClick={getTelegramLink}
+                    onClick={getTelegramLinks}
                     disabled={isLoadingTelegram}
-                    className="gap-2 bg-blue-600 hover:bg-blue-700"
+                    className="gap-2 bg-green-600 hover:bg-green-700"
                   >
                     {isLoadingTelegram ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <Link2 className="w-4 h-4" />
                     )}
-                    Kết nối Telegram
+                    Kết nối
                   </Button>
                 )}
               </div>
 
-              {/* Telegram Link */}
-              {telegramLink && !telegramConnected && (
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl space-y-3">
+              {/* Order Bot Link */}
+              {telegramOrderBotLink && !telegramConnected && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-xl space-y-3">
                   <div className="flex items-start gap-3">
-                    <Send className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <Send className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
                     <div className="flex-1">
-                      <p className="font-medium text-blue-800 mb-2">Bước tiếp theo:</p>
-                      <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
-                        <li>Nhấn vào nút bên dưới để mở Telegram</li>
-                        <li>Nhấn <strong>Start</strong> trong Telegram</li>
-                        <li>Quay lại trang này và làm mới để kiểm tra</li>
+                      <p className="font-medium text-green-800 mb-1">Hướng dẫn kết nối:</p>
+                      <ol className="text-sm text-green-700 space-y-1 list-decimal list-inside">
+                        <li>Nhấn nút bên dưới để mở Telegram</li>
+                        <li>Nhấn <strong>Start</strong> trong bot</li>
+                        <li>Quay lại đây và nhấn &quot;Kiểm tra&quot;</li>
                       </ol>
                     </div>
                   </div>
                   
                   <a
-                    href={telegramLink}
+                    href={telegramOrderBotLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                    className="flex items-center justify-center gap-2 w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
                   >
                     <ExternalLink className="w-4 h-4" />
-                    Mở Telegram
+                    Mở Bot Đơn hàng
                   </a>
                   
                   <Button
@@ -780,34 +792,136 @@ export default function SellerSettingsPage() {
                 </div>
               )}
 
-              {/* Message */}
-              {telegramMessage && (
-                <div className={`p-3 rounded-lg flex items-center gap-2 ${
-                  telegramMessage.type === 'success' 
-                    ? 'bg-green-50 border border-green-200 text-green-700' 
-                    : 'bg-red-50 border border-red-200 text-red-700'
-                }`}>
-                  {telegramMessage.type === 'success' ? (
-                    <CheckCircle className="w-4 h-4" />
-                  ) : (
-                    <AlertTriangle className="w-4 h-4" />
-                  )}
-                  <p className="text-sm">{telegramMessage.text}</p>
-                </div>
-              )}
-
-              {/* Info */}
-              <div className="text-sm text-gray-500 space-y-1">
-                <p className="font-medium text-gray-700">Bạn sẽ nhận thông báo khi:</p>
-                <ul className="list-disc list-inside space-y-1 text-gray-600">
+              {/* Features */}
+              <div className="text-sm text-gray-600">
+                <p className="font-medium text-gray-700 mb-2">Bạn sẽ nhận thông báo khi:</p>
+                <ul className="list-disc list-inside space-y-1">
                   <li>Có đơn hàng mới</li>
-                  <li>Có tin nhắn từ khách hàng</li>
                   <li>Có khiếu nại cần xử lý</li>
                   <li>Yêu cầu rút tiền được duyệt/từ chối</li>
-                  <li>Thông báo từ Admin</li>
+                  <li>Có thông báo từ Admin</li>
                 </ul>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Telegram Bot 2: Message Notifications */}
+        {hasStore && (
+          <div className="bg-white rounded-lg border border-gray-200">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-purple-500 flex items-center justify-center">
+                  <MessageSquare className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">Telegram - Thông báo Tin nhắn</h3>
+                  <p className="text-sm text-gray-500">@bachhoammochat_bot - Nhận thông báo tin nhắn từ khách hàng</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              {/* Status */}
+              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                <div className="flex items-center gap-3">
+                  {telegramConnected ? (
+                    <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+                      <CheckCircle className="w-5 h-5 text-purple-600" />
+                    </div>
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+                      <MessageSquare className="w-5 h-5 text-gray-400" />
+                    </div>
+                  )}
+                  <div>
+                    <p className={`font-medium ${telegramConnected ? 'text-purple-700' : 'text-gray-700'}`}>
+                      {telegramConnected ? 'Đã kết nối' : 'Chưa kết nối'}
+                    </p>
+                    {telegramLinkedAt && (
+                      <p className="text-xs text-gray-500">
+                        Cùng tài khoản với Bot Đơn hàng
+                      </p>
+                    )}
+                  </div>
+                </div>
+                
+                {!telegramConnected && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={getTelegramLinks}
+                    disabled={isLoadingTelegram}
+                    className="gap-2 bg-purple-600 hover:bg-purple-700"
+                  >
+                    {isLoadingTelegram ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Link2 className="w-4 h-4" />
+                    )}
+                    Kết nối
+                  </Button>
+                )}
+              </div>
+
+              {/* Chat Bot Link */}
+              {telegramChatBotLink && !telegramConnected && (
+                <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl space-y-3">
+                  <div className="flex items-start gap-3">
+                    <Send className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-medium text-purple-800 mb-1">Hướng dẫn kết nối:</p>
+                      <ol className="text-sm text-purple-700 space-y-1 list-decimal list-inside">
+                        <li>Nhấn nút bên dưới để mở Telegram</li>
+                        <li>Nhấn <strong>Start</strong> trong bot</li>
+                        <li>Bạn sẽ nhận thông báo tin nhắn mới</li>
+                      </ol>
+                    </div>
+                  </div>
+                  
+                  <a
+                    href={telegramChatBotLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Mở Bot Tin nhắn
+                  </a>
+                </div>
+              )}
+
+              {/* Features */}
+              <div className="text-sm text-gray-600">
+                <p className="font-medium text-gray-700 mb-2">Bạn sẽ nhận thông báo khi:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>Có tin nhắn mới từ khách hàng</li>
+                </ul>
+              </div>
+
+              {/* Note */}
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-xs text-amber-700">
+                  <strong>Lưu ý:</strong> Bot này dùng cùng tài khoản Telegram với Bot Đơn hàng. Kết nối Bot Đơn hàng trước để liên kết tài khoản.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Telegram Message */}
+        {telegramMessage && (
+          <div className={`p-3 rounded-lg flex items-center gap-2 ${
+            telegramMessage.type === 'success' 
+              ? 'bg-green-50 border border-green-200 text-green-700' 
+              : 'bg-red-50 border border-red-200 text-red-700'
+          }`}>
+            {telegramMessage.type === 'success' ? (
+              <CheckCircle className="w-4 h-4" />
+            ) : (
+              <AlertTriangle className="w-4 h-4" />
+            )}
+            <p className="text-sm">{telegramMessage.text}</p>
           </div>
         )}
 

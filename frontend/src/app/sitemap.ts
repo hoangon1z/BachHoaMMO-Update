@@ -47,14 +47,31 @@ async function getAllShops() {
   }
 }
 
+// Fetch all published blog posts for sitemap
+async function getAllBlogPosts() {
+  try {
+    const response = await fetch(
+      `${BACKEND_URL}/blog/posts?status=PUBLISHED&limit=500`,
+      { next: { revalidate: 3600 } }
+    );
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.posts || data.data?.posts || data || [];
+  } catch (error) {
+    console.error('Sitemap: Error fetching blog posts:', error);
+    return [];
+  }
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = SITE_URL;
 
   // Fetch dynamic data in parallel
-  const [products, categories, shops] = await Promise.all([
+  const [products, categories, shops, blogPosts] = await Promise.all([
     getAllProducts(),
     getAllCategories(),
     getAllShops(),
+    getAllBlogPosts(),
   ]);
 
   // Static routes (high priority)
@@ -62,6 +79,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: baseUrl, lastModified: new Date(), changeFrequency: 'daily', priority: 1 },
     { url: `${baseUrl}/explore`, lastModified: new Date(), changeFrequency: 'hourly', priority: 0.95 },
     { url: `${baseUrl}/auction`, lastModified: new Date(), changeFrequency: 'hourly', priority: 0.9 },
+    { url: `${baseUrl}/blogs`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.85 },
     { url: `${baseUrl}/payment-guide`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
     { url: `${baseUrl}/refund-policy`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
     { url: `${baseUrl}/shopping-guide`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
@@ -94,5 +112,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }));
 
-  return [...staticRoutes, ...productRoutes, ...categoryRoutes, ...shopRoutes];
+  // Blog posts (SEO)
+  const blogRoutes: MetadataRoute.Sitemap = (Array.isArray(blogPosts) ? blogPosts : []).map(
+    (post: { slug: string; updatedAt?: string; publishedAt?: string }) => ({
+      url: `${baseUrl}/blogs/${post.slug}`,
+      lastModified: new Date(post.updatedAt || post.publishedAt || Date.now()),
+      changeFrequency: 'weekly' as const,
+      priority: 0.75,
+    })
+  );
+
+  return [
+    ...staticRoutes,
+    ...productRoutes,
+    ...categoryRoutes,
+    ...shopRoutes,
+    ...blogRoutes,
+  ];
 }

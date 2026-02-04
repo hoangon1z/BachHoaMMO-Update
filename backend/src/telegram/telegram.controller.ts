@@ -32,12 +32,12 @@ export class TelegramController {
   }
 
   /**
-   * Get link to connect Telegram
+   * Get link to connect Telegram (legacy - order bot only)
    * GET /telegram/link
    */
   @Get('link')
   async getLink(@Request() req) {
-    const botLink = this.telegramService.getBotLinkWithCode(req.user.id);
+    const botLink = this.telegramService.getBotLinkWithCode(req.user.id, 'order');
     
     return {
       link: botLink,
@@ -46,6 +46,39 @@ export class TelegramController {
         '1. Nhấn vào link bên dưới để mở Telegram',
         '2. Nhấn nút "Start" hoặc gửi tin nhắn đầu tiên',
         '3. Tài khoản của bạn sẽ được liên kết tự động',
+      ],
+    };
+  }
+
+  /**
+   * Get links for both Telegram bots
+   * GET /telegram/links
+   */
+  @Get('links')
+  async getLinks(@Request() req) {
+    const botLinks = this.telegramService.getBotLinks(req.user.id);
+    
+    return {
+      orderBot: botLinks.orderBot,
+      chatBot: botLinks.chatBot,
+      instructions: [
+        '1. Kết nối cả 2 bot để nhận đầy đủ thông báo',
+        '2. Nhấn "Start" trong mỗi bot',
+        '3. Tài khoản của bạn sẽ được liên kết tự động',
+      ],
+      bots: [
+        {
+          name: 'Bot Đơn hàng',
+          username: 'bachhoammobot',
+          link: botLinks.orderBot,
+          features: ['Đơn hàng mới', 'Khiếu nại', 'Rút tiền', 'Thông báo Admin'],
+        },
+        {
+          name: 'Bot Tin nhắn',
+          username: 'bachhoammochat_bot',
+          link: botLinks.chatBot,
+          features: ['Tin nhắn mới từ khách hàng'],
+        },
       ],
     };
   }

@@ -8,7 +8,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useCartStore } from '@/store/cartStore';
 import { Button } from '@/components/ui/button';
 import { ProductReviews } from '@/components/ProductReviews';
-import { Star, ShoppingCart, Heart, MessageCircle, Shield, Zap, Check, Minus, Plus, ChevronRight, Store, Clock, Share2, BadgeCheck, TrendingUp, Package, ThumbsUp, ExternalLink, AlertCircle, X, Loader2, ArrowUpCircle, Mail, User, Key } from 'lucide-react';
+import { Star, ShoppingCart, Heart, MessageCircle, Shield, Zap, Check, Minus, Plus, ChevronRight, Store, Clock, Share2, BadgeCheck, TrendingUp, Package, ThumbsUp, ExternalLink, AlertCircle, X, Loader2, ArrowUpCircle, Mail, User, Key, Copy, Facebook, Send, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
 import { VerifyBadge } from '@/components/VerifyBadge';
 
@@ -54,9 +54,10 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [selectedImage, setSelectedImage] = useState(0);
   const [isStartingChat, setIsStartingChat] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
   
   // Error/Toast modal state
-  const [toastMessage, setToastMessage] = useState<{ type: 'error' | 'warning' | 'info'; text: string } | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ type: 'error' | 'warning' | 'info' | 'success'; text: string } | null>(null);
 
   // Handle chat with seller
   const handleChatWithSeller = async () => {
@@ -214,6 +215,83 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
 
   const handleSearch = (query: string) => {
     router.push(`/explore?q=${encodeURIComponent(query)}`);
+  };
+
+  // Share functionality
+  const productUrl = typeof window !== 'undefined' 
+    ? `${window.location.origin}/products/${product.id}` 
+    : `https://bachhoammo.store/products/${product.id}`;
+  
+  const shareText = `${product.title} - ${formatPrice(currentPrice)} | BachHoaMMO`;
+
+  const handleShare = async () => {
+    // Try native share API first (mobile)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: product.title,
+          text: shareText,
+          url: productUrl,
+        });
+        return;
+      } catch (err) {
+        // User cancelled or error - show share menu
+        if ((err as Error).name !== 'AbortError') {
+          setShowShareMenu(true);
+        }
+      }
+    } else {
+      // Desktop - show share menu
+      setShowShareMenu(true);
+    }
+  };
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(productUrl);
+      setToastMessage({ type: 'success', text: 'Đã sao chép link sản phẩm!' });
+      setShowShareMenu(false);
+    } catch (err) {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = productUrl;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setToastMessage({ type: 'success', text: 'Đã sao chép link sản phẩm!' });
+      setShowShareMenu(false);
+    }
+  };
+
+  const shareToFacebook = () => {
+    const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(productUrl)}`;
+    window.open(url, '_blank', 'width=600,height=400');
+    setShowShareMenu(false);
+  };
+
+  const shareToTwitter = () => {
+    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(productUrl)}`;
+    window.open(url, '_blank', 'width=600,height=400');
+    setShowShareMenu(false);
+  };
+
+  const shareToTelegram = () => {
+    const url = `https://t.me/share/url?url=${encodeURIComponent(productUrl)}&text=${encodeURIComponent(shareText)}`;
+    window.open(url, '_blank', 'width=600,height=400');
+    setShowShareMenu(false);
+  };
+
+  const shareToZalo = () => {
+    const url = `https://zalo.me/share?url=${encodeURIComponent(productUrl)}`;
+    window.open(url, '_blank', 'width=600,height=400');
+    setShowShareMenu(false);
+  };
+
+  const shareToMessenger = () => {
+    const url = `https://www.facebook.com/dialog/send?link=${encodeURIComponent(productUrl)}&app_id=291494419107518&redirect_uri=${encodeURIComponent(productUrl)}`;
+    window.open(url, '_blank', 'width=600,height=400');
+    setShowShareMenu(false);
   };
 
   return (
@@ -451,7 +529,10 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
                         <Heart className={`w-4 h-4 ${isWishlisted ? 'fill-current' : ''}`} />
                         Yêu thích
                       </button>
-                      <button className="flex-1 h-10 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200 flex items-center justify-center gap-2 text-sm font-medium transition-all">
+                      <button 
+                        onClick={handleShare}
+                        className="flex-1 h-10 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200 flex items-center justify-center gap-2 text-sm font-medium transition-all"
+                      >
                         <Share2 className="w-4 h-4" />
                         Chia sẻ
                       </button>
@@ -760,6 +841,125 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
 
       <Footer />
 
+      {/* Share Modal */}
+      {showShareMenu && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowShareMenu(false)}
+          />
+          
+          {/* Modal */}
+          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md overflow-hidden animate-in slide-in-from-bottom sm:fade-in sm:zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-gray-900">Chia sẻ sản phẩm</h3>
+              <button 
+                onClick={() => setShowShareMenu(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+              >
+                <X className="w-4 h-4 text-gray-600" />
+              </button>
+            </div>
+            
+            {/* Product Preview */}
+            <div className="p-4 bg-gray-50 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <img 
+                  src={product.images[0] || '/placeholder.png'} 
+                  alt={product.title}
+                  className="w-14 h-14 rounded-lg object-cover"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{product.title}</p>
+                  <p className="text-sm text-blue-600 font-semibold">{formatPrice(currentPrice)}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Share Options */}
+            <div className="p-4">
+              <p className="text-sm text-gray-500 mb-3">Chia sẻ qua</p>
+              <div className="grid grid-cols-5 gap-3 mb-4">
+                {/* Facebook */}
+                <button 
+                  onClick={shareToFacebook}
+                  className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                  <div className="w-12 h-12 rounded-full bg-[#1877F2] flex items-center justify-center">
+                    <Facebook className="w-6 h-6 text-white" />
+                  </div>
+                  <span className="text-xs text-gray-600">Facebook</span>
+                </button>
+
+                {/* Messenger */}
+                <button 
+                  onClick={shareToMessenger}
+                  className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#00B2FF] to-[#006AFF] flex items-center justify-center">
+                    <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.19 5.44 3.14 7.17.16.14.26.35.27.57l.05 1.78c.02.64.72 1.04 1.3.75l1.97-.87c.17-.07.36-.09.54-.05.9.23 1.84.35 2.73.35 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm6.03 7.55l-2.93 4.66a1.5 1.5 0 01-2.17.45l-2.33-1.75a.6.6 0 00-.72 0l-3.15 2.39c-.42.32-.97-.19-.69-.64l2.93-4.66a1.5 1.5 0 012.17-.45l2.33 1.75a.6.6 0 00.72 0l3.15-2.39c.42-.32.97.19.69.64z"/>
+                    </svg>
+                  </div>
+                  <span className="text-xs text-gray-600">Messenger</span>
+                </button>
+
+                {/* Zalo */}
+                <button 
+                  onClick={shareToZalo}
+                  className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                  <div className="w-12 h-12 rounded-full bg-[#0068FF] flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">Zalo</span>
+                  </div>
+                  <span className="text-xs text-gray-600">Zalo</span>
+                </button>
+
+                {/* Telegram */}
+                <button 
+                  onClick={shareToTelegram}
+                  className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                  <div className="w-12 h-12 rounded-full bg-[#0088CC] flex items-center justify-center">
+                    <Send className="w-5 h-5 text-white" />
+                  </div>
+                  <span className="text-xs text-gray-600">Telegram</span>
+                </button>
+
+                {/* Twitter/X */}
+                <button 
+                  onClick={shareToTwitter}
+                  className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                  <div className="w-12 h-12 rounded-full bg-black flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                    </svg>
+                  </div>
+                  <span className="text-xs text-gray-600">X</span>
+                </button>
+              </div>
+
+              {/* Copy Link */}
+              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-xl">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-600 truncate">{productUrl}</p>
+                </div>
+                <button 
+                  onClick={copyToClipboard}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex-shrink-0"
+                >
+                  <Copy className="w-4 h-4" />
+                  Sao chép
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast/Error Modal */}
       {toastMessage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -776,18 +976,24 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
               <div className={`w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center ${
                 toastMessage.type === 'error' ? 'bg-red-100' :
                 toastMessage.type === 'warning' ? 'bg-amber-100' :
+                toastMessage.type === 'success' ? 'bg-green-100' :
                 'bg-blue-100'
               }`}>
-                <AlertCircle className={`w-8 h-8 ${
-                  toastMessage.type === 'error' ? 'text-red-600' :
-                  toastMessage.type === 'warning' ? 'text-amber-600' :
-                  'text-blue-600'
-                }`} />
+                {toastMessage.type === 'success' ? (
+                  <CheckCircle className="w-8 h-8 text-green-600" />
+                ) : (
+                  <AlertCircle className={`w-8 h-8 ${
+                    toastMessage.type === 'error' ? 'text-red-600' :
+                    toastMessage.type === 'warning' ? 'text-amber-600' :
+                    'text-blue-600'
+                  }`} />
+                )}
               </div>
               
               <h3 className="text-lg font-semibold text-gray-900 mb-2">
                 {toastMessage.type === 'error' ? 'Có lỗi xảy ra' :
                  toastMessage.type === 'warning' ? 'Lưu ý' :
+                 toastMessage.type === 'success' ? 'Thành công' :
                  'Thông báo'}
               </h3>
               <p className="text-gray-600 mb-6">{toastMessage.text}</p>

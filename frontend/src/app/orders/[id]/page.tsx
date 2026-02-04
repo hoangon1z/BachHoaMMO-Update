@@ -692,10 +692,6 @@ export default function OrderDetailPage() {
               <span className="text-gray-500">Tạm tính</span>
               <span className="text-gray-900">{formatPrice(order.subtotal)}</span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Phí dịch vụ</span>
-              <span className="text-gray-900">{formatPrice(order.commission)}</span>
-            </div>
             <div className="flex justify-between font-semibold pt-3 border-t">
               <span>Tổng cộng</span>
               <span className="text-blue-600 text-lg">{formatPrice(order.total)}</span>

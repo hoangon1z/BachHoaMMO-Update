@@ -170,35 +170,36 @@ function MessagesContent() {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header user={user} onLogout={handleLogout} onSearch={handleSearch} />
 
-      <div className="flex-1 container mx-auto px-4 py-6">
-        <div className="bg-white rounded-2xl shadow-sm border overflow-hidden h-[calc(100vh-200px)] min-h-[500px]">
-          <div className="flex h-full">
+      <div className="flex-1 container mx-auto px-2 sm:px-4 py-4 sm:py-6">
+        <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border overflow-hidden h-[calc(100vh-140px)] sm:h-[calc(100vh-200px)] min-h-[400px]">
+          <div className="flex h-full overflow-hidden">
             {/* Conversation List - Hidden on mobile when chat is open */}
-            <div className={`w-full md:w-80 lg:w-96 border-r flex flex-col ${showMobileChat ? 'hidden md:flex' : 'flex'}`}>
+            <div className={`w-full md:w-80 lg:w-96 border-r flex flex-col min-w-0 ${showMobileChat ? 'hidden md:flex' : 'flex'}`}>
               {/* Header */}
-              <div className="p-4 border-b flex items-center justify-between gap-2">
-                <h1 className="text-xl font-bold flex items-center gap-2">
-                  <MessageCircle className="w-6 h-6 text-primary" />
-                  Tin nhắn
+              <div className="p-3 sm:p-4 border-b flex items-center justify-between gap-2">
+                <h1 className="text-lg sm:text-xl font-bold flex items-center gap-2 truncate">
+                  <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6 text-primary flex-shrink-0" />
+                  <span className="truncate">Tin nhắn</span>
                 </h1>
 
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => setShowAdminDialog(true)}
-                  className="shrink-0"
+                  className="shrink-0 text-xs sm:text-sm px-2 sm:px-3"
                 >
-                  <Shield className="w-4 h-4 mr-1" />
-                  Liên hệ admin
+                  <Shield className="w-4 h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">Liên hệ admin</span>
                 </Button>
               </div>
 
               {/* Filters */}
-              <div className="p-3 border-b flex gap-2 overflow-x-auto">
+              <div className="p-2 sm:p-3 border-b flex gap-1.5 sm:gap-2 overflow-x-auto scrollbar-hide">
                 <Button
                   variant={!filter.status ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setFilter({})}
+                  className="text-xs sm:text-sm px-2 sm:px-3 whitespace-nowrap"
                 >
                   Tất cả
                 </Button>
@@ -206,13 +207,15 @@ function MessagesContent() {
                   variant={filter.status === 'ACTIVE' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setFilter({ status: 'ACTIVE' })}
+                  className="text-xs sm:text-sm px-2 sm:px-3 whitespace-nowrap"
                 >
-                  Đang hoạt động
+                  Hoạt động
                 </Button>
                 <Button
                   variant={filter.status === 'DISPUTED' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setFilter({ status: 'DISPUTED' })}
+                  className="text-xs sm:text-sm px-2 sm:px-3 whitespace-nowrap"
                 >
                   Tranh chấp
                 </Button>
@@ -230,24 +233,25 @@ function MessagesContent() {
             </div>
 
             {/* Chat Window */}
-            <div className={`flex-1 flex flex-col ${!showMobileChat ? 'hidden md:flex' : 'flex'}`}>
+            <div className={`flex-1 flex flex-col min-w-0 overflow-hidden ${!showMobileChat ? 'hidden md:flex' : 'flex'}`}>
               {isStartingChat ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                  <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
-                  <h2 className="text-lg font-semibold text-gray-700">
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 sm:p-8">
+                  <div className="w-12 h-12 sm:w-16 sm:h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
+                  <h2 className="text-base sm:text-lg font-semibold text-gray-700">
                     Đang kết nối với {sellerNameFromUrl || 'shop'}...
                   </h2>
                 </div>
               ) : selectedConversation || conversationIdFromUrl ? (
                 <>
                   {/* Chat Header with Seller Info */}
-                  <div className="border-b bg-white">
+                  <div className="border-b bg-white flex-shrink-0">
                     {/* Mobile back button */}
-                    <div className="md:hidden p-3 border-b">
+                    <div className="md:hidden p-2 border-b">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => setShowMobileChat(false)}
+                        className="text-sm"
                       >
                         ← Quay lại
                       </Button>
@@ -255,9 +259,9 @@ function MessagesContent() {
                     
                     {/* Seller Profile Header */}
                     {chatSellerInfo && (
-                      <div className="p-4 flex items-center justify-between bg-gradient-to-r from-blue-50 to-white">
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center overflow-hidden">
+                      <div className="p-3 sm:p-4 flex items-center justify-between gap-2 bg-gradient-to-r from-blue-50 to-white">
+                        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center overflow-hidden flex-shrink-0">
                             {chatSellerInfo.sellerProfile?.shopLogo ? (
                               <img 
                                 src={chatSellerInfo.sellerProfile.shopLogo} 
@@ -265,59 +269,60 @@ function MessagesContent() {
                                 className="w-full h-full object-cover"
                               />
                             ) : (
-                              <Store className="w-6 h-6 text-white" />
+                              <Store className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                             )}
                           </div>
-                          <div>
-                            <h3 className="font-semibold text-gray-900">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">
                               {chatSellerInfo.sellerProfile?.shopName || chatSellerInfo.name}
                             </h3>
-                            <p className="text-sm text-gray-500">Người bán</p>
+                            <p className="text-xs sm:text-sm text-gray-500">Người bán</p>
                           </div>
                         </div>
                         <Link 
                           href={`/shop/${chatSellerInfo.id}`}
-                          className="flex items-center gap-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                          className="flex items-center gap-1 px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-medium rounded-lg transition-colors flex-shrink-0"
                         >
-                          <Store className="w-4 h-4" />
-                          Xem Shop
+                          <Store className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                          <span className="hidden sm:inline">Xem Shop</span>
+                          <span className="sm:hidden">Shop</span>
                         </Link>
                       </div>
                     )}
                     
                     {/* Order Info Box */}
                     {chatOrderInfo && (
-                      <div className="p-3 bg-gray-50 border-t">
-                        <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                      <div className="p-2 sm:p-3 bg-gray-50 border-t">
+                        <p className="text-xs text-gray-500 mb-1.5 sm:mb-2 flex items-center gap-1">
                           <Package className="w-3 h-3" />
                           Tin nhắn về đơn hàng:
                         </p>
                         <Link 
                           href={`/orders/${chatOrderInfo.id}`}
-                          className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all"
+                          className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 bg-white rounded-lg sm:rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all"
                         >
                           {chatOrderInfo.items?.[0]?.product?.images && (
                             <img 
                               src={JSON.parse(chatOrderInfo.items[0].product.images)[0]} 
                               alt=""
-                              className="w-14 h-14 rounded-lg object-cover"
+                              className="w-10 h-10 sm:w-14 sm:h-14 rounded-lg object-cover flex-shrink-0"
                             />
                           )}
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-900 truncate">
+                            <p className="font-medium text-gray-900 text-xs sm:text-sm truncate">
                               {chatOrderInfo.items?.map((i: any) => i.product?.title).join(', ')}
                             </p>
-                            <div className="flex items-center gap-2 text-sm">
+                            <div className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm flex-wrap">
                               <span className="text-blue-600 font-semibold">
                                 {new Intl.NumberFormat('vi-VN').format(chatOrderInfo.total)}đ
                               </span>
-                              <span className="text-gray-400">•</span>
-                              <span className="text-gray-500">
+                              <span className="text-gray-400 hidden sm:inline">•</span>
+                              <span className="text-gray-500 truncate">
                                 {chatOrderInfo.orderNumber}
                               </span>
                             </div>
                           </div>
-                          <ExternalLink className="w-4 h-4 text-gray-400" />
+                          <ExternalLink className="w-4 h-4 text-gray-400 flex-shrink-0" />
                         </Link>
                       </div>
                     )}
@@ -329,14 +334,14 @@ function MessagesContent() {
                   />
                 </>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                  <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                    <MessageCircle className="w-10 h-10 text-gray-400" />
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 sm:p-8">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                    <MessageCircle className="w-8 h-8 sm:w-10 sm:h-10 text-gray-400" />
                   </div>
-                  <h2 className="text-xl font-semibold text-gray-700 mb-2">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-700 mb-2">
                     Chọn một cuộc trò chuyện
                   </h2>
-                  <p className="text-gray-500 max-w-sm">
+                  <p className="text-sm sm:text-base text-gray-500 max-w-sm">
                     Chọn một cuộc trò chuyện từ danh sách bên trái hoặc bắt đầu trò chuyện mới với người bán
                   </p>
                 </div>

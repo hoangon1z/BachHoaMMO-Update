@@ -55,7 +55,7 @@ export function SearchBar({ onSearch, placeholder = "Tìm kiếm sản phẩm...
           className="h-full px-5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm transition-colors flex items-center gap-2"
         >
           <Search className="w-4 h-4" />
-          <span className="hidden sm:inline">Tìm kiếm</span>
+          <span className="hidden sm:inline"></span>
         </button>
       </div>
     </form>

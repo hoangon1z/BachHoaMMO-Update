@@ -9,7 +9,7 @@ import { UserProfileMenu } from './UserProfileMenu';
 import { useCartStore } from '@/store/cartStore';
 import { 
   ShoppingCart, Menu, X, Phone, Mail, ChevronDown, ChevronRight, User, LogIn, Shield, Gavel, Loader2,
-  Folder, MonitorPlay, Cpu, Music, MessageCircle, Video, GraduationCap, Globe, Package, Layers, Wrench
+  Folder, MonitorPlay, Cpu, Music, MessageCircle, Video, GraduationCap, Globe, Package, Layers, Wrench, FileText
 } from 'lucide-react';
 import { NotificationDropdown } from './NotificationDropdown';
 import { apiFetch } from '@/lib/config';
@@ -261,6 +261,18 @@ export function Header({ user, onLogout, onSearch }: HeaderProps) {
                 </Button>
               </Link>
 
+              {/* Blogs Link - Desktop */}
+              <Link href="/blogs" className="hidden lg:block">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-10 px-3 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-colors"
+                >
+                  <FileText className="w-4 h-4 mr-1.5" />
+                  Blogs
+                </Button>
+              </Link>
+
               {isLoading ? (
                 <div className="flex items-center gap-1 sm:gap-2">
                   <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gray-100 animate-pulse rounded-full"></div>
@@ -424,16 +436,25 @@ export function Header({ user, onLogout, onSearch }: HeaderProps) {
               </div>
             </div>
             
-            {/* Tools Link - Mobile */}
+            {/* Tools & Blogs - Mobile */}
             <div className="pt-4 border-t border-gray-100">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Công cụ</p>
-              <button
-                className="w-full px-3 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors text-left font-medium flex items-center gap-2"
-                onClick={() => { setMobileMenuOpen(false); router.push('/tools'); }}
-              >
-                <Wrench className="w-4 h-4" />
-                Công cụ tiện ích (2FA, Check FB)
-              </button>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Công cụ & Blogs</p>
+              <div className="space-y-2">
+                <button
+                  className="w-full px-3 py-2.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors text-left font-medium flex items-center gap-2"
+                  onClick={() => { setMobileMenuOpen(false); router.push('/tools'); }}
+                >
+                  <Wrench className="w-4 h-4" />
+                  Công cụ tiện ích (2FA, Check FB)
+                </button>
+                <button
+                  className="w-full px-3 py-2.5 text-sm text-gray-700 bg-gray-50 rounded-lg hover:bg-gray-100 border border-gray-200 transition-colors text-left font-medium flex items-center gap-2"
+                  onClick={() => { setMobileMenuOpen(false); router.push('/blogs'); }}
+                >
+                  <FileText className="w-4 h-4" />
+                  Blogs
+                </button>
+              </div>
             </div>
 
             {/* Quick Links */}

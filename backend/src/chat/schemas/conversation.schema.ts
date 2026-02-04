@@ -73,6 +73,16 @@ export class Conversation {
 
   @Prop({ type: String })
   resolution: string; // Kết quả giải quyết dispute
+
+  // Completion confirmation (both parties must confirm after resolution)
+  @Prop({ default: false })
+  buyerCompleted: boolean;
+
+  @Prop({ default: false })
+  sellerCompleted: boolean;
+
+  @Prop({ type: Date })
+  completedAt: Date;
 }
 
 export const ConversationSchema = SchemaFactory.createForClass(Conversation);

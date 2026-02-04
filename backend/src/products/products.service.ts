@@ -29,7 +29,20 @@ export class ProductsService {
     };
 
     if (categoryId) {
-      where.categoryId = categoryId;
+      // Check if this is a parent category (has children)
+      const childCategories = await this.prisma.category.findMany({
+        where: { parentId: categoryId },
+        select: { id: true },
+      });
+      
+      if (childCategories.length > 0) {
+        // Parent category selected - include products from all child categories
+        const categoryIds = [categoryId, ...childCategories.map(c => c.id)];
+        where.categoryId = { in: categoryIds };
+      } else {
+        // Child category or no children - exact match
+        where.categoryId = categoryId;
+      }
     }
 
     if (search) {

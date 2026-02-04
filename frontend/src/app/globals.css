@@ -70,7 +70,47 @@
   * {
     @apply border-border;
   }
-  body {
+  
+  html, body {
     @apply bg-background text-foreground;
+  }
+  
+  /* MOBILE ONLY: Prevent iOS Safari auto-zoom and overflow issues */
+  @media screen and (max-width: 640px) {
+    html {
+      -webkit-text-size-adjust: 100%;
+      touch-action: manipulation;
+    }
+    
+    body {
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Prevent iOS auto-zoom on input focus (font-size < 16px) */
+    input, 
+    textarea, 
+    select {
+      font-size: 16px !important;
+    }
+  }
+}
+
+/* Hide scrollbar utility */
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* iOS safe area support */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
 }

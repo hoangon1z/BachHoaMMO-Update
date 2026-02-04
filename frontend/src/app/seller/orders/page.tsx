@@ -64,6 +64,7 @@ export default function SellerOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -77,17 +78,23 @@ export default function SellerOrdersPage() {
   const toast = useToast();
 
   useEffect(() => {
-    fetchOrders();
-  }, [pagination.page, statusFilter]);
+    const debounce = setTimeout(() => {
+      fetchOrders();
+    }, searchQuery ? 300 : 0);
+    return () => clearTimeout(debounce);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagination.page, statusFilter, searchQuery]);
 
   const fetchOrders = async () => {
     try {
+      setIsLoading(true);
       const token = localStorage.getItem('token');
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
       });
       if (statusFilter) params.append('status', statusFilter);
+      if (searchQuery) params.append('search', searchQuery);
 
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || '/api'}/seller/orders?${params}`,
@@ -296,6 +303,19 @@ export default function SellerOrdersPage() {
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Tìm theo mã đơn, tên khách hàng..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
+              className="w-full h-10 pl-10 pr-4 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
           <select
             value={statusFilter}
             onChange={(e) => {

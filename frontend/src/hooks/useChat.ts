@@ -62,6 +62,11 @@ export interface Conversation {
   };
   unreadCount?: number;
   createdAt: string;
+  // Completion confirmation fields
+  buyerCompleted?: boolean;
+  sellerCompleted?: boolean;
+  completedAt?: string;
+  resolution?: string;
 }
 
 export interface TypingUser {
@@ -92,6 +97,7 @@ interface UseChatReturn {
   startConversationWithSeller: (sellerId: string, productId?: string, message?: string) => Promise<Conversation>;
   startConversationWithAdmin: (subject: string, message: string, orderId?: string) => Promise<Conversation>;
   openDispute: (reason: string) => Promise<void>;
+  markConversationComplete: () => Promise<void>;
 }
 
 function resolveSocketUrl() {
@@ -577,6 +583,29 @@ export function useChat(): UseChatReturn {
     }
   }, [token, currentConversation]);
 
+  // Mark conversation as complete
+  const markConversationComplete = useCallback(async () => {
+    if (!currentConversation) return;
+
+    const response = await fetch(`/api/chat/conversations/${currentConversation._id}/complete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const data = await response.json();
+    if (data.success) {
+      setCurrentConversation(data.conversation);
+      // Update in conversations list
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv._id === data.conversation._id ? data.conversation : conv
+        )
+      );
+    }
+  }, [token, currentConversation]);
+
   return {
     socket: socketRef.current,
     isConnected,
@@ -598,5 +627,6 @@ export function useChat(): UseChatReturn {
     startConversationWithSeller,
     startConversationWithAdmin,
     openDispute,
+    markConversationComplete,
   };
 }

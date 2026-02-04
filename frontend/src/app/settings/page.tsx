@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { useRouter } from 'next/navigation';
-import { Settings, Bell, Shield, Globe, Palette, Lock, Smartphone, Mail, ChevronRight, Moon, Sun, Monitor, Check, Loader2, Eye, EyeOff, X } from 'lucide-react';
+import { Settings, Bell, Shield, Lock, Smartphone, Mail, ChevronRight, Loader2, Eye, EyeOff, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Header } from '@/components/Header';
@@ -23,9 +23,6 @@ export default function SettingsPage() {
     promotionNotifications: false,
     showProfile: true,
     showHistory: false,
-    language: 'vi',
-    timezone: 'asia/ho_chi_minh',
-    theme: 'light',
     twoFactorEnabled: false,
   });
   
@@ -238,11 +235,6 @@ export default function SettingsPage() {
     </button>
   );
 
-  const themeOptions = [
-    { id: 'light', icon: Sun, label: 'Sáng' },
-    { id: 'dark', icon: Moon, label: 'Tối' },
-    { id: 'system', icon: Monitor, label: 'Hệ thống' },
-  ];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -367,87 +359,6 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <ToggleSwitch enabled={settings.twoFactorEnabled} onChange={() => toggleSetting('twoFactorEnabled')} />
-              </div>
-            </div>
-          </div>
-
-          {/* Language & Region */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-6 py-5 border-b border-gray-100 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-                <Globe className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-gray-900">Ngôn ngữ & Khu vực</h3>
-                <p className="text-sm text-gray-500">Cài đặt ngôn ngữ và múi giờ</p>
-              </div>
-            </div>
-            <div className="divide-y divide-gray-100">
-              <div className="px-6 py-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Ngôn ngữ</label>
-                <select 
-                  value={settings.language}
-                  onChange={(e) => setSettings(prev => ({ ...prev, language: e.target.value }))}
-                  className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
-                >
-                  <option value="vi">🇻🇳 Tiếng Việt</option>
-                  <option value="en">🇺🇸 English</option>
-                </select>
-              </div>
-              <div className="px-6 py-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Múi giờ</label>
-                <select 
-                  value={settings.timezone}
-                  onChange={(e) => setSettings(prev => ({ ...prev, timezone: e.target.value }))}
-                  className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
-                >
-                  <option value="asia/ho_chi_minh">GMT+7 (Hà Nội, Hồ Chí Minh)</option>
-                  <option value="asia/bangkok">GMT+7 (Bangkok)</option>
-                  <option value="asia/singapore">GMT+8 (Singapore)</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Appearance */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-6 py-5 border-b border-gray-100 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
-                <Palette className="w-5 h-5 text-purple-600" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-gray-900">Giao diện</h3>
-                <p className="text-sm text-gray-500">Tùy chỉnh giao diện ứng dụng</p>
-              </div>
-            </div>
-            <div className="p-6">
-              <label className="block text-sm font-medium text-gray-700 mb-3">Chế độ hiển thị</label>
-              <div className="grid grid-cols-3 gap-3">
-                {themeOptions.map((theme) => (
-                  <button
-                    key={theme.id}
-                    onClick={() => setSettings(prev => ({ ...prev, theme: theme.id }))}
-                    className={`relative p-4 rounded-xl border-2 transition-all ${
-                      settings.theme === theme.id
-                        ? 'border-blue-600 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <theme.icon className={`w-6 h-6 mx-auto mb-2 ${
-                      settings.theme === theme.id ? 'text-blue-600' : 'text-gray-500'
-                    }`} />
-                    <p className={`text-sm font-medium ${
-                      settings.theme === theme.id ? 'text-blue-600' : 'text-gray-700'
-                    }`}>
-                      {theme.label}
-                    </p>
-                    {settings.theme === theme.id && (
-                      <div className="absolute top-2 right-2 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center">
-                        <Check className="w-3 h-3 text-white" />
-                      </div>
-                    )}
-                  </button>
-                ))}
               </div>
             </div>
           </div>

@@ -18,7 +18,8 @@ import {
   Bell,
   LogOut,
   Plug,
-  MessageCircle
+  MessageCircle,
+  FileText
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -27,6 +28,7 @@ const sidebarItems = [
   { icon: Package, label: 'Sản phẩm', href: '/seller/products' },
   { icon: ShoppingBag, label: 'Đơn hàng', href: '/seller/orders' },
   { icon: MessageCircle, label: 'Tin nhắn', href: '/seller/messages' },
+  { icon: FileText, label: 'Blogs', href: '/seller/blogs' },
   { icon: MessageSquareWarning, label: 'Khiếu nại', href: '/seller/complaints' },
   { icon: Wallet, label: 'Rút tiền', href: '/seller/withdrawals' },
   { icon: Plug, label: 'Kết nối API', href: '/seller/api' },
