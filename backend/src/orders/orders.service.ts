@@ -2,6 +2,8 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
 import { TelegramService } from '../telegram/telegram.service';
+import { WebhookService, WebhookEvent } from '../webhook/webhook.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class OrdersService {
@@ -9,6 +11,8 @@ export class OrdersService {
     private prisma: PrismaService,
     private walletService: WalletService,
     private telegramService: TelegramService,
+    private webhookService: WebhookService,
+    private notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -282,7 +286,103 @@ export class OrdersService {
       console.error('Failed to send Telegram notification:', err.message);
     });
 
+    // Trigger webhook events (async, don't block response)
+    this.triggerOrderWebhooks(result).catch(err => {
+      console.error('Failed to trigger webhooks:', err.message);
+    });
+
     return result;
+  }
+
+  /**
+   * Trigger webhook events for order
+   */
+  private async triggerOrderWebhooks(result: {
+    order: any;
+    orderItems: any[];
+    deliveries: any[];
+    sellerId: string;
+    buyerName: string;
+    products: any[];
+  }) {
+    try {
+      // Build webhook payload
+      const orderData = {
+        orderId: result.order.id,
+        orderNumber: result.order.orderNumber,
+        status: result.order.status,
+        total: result.order.total,
+        buyerName: result.buyerName,
+        items: result.orderItems.map((oi, idx) => {
+          const product = result.products.find(p => p.id === oi.productId);
+          return {
+            orderItemId: oi.id,
+            productId: oi.productId,
+            productTitle: product?.title || 'Unknown',
+            variantId: oi.variantId,
+            quantity: oi.quantity,
+            price: oi.price,
+            total: oi.total,
+            deliveredQuantity: oi.deliveredQuantity,
+            productType: product?.productType || 'STANDARD',
+            autoDelivery: product?.autoDelivery ?? true,
+            // Include buyer provided data for UPGRADE products
+            buyerProvidedData: oi.buyerProvidedData ? JSON.parse(oi.buyerProvidedData) : undefined,
+          };
+        }),
+        deliveredCount: result.deliveries.length,
+        createdAt: result.order.createdAt,
+      };
+
+      // Trigger order.created event
+      await this.webhookService.triggerEvent(
+        result.sellerId,
+        WebhookEvent.ORDER_CREATED,
+        orderData,
+      );
+
+      // If order is already paid (which it is in our system), trigger order.paid
+      // This is the main event for automated delivery systems
+      await this.webhookService.triggerEvent(
+        result.sellerId,
+        WebhookEvent.ORDER_PAID,
+        orderData,
+      );
+
+      // Check inventory levels and trigger inventory events
+      for (const item of result.orderItems) {
+        const product = result.products.find(p => p.id === item.productId);
+        if (product?.isDigital && product?.autoDelivery) {
+          const availableCount = await this.prisma.productInventory.count({
+            where: { productId: item.productId, status: 'AVAILABLE' },
+          });
+
+          if (availableCount === 0) {
+            await this.webhookService.triggerEvent(
+              result.sellerId,
+              WebhookEvent.INVENTORY_EMPTY,
+              {
+                productId: item.productId,
+                productTitle: product.title,
+                availableCount: 0,
+              },
+            );
+          } else if (availableCount < 10) {
+            await this.webhookService.triggerEvent(
+              result.sellerId,
+              WebhookEvent.INVENTORY_LOW,
+              {
+                productId: item.productId,
+                productTitle: product.title,
+                availableCount,
+              },
+            );
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Webhook trigger error:', error);
+    }
   }
 
   /**
@@ -304,6 +404,7 @@ export class OrdersService {
         };
       });
 
+      // Send Telegram notification
       await this.telegramService.notifyNewOrder(result.sellerId, {
         orderNumber: result.order.orderNumber,
         total: result.order.total,
@@ -312,6 +413,19 @@ export class OrdersService {
       });
     } catch (error) {
       console.error('Telegram notification error:', error);
+    }
+
+    // Send in-app notification to seller
+    try {
+      await this.notificationsService.sendNewOrderNotification(
+        result.sellerId,
+        result.order.id,
+        result.order.orderNumber,
+        result.order.total,
+        result.buyerName,
+      );
+    } catch (error) {
+      console.error('In-app notification error:', error);
     }
   }
 

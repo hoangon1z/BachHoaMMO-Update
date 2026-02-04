@@ -5,6 +5,7 @@ import { Conversation, ConversationDocument, ConversationType, ConversationStatu
 import { Message, MessageDocument, MessageType, Attachment, ProductEmbed } from './schemas/message.schema';
 import { UserStatus, UserStatusDocument } from './schemas/user-status.schema';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface CreateConversationDto {
   type: ConversationType;
@@ -44,6 +45,7 @@ export class ChatService {
     @InjectModel(Message.name) private messageModel: Model<MessageDocument>,
     @InjectModel(UserStatus.name) private userStatusModel: Model<UserStatusDocument>,
     private prisma: PrismaService,
+    private notificationsService: NotificationsService,
   ) {}
 
   // ============================================
@@ -335,7 +337,51 @@ export class ChatService {
 
     await this.conversationModel.findByIdAndUpdate(dto.conversationId, updateData);
 
+    // Send in-app notification to other participants (async, don't block response)
+    this.sendMessageNotifications(conversation, userId, sender?.name || 'Ai đó', dto.content).catch(err => {
+      console.error('Failed to send message notification:', err.message);
+    });
+
     return message;
+  }
+
+  /**
+   * Send in-app notifications for new message
+   */
+  private async sendMessageNotifications(
+    conversation: ConversationDocument,
+    senderId: string,
+    senderName: string,
+    messageContent: string,
+  ) {
+    const conversationId = conversation._id.toString();
+    
+    // Notify other participants
+    const recipientIds: string[] = [];
+    
+    if (conversation.buyerId && conversation.buyerId !== senderId) {
+      recipientIds.push(conversation.buyerId);
+    }
+    if (conversation.sellerId && conversation.sellerId !== senderId) {
+      recipientIds.push(conversation.sellerId);
+    }
+    if (conversation.adminId && conversation.adminId !== senderId) {
+      recipientIds.push(conversation.adminId);
+    }
+
+    // Send notifications to all recipients
+    for (const recipientId of recipientIds) {
+      try {
+        await this.notificationsService.sendMessageNotification(
+          recipientId,
+          senderName,
+          messageContent,
+          conversationId,
+        );
+      } catch (error) {
+        console.error(`Failed to send notification to ${recipientId}:`, error);
+      }
+    }
   }
 
   /**

@@ -56,6 +56,7 @@ model User {
   notifications      Notification[]
   devices            UserDevice[]
   apiKeys            SellerApiKey[]
+  webhooks           SellerWebhook[]
 
   @@map("users")
 }
@@ -71,6 +72,14 @@ model SellerProfile {
   totalSales      Int      @default(0)
   commission      Float    @default(10) // Phần trăm hoa hồng
   isVerified      Boolean  @default(false)
+  
+  // Bank information (can only be added once, cannot be edited)
+  bankName        String?
+  bankAccount     String?
+  bankHolder      String?
+  bankBranch      String?
+  bankInfoAddedAt DateTime? // When bank info was added (if set, cannot be edited)
+  
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -605,6 +614,71 @@ model SellerApiKey {
   @@index([sellerId])
   @@index([apiKey])
   @@map("seller_api_keys")
+}
+
+// ============================================
+// SELLER WEBHOOK SYSTEM
+// ============================================
+
+model SellerWebhook {
+  id          String    @id @default(uuid())
+  sellerId    String
+  seller      User      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  
+  url         String              // Webhook endpoint URL
+  secret      String              // Secret for signing payloads (HMAC-SHA256)
+  name        String    @default("Default Webhook")
+  
+  // Events to subscribe
+  events      String              // JSON array: ["order.created", "order.paid", ...]
+  
+  // Status
+  isActive    Boolean   @default(true)
+  
+  // Tracking
+  lastTriggeredAt DateTime?
+  lastStatus      Int?            // Last HTTP status code
+  failureCount    Int       @default(0)  // Consecutive failures
+  totalCalls      Int       @default(0)
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // Relations
+  logs        WebhookLog[]
+  
+  @@index([sellerId])
+  @@index([isActive])
+  @@map("seller_webhooks")
+}
+
+model WebhookLog {
+  id          String    @id @default(uuid())
+  webhookId   String
+  webhook     SellerWebhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  
+  event       String              // Event type
+  payload     String              // JSON payload sent
+  
+  // Response
+  statusCode  Int?                // HTTP response code
+  response    String?             // Response body (truncated)
+  error       String?             // Error message if failed
+  
+  // Timing
+  duration    Int?                // Request duration in ms
+  attempts    Int       @default(1)  // Number of delivery attempts
+  
+  // Status
+  status      String    @default("PENDING")  // PENDING, SUCCESS, FAILED, RETRYING
+  
+  createdAt   DateTime  @default(now())
+  deliveredAt DateTime?
+  
+  @@index([webhookId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("webhook_logs")
 }
 
 // ============================================

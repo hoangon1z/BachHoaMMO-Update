@@ -251,7 +251,7 @@ export default function CartPage() {
               <Link href="/">
                 <Button variant="outline" className="w-full h-11 rounded-xl border-gray-200 text-gray-700 hover:bg-gray-50">
                   <ArrowLeft className="w-4 h-4 mr-2" />
-                  Tiếp tục mua
+                  Quay lại
                 </Button>
               </Link>
 

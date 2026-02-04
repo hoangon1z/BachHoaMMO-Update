@@ -10,8 +10,10 @@ API cho seller quản lý kho hàng, sản phẩm và đơn hàng trên BachHoaM
 - [Error Handling](#error-handling)
 - [Endpoints](#endpoints)
   - [Health & Info](#health--info)
-  - [Inventory](#inventory)
+  - [Categories](#categories)
   - [Products](#products)
+  - [Variants](#variants)
+  - [Inventory](#inventory)
   - [Orders](#orders)
 - [Code Examples](#code-examples)
 
@@ -234,6 +236,36 @@ Thống kê tổng quan.
 
 ---
 
+### Categories
+
+#### GET /api/v1/categories
+
+Lấy danh sách tất cả danh mục. Dùng `categoryId` khi tạo sản phẩm mới.
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "cat-uuid-1",
+      "name": "Tài khoản Netflix",
+      "slug": "tai-khoan-netflix",
+      "parentId": null,
+      "productCount": 45
+    },
+    {
+      "id": "cat-uuid-2",
+      "name": "Tài khoản Spotify",
+      "slug": "tai-khoan-spotify",
+      "parentId": null,
+      "productCount": 32
+    }
+  ]
+}
+```
+
+---
+
 ### Inventory
 
 #### GET /api/v1/inventory
@@ -249,6 +281,31 @@ Lấy danh sách kho hàng.
 | `status` | enum | AVAILABLE, RESERVED, SOLD, DISABLED |
 | `limit` | number | Max 100, default 50 |
 | `offset` | number | Default 0 |
+
+#### GET /api/v1/inventory/count
+
+Đếm nhanh số lượng inventory mà không cần load toàn bộ danh sách.
+
+**Query Parameters:**
+
+| Param | Type | Mô tả |
+|-------|------|-------|
+| `productId` | string | Filter theo product |
+| `variantId` | string | Filter theo variant |
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "total": 150,
+    "available": 120,
+    "reserved": 10,
+    "sold": 20,
+    "disabled": 0
+  }
+}
+```
 
 **Response:**
 ```json
@@ -338,6 +395,7 @@ Lấy danh sách sản phẩm.
 
 | Param | Type | Mô tả |
 |-------|------|-------|
+| `search` | string | Tìm theo tên hoặc mô tả |
 | `categoryId` | string | Filter theo danh mục |
 | `status` | enum | ACTIVE, INACTIVE, OUT_OF_STOCK |
 | `limit` | number | Max 100, default 20 |
@@ -385,6 +443,77 @@ Cập nhật stock thủ công.
 #### DELETE /api/v1/products/:id
 
 Xóa sản phẩm (soft delete).
+
+#### GET /api/v1/products/:id/inventory
+
+Lấy danh sách inventory của một sản phẩm cụ thể. Hỗ trợ các query params giống `/inventory`.
+
+---
+
+### Variants
+
+Quản lý phân loại sản phẩm (ví dụ: 1 tháng, 3 tháng, 1 năm).
+
+#### GET /api/v1/products/:id/variants
+
+Lấy tất cả variants của một sản phẩm.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "var-1",
+      "name": "1 tháng",
+      "price": 50000,
+      "originalPrice": 100000,
+      "stock": 10,
+      "isActive": true,
+      "position": 0
+    },
+    {
+      "id": "var-2",
+      "name": "3 tháng",
+      "price": 120000,
+      "originalPrice": 250000,
+      "stock": 15,
+      "isActive": true,
+      "position": 1
+    }
+  ]
+}
+```
+
+#### POST /api/v1/products/:id/variants
+
+Thêm phân loại mới cho sản phẩm.
+
+**Request Body:**
+```json
+{
+  "name": "1 năm",
+  "price": 400000,
+  "originalPrice": 800000,
+  "stock": 0
+}
+```
+
+#### PUT /api/v1/products/:id/variants/:variantId
+
+Cập nhật phân loại. Chỉ gửi các field cần update.
+
+**Request Body:**
+```json
+{
+  "price": 350000,
+  "isActive": true
+}
+```
+
+#### DELETE /api/v1/products/:id/variants/:variantId
+
+Xóa phân loại. Nếu xóa hết variants, product sẽ tự động được đánh dấu `hasVariants: false`.
 
 ---
 
@@ -603,6 +732,15 @@ print_r($result);
 ---
 
 ## Changelog
+
+### v1.1.0 (2026-02-03)
+- ✨ Thêm endpoint Categories (`GET /categories`)
+- ✨ Thêm endpoint Inventory Count (`GET /inventory/count`)
+- ✨ Thêm endpoints Variants (GET, POST, PUT, DELETE)
+- ✨ Thêm tìm kiếm sản phẩm (`search` param)
+- ✨ Thêm `GET /products/:id/inventory`
+- 📝 Cập nhật Postman Collection với tất cả endpoints mới
+- 🔒 Xóa debug logs trong production
 
 ### v1.0.0 (2024-01-30)
 - Initial release

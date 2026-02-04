@@ -58,6 +58,9 @@ interface Product {
   description: string;
   price: number;
   originalPrice?: number;
+  minPrice?: number;  // Giá thấp nhất (khi có variants)
+  maxPrice?: number;  // Giá cao nhất (khi có variants)
+  hasVariants?: boolean;
   images: string;
   stock: number;
   sales: number;
@@ -355,7 +358,10 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
               {products.map((product) => {
                 const images = typeof product.images === 'string' ? JSON.parse(product.images) : product.images;
                 const imageUrl = images[0] ? getImageUrl(images[0]) : '';
-                const discount = product.originalPrice && product.originalPrice > product.price
+                // Có price range? (nhiều phân loại với giá khác nhau)
+                const hasPriceRange = product.minPrice && product.maxPrice && product.minPrice !== product.maxPrice;
+                // Không hiển thị discount khi có price range
+                const discount = !hasPriceRange && product.originalPrice && product.originalPrice > product.price
                   ? Math.round((1 - product.price / product.originalPrice) * 100) 
                   : 0;
                 const isHovered = hoveredProduct === product.id;
@@ -431,15 +437,23 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
                           <span className="text-xs text-gray-500">{product.sales} đã bán</span>
                         </div>
 
-                        {/* Price: giá bán (price) chính, giá gốc (originalPrice) gạch ngang */}
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-lg font-bold text-red-500">
-                            {formatPrice(product.price)}
-                          </span>
-                          {product.originalPrice && product.originalPrice > product.price && (
-                            <span className="text-sm text-gray-400 line-through">
-                              {formatPrice(product.originalPrice)}
+                        {/* Price: hiển thị range khi có variants, hoặc giá đơn */}
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          {hasPriceRange ? (
+                            <span className="text-lg font-bold text-blue-600">
+                              {formatPrice(product.minPrice!)} - {formatPrice(product.maxPrice!)}
                             </span>
+                          ) : (
+                            <>
+                              <span className="text-lg font-bold text-red-500">
+                                {formatPrice(product.price)}
+                              </span>
+                              {product.originalPrice && product.originalPrice > product.price && (
+                                <span className="text-sm text-gray-400 line-through">
+                                  {formatPrice(product.originalPrice)}
+                                </span>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>
@@ -454,7 +468,10 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
               {products.map((product) => {
                 const images = typeof product.images === 'string' ? JSON.parse(product.images) : product.images;
                 const imageUrl = images[0] ? getImageUrl(images[0]) : '';
-                const discount = product.originalPrice && product.originalPrice > product.price
+                // Có price range? (nhiều phân loại với giá khác nhau)
+                const hasPriceRange = product.minPrice && product.maxPrice && product.minPrice !== product.maxPrice;
+                // Không hiển thị discount khi có price range
+                const discount = !hasPriceRange && product.originalPrice && product.originalPrice > product.price
                   ? Math.round((1 - product.price / product.originalPrice) * 100) 
                   : 0;
 
@@ -501,14 +518,22 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
                         </div>
 
                         <div className="flex items-center justify-between">
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-2xl font-bold text-red-500">
-                              {formatPrice(product.price)}
-                            </span>
-                            {product.originalPrice && product.originalPrice > product.price && (
-                              <span className="text-base text-gray-400 line-through">
-                                {formatPrice(product.originalPrice)}
+                          <div className="flex items-baseline gap-2 flex-wrap">
+                            {hasPriceRange ? (
+                              <span className="text-2xl font-bold text-blue-600">
+                                {formatPrice(product.minPrice!)} - {formatPrice(product.maxPrice!)}
                               </span>
+                            ) : (
+                              <>
+                                <span className="text-2xl font-bold text-red-500">
+                                  {formatPrice(product.price)}
+                                </span>
+                                {product.originalPrice && product.originalPrice > product.price && (
+                                  <span className="text-base text-gray-400 line-through">
+                                    {formatPrice(product.originalPrice)}
+                                  </span>
+                                )}
+                              </>
                             )}
                           </div>
                           <Button

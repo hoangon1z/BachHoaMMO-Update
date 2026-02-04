@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
-export type NotificationType = 'WELCOME' | 'ADMIN' | 'ORDER' | 'COMPLAINT' | 'SYSTEM' | 'PROMOTION' | 'AUCTION';
+export type NotificationType = 'WELCOME' | 'ADMIN' | 'ORDER' | 'COMPLAINT' | 'SYSTEM' | 'PROMOTION' | 'AUCTION' | 'DEPOSIT' | 'MESSAGE';
 
 interface CreateNotificationDto {
   userId: string;
@@ -214,6 +214,48 @@ export class NotificationsService {
       message,
       link,
       icon: 'Megaphone',
+    });
+  }
+
+  /**
+   * Send deposit notification
+   */
+  async sendDepositNotification(userId: string, amount: number) {
+    return this.create({
+      userId,
+      type: 'DEPOSIT',
+      title: 'Nạp tiền thành công!',
+      message: `Bạn đã nạp thành công ${amount.toLocaleString('vi-VN')}đ vào ví.`,
+      link: '/wallet',
+      icon: 'Wallet',
+    });
+  }
+
+  /**
+   * Send new order notification to seller
+   */
+  async sendNewOrderNotification(sellerId: string, orderId: string, orderNumber: string, total: number, buyerName: string) {
+    return this.create({
+      userId: sellerId,
+      type: 'ORDER',
+      title: 'Đơn hàng mới!',
+      message: `Bạn có đơn hàng mới từ ${buyerName}. Tổng: ${total.toLocaleString('vi-VN')}đ`,
+      link: `/seller/orders/${orderId}`,
+      icon: 'ShoppingBag',
+    });
+  }
+
+  /**
+   * Send new message notification
+   */
+  async sendMessageNotification(userId: string, senderName: string, messagePreview: string, conversationId: string) {
+    return this.create({
+      userId,
+      type: 'MESSAGE',
+      title: `Tin nhắn mới từ ${senderName}`,
+      message: messagePreview.length > 100 ? messagePreview.substring(0, 100) + '...' : messagePreview,
+      link: `/messages?conversation=${conversationId}`,
+      icon: 'MessageCircle',
     });
   }
 }

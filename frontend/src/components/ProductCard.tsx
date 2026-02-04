@@ -51,6 +51,9 @@ interface ProductCardProps {
     title: string;
     price: number;
     originalPrice?: number;
+    minPrice?: number;  // Giá thấp nhất (khi có variants)
+    maxPrice?: number;  // Giá cao nhất (khi có variants)
+    hasVariants?: boolean;
     thumbnail?: string;
     images: string;
     seller: {
@@ -64,7 +67,7 @@ interface ProductCardProps {
     };
     rating: number;
     sales: number;
-    views: number;
+    views?: number;
   };
 }
 
@@ -80,8 +83,13 @@ export function ProductCard({ product }: ProductCardProps) {
     images = [];
   }
   const thumbnail = getImageUrl(images[0] || product.thumbnail || '');
+  
+  // Có price range? (nhiều phân loại với giá khác nhau)
+  const hasPriceRange = product.minPrice && product.maxPrice && product.minPrice !== product.maxPrice;
+  
   // Giá bán (price) = khách trả, giá gốc (originalPrice) = gạch ngang. Giảm % khi originalPrice > price
-  const discount = product.originalPrice && product.originalPrice > product.price
+  // Không hiển thị discount khi có price range
+  const discount = !hasPriceRange && product.originalPrice && product.originalPrice > product.price
     ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
     : 0;
 
@@ -176,7 +184,12 @@ export function ProductCard({ product }: ProductCardProps) {
           
           {/* Price */}
           <div className="flex items-baseline gap-1.5 flex-wrap">
-            {product.originalPrice && product.originalPrice > product.price ? (
+            {/* Hiển thị price range khi có nhiều phân loại với giá khác nhau */}
+            {product.minPrice && product.maxPrice && product.minPrice !== product.maxPrice ? (
+              <span className="text-sm sm:text-lg font-bold text-blue-600">
+                {formatPrice(product.minPrice)} - {formatPrice(product.maxPrice)}
+              </span>
+            ) : product.originalPrice && product.originalPrice > product.price ? (
               <>
                 <span className="text-sm sm:text-lg font-bold text-red-500">
                   {formatPrice(product.price)}

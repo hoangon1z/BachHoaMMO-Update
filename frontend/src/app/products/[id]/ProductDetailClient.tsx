@@ -7,6 +7,7 @@ import { Footer } from '@/components/Footer';
 import { useAuthStore } from '@/store/authStore';
 import { useCartStore } from '@/store/cartStore';
 import { Button } from '@/components/ui/button';
+import { ProductReviews } from '@/components/ProductReviews';
 import { Star, ShoppingCart, Heart, MessageCircle, Shield, Zap, Check, Minus, Plus, ChevronRight, Store, Clock, Share2, BadgeCheck, TrendingUp, Package, ThumbsUp, ExternalLink, AlertCircle, X, Loader2, ArrowUpCircle, Mail, User, Key } from 'lucide-react';
 import Link from 'next/link';
 import { VerifyBadge } from '@/components/VerifyBadge';
@@ -582,26 +583,18 @@ export default function ProductDetailClient({ product }: ProductDetailClientProp
               <h3 className="font-semibold text-gray-900 mb-4 pb-3 border-b border-gray-100">
                 Mô tả sản phẩm
               </h3>
-              <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
-                {product.description}
-              </p>
+              <div 
+                className="text-gray-700 leading-relaxed prose prose-sm max-w-none prose-a:text-blue-600 prose-a:underline"
+                dangerouslySetInnerHTML={{ __html: product.description }}
+              />
             </div>
 
             {/* Reviews Card */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-              <h3 className="font-semibold text-gray-900 mb-4 pb-3 border-b border-gray-100">
-                Đánh giá ({product.totalReviews})
-              </h3>
-              <div className="text-center py-8">
-                <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gray-50 flex items-center justify-center">
-                  <Star className="w-8 h-8 text-gray-300" />
-                </div>
-                <p className="text-gray-500 text-sm mb-4">Chưa có đánh giá nào</p>
-                <Button variant="outline" className="rounded-xl">
-                  Viết đánh giá đầu tiên
-                </Button>
-              </div>
-            </div>
+            <ProductReviews 
+              productId={product.id} 
+              rating={product.rating} 
+              totalReviews={product.totalReviews} 
+            />
           </div>
 
           {/* RIGHT COLUMN - Seller (Desktop only) */}

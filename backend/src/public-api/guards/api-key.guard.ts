@@ -141,15 +141,6 @@ export class ApiKeyGuard implements CanActivate {
         .digest('hex');
 
       if (signature !== expectedSignature) {
-        // Debug: Log what we received vs expected
-        console.log(`=== Signature Mismatch Debug ===`);
-        console.log(`Timestamp: ${timestamp}`);
-        console.log(`Method: ${method}`);
-        console.log(`Path: ${path}`);
-        console.log(`Body: '${body}'`);
-        console.log(`Payload: '${signaturePayload}'`);
-        console.log(`Expected: ${expectedSignature}`);
-        console.log(`Received: ${signature}`);
         this.logger.warn(`Invalid signature for API key ${apiKey.substring(0, 12)}... Path: ${path}`);
         throw this.createError(
           API_ERROR_CODES.INVALID_SIGNATURE,

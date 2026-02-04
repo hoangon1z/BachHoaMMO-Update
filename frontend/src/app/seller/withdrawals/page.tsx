@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/authStore';
+import Link from 'next/link';
 import { 
   Wallet, 
   Plus,
@@ -9,7 +10,10 @@ import {
   CheckCircle,
   XCircle,
   Building2,
-  AlertCircle
+  AlertCircle,
+  Lock,
+  MessageCircle,
+  Info
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +32,15 @@ interface Withdrawal {
   rejectedReason?: string;
   createdAt: string;
   completedAt?: string;
+}
+
+interface BankInfo {
+  hasBankInfo: boolean;
+  bankName: string | null;
+  bankAccount: string | null;
+  bankHolder: string | null;
+  bankBranch: string | null;
+  bankInfoAddedAt: string | null;
 }
 
 // Danh sách ngân hàng Việt Nam đầy đủ
@@ -82,23 +95,42 @@ export default function SellerWithdrawalsPage() {
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showBankModal, setShowBankModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
-  const [formData, setFormData] = useState({
-    amount: '',
-    bankName: '',
-    bankAccount: '',
-    bankHolder: '',
-  });
+  const [withdrawAmount, setWithdrawAmount] = useState('');
   const [error, setError] = useState('');
   const [cancelDialog, setCancelDialog] = useState<{ isOpen: boolean; withdrawalId: string | null }>({
     isOpen: false,
     withdrawalId: null,
   });
   const [isCanceling, setIsCanceling] = useState(false);
+  
+  // Bank info state
+  const [bankInfo, setBankInfo] = useState<BankInfo | null>(null);
+  const [bankFormData, setBankFormData] = useState({
+    bankName: '',
+    bankAccount: '',
+    bankHolder: '',
+    bankBranch: '',
+  });
+  const [bankError, setBankError] = useState('');
+  const [isAddingBank, setIsAddingBank] = useState(false);
+  
+  // Fee preview state
+  const [feePreview, setFeePreview] = useState<{
+    feeRate: number;
+    fee: number;
+    netAmount: number;
+    freeWithdrawalsLeftThisWeek: number;
+    message: string;
+  } | null>(null);
+  const [isLoadingFee, setIsLoadingFee] = useState(false);
 
   useEffect(() => {
     fetchWithdrawals();
+    fetchBankInfo();
+    fetchFeePreview(0); // Get initial fee info
   }, [pagination.page]);
 
   const fetchWithdrawals = async () => {
@@ -126,11 +158,95 @@ export default function SellerWithdrawalsPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const fetchBankInfo = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/seller/bank-info', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setBankInfo(data);
+      }
+    } catch (error) {
+      console.error('Error fetching bank info:', error);
+    }
+  };
+
+  const fetchFeePreview = async (amount: number) => {
+    setIsLoadingFee(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        `/api/seller/withdrawals/fee-preview?amount=${amount}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setFeePreview(data);
+      }
+    } catch (error) {
+      console.error('Error fetching fee preview:', error);
+    } finally {
+      setIsLoadingFee(false);
+    }
+  };
+
+  // Update fee preview when amount changes
+  useEffect(() => {
+    const amount = parseInt(withdrawAmount) || 0;
+    if (amount >= 10000) {
+      const timeoutId = setTimeout(() => {
+        fetchFeePreview(amount);
+      }, 300); // Debounce
+      return () => clearTimeout(timeoutId);
+    }
+  }, [withdrawAmount]);
+
+  const handleAddBankInfo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBankError('');
+
+    if (!bankFormData.bankName || !bankFormData.bankAccount || !bankFormData.bankHolder) {
+      setBankError('Vui lòng điền đầy đủ thông tin bắt buộc');
+      return;
+    }
+
+    setIsAddingBank(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/seller/bank-info', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(bankFormData),
+      });
+
+      if (response.ok) {
+        await fetchBankInfo();
+        setShowBankModal(false);
+        setBankFormData({ bankName: '', bankAccount: '', bankHolder: '', bankBranch: '' });
+      } else {
+        const data = await response.json();
+        setBankError(data.message || 'Có lỗi xảy ra');
+      }
+    } catch (error) {
+      console.error('Error adding bank info:', error);
+      setBankError('Có lỗi xảy ra, vui lòng thử lại');
+    } finally {
+      setIsAddingBank(false);
+    }
+  };
+
+  const handleSubmitWithdrawal = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    const amount = parseInt(formData.amount);
+    const amount = parseInt(withdrawAmount);
     if (!amount || amount < 10000) {
       setError('Số tiền rút tối thiểu là 10.000đ');
       return;
@@ -141,34 +257,21 @@ export default function SellerWithdrawalsPage() {
       return;
     }
 
-    if (!formData.bankName || !formData.bankAccount || !formData.bankHolder) {
-      setError('Vui lòng điền đầy đủ thông tin ngân hàng');
-      return;
-    }
-
     setIsSubmitting(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/seller/withdrawals`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            amount,
-            bankName: formData.bankName,
-            bankAccount: formData.bankAccount,
-            bankHolder: formData.bankHolder,
-          }),
-        }
-      );
+      const response = await fetch('/api/seller/withdrawals', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ amount }),
+      });
 
       if (response.ok) {
         setShowModal(false);
-        setFormData({ amount: '', bankName: '', bankAccount: '', bankHolder: '' });
+        setWithdrawAmount('');
         fetchWithdrawals();
         // Refresh user balance
         window.location.reload();
@@ -229,8 +332,17 @@ export default function SellerWithdrawalsPage() {
     }
   };
 
-  const fee = formData.amount ? Math.round(parseInt(formData.amount) * 0.02) : 0;
-  const netAmount = formData.amount ? parseInt(formData.amount) - fee : 0;
+  const handleOpenWithdrawModal = () => {
+    if (!bankInfo?.hasBankInfo) {
+      // Pre-fill bankHolder with user's name
+      const removeAccents = (str: string) => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const userName = user?.name ? removeAccents(user.name).toUpperCase() : '';
+      setBankFormData(prev => ({ ...prev, bankHolder: userName }));
+      setShowBankModal(true);
+    } else {
+      setShowModal(true);
+    }
+  };
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
@@ -239,13 +351,7 @@ export default function SellerWithdrawalsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Rút tiền</h1>
           <p className="text-gray-600">Rút tiền về tài khoản ngân hàng</p>
         </div>
-        <Button onClick={() => {
-          // Pre-fill bankHolder with user's name (uppercase, no accents for bank compatibility)
-          const removeAccents = (str: string) => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-          const userName = user?.name ? removeAccents(user.name).toUpperCase() : '';
-          setFormData(prev => ({ ...prev, bankHolder: userName }));
-          setShowModal(true);
-        }} className="bg-blue-600 hover:bg-blue-700">
+        <Button onClick={handleOpenWithdrawModal} className="bg-blue-600 hover:bg-blue-700">
           <Plus className="w-4 h-4 mr-2" />
           Tạo yêu cầu rút tiền
         </Button>
@@ -262,7 +368,101 @@ export default function SellerWithdrawalsPage() {
             <p className="text-3xl font-bold">{(user?.balance || 0).toLocaleString('vi-VN')}đ</p>
           </div>
         </div>
-        <p className="text-sm text-blue-200">Phí rút tiền: 2% • Rút tối thiểu: 10.000đ</p>
+        <div className="flex flex-wrap gap-2 text-sm">
+          {feePreview && feePreview.freeWithdrawalsLeftThisWeek > 0 ? (
+            <span className="px-3 py-1 bg-green-500/20 rounded-full text-green-100">
+              Còn {feePreview.freeWithdrawalsLeftThisWeek} lần miễn phí trong tuần
+            </span>
+          ) : feePreview ? (
+            <span className="px-3 py-1 bg-yellow-500/20 rounded-full text-yellow-100">
+              Phí rút tiền lần này: {feePreview.feeRate}%
+            </span>
+          ) : (
+            <span className="text-blue-200">Miễn phí 2 lần/tuần • Từ lần 3: 3%→6%→9%...</span>
+          )}
+          <span className="px-3 py-1 bg-white/10 rounded-full text-blue-200">
+            Rút tối thiểu: 10.000đ
+          </span>
+        </div>
+      </div>
+
+      {/* Bank Info Card */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+          <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-gray-500" />
+            Thông tin ngân hàng
+          </h2>
+          {!bankInfo?.hasBankInfo && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => {
+                const removeAccents = (str: string) => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                const userName = user?.name ? removeAccents(user.name).toUpperCase() : '';
+                setBankFormData(prev => ({ ...prev, bankHolder: userName }));
+                setShowBankModal(true);
+              }}
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Thêm ngân hàng
+            </Button>
+          )}
+        </div>
+
+        <div className="p-4">
+          {!bankInfo?.hasBankInfo ? (
+            <div className="text-center py-8">
+              <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-600 mb-2">Bạn chưa thêm thông tin ngân hàng</p>
+              <p className="text-sm text-gray-500 mb-4">
+                Vui lòng thêm thông tin ngân hàng để có thể rút tiền
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <Lock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-medium text-amber-800">Thông tin ngân hàng đã được khóa</p>
+                  <p className="text-amber-700 mt-1">
+                    Để đảm bảo an toàn, thông tin ngân hàng chỉ có thể thêm một lần và không thể chỉnh sửa.
+                    Nếu cần thay đổi, vui lòng{' '}
+                    <Link href="/seller/messages" className="text-blue-600 hover:underline inline-flex items-center gap-1">
+                      <MessageCircle className="w-3 h-3" />
+                      liên hệ hỗ trợ
+                    </Link>
+                    .
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-500">Ngân hàng</p>
+                  <p className="font-medium text-gray-900">{bankInfo.bankName}</p>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-500">Chi nhánh</p>
+                  <p className="font-medium text-gray-900">{bankInfo.bankBranch || 'Không có'}</p>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-500">Số tài khoản</p>
+                  <p className="font-medium text-gray-900">{bankInfo.bankAccount}</p>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-500">Chủ tài khoản</p>
+                  <p className="font-medium text-gray-900">{bankInfo.bankHolder}</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-500 flex items-center gap-1">
+                <Info className="w-3 h-3" />
+                Đã thêm vào: {bankInfo.bankInfoAddedAt ? new Date(bankInfo.bankInfoAddedAt).toLocaleString('vi-VN') : 'N/A'}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Withdrawals List */}
@@ -337,54 +537,38 @@ export default function SellerWithdrawalsPage() {
         )}
       </div>
 
-      {/* Create Withdrawal Modal */}
-      {showModal && (
+      {/* Add Bank Info Modal */}
+      {showBankModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full">
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Tạo yêu cầu rút tiền</h2>
-              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">✕</button>
+              <h2 className="text-lg font-bold text-gray-900">Thêm thông tin ngân hàng</h2>
+              <button onClick={() => setShowBankModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">✕</button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-4 space-y-4">
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4" />
-                  {error}
+            <form onSubmit={handleAddBankInfo} className="p-4 space-y-4">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="font-medium">Lưu ý quan trọng</p>
+                    <p className="mt-1">Thông tin ngân hàng chỉ có thể thêm một lần và không thể chỉnh sửa sau đó. Vui lòng kiểm tra kỹ trước khi lưu.</p>
+                  </div>
                 </div>
-              )}
-
-              <div className="space-y-2">
-                <Label>Số tiền rút</Label>
-                <Input
-                  type="number"
-                  placeholder="Nhập số tiền"
-                  value={formData.amount}
-                  onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
-                  min="10000"
-                  max={user?.balance || 0}
-                />
-                <p className="text-xs text-gray-500">Số dư: {(user?.balance || 0).toLocaleString('vi-VN')}đ</p>
               </div>
 
-              {formData.amount && parseInt(formData.amount) >= 10000 && (
-                <div className="p-3 bg-blue-50 rounded-lg space-y-1">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Phí (2%)</span>
-                    <span className="text-gray-900">-{fee.toLocaleString('vi-VN')}đ</span>
-                  </div>
-                  <div className="flex justify-between font-medium">
-                    <span className="text-gray-900">Thực nhận</span>
-                    <span className="text-green-600">{netAmount.toLocaleString('vi-VN')}đ</span>
-                  </div>
+              {bankError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  {bankError}
                 </div>
               )}
 
               <div className="space-y-2">
-                <Label>Ngân hàng</Label>
+                <Label>Ngân hàng *</Label>
                 <select
-                  value={formData.bankName}
-                  onChange={(e) => setFormData(prev => ({ ...prev, bankName: e.target.value }))}
+                  value={bankFormData.bankName}
+                  onChange={(e) => setBankFormData(prev => ({ ...prev, bankName: e.target.value }))}
                   className="w-full h-10 px-3 border border-gray-200 rounded-lg text-sm"
                   required
                 >
@@ -396,39 +580,116 @@ export default function SellerWithdrawalsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Số tài khoản</Label>
+                <Label>Chi nhánh (không bắt buộc)</Label>
+                <Input
+                  placeholder="VD: Chi nhánh Quận 1"
+                  value={bankFormData.bankBranch}
+                  onChange={(e) => setBankFormData(prev => ({ ...prev, bankBranch: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Số tài khoản *</Label>
                 <Input
                   placeholder="Nhập số tài khoản"
-                  value={formData.bankAccount}
-                  onChange={(e) => setFormData(prev => ({ ...prev, bankAccount: e.target.value }))}
+                  value={bankFormData.bankAccount}
+                  onChange={(e) => setBankFormData(prev => ({ ...prev, bankAccount: e.target.value }))}
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label>Tên chủ tài khoản</Label>
+                <Label>Tên chủ tài khoản *</Label>
                 <Input
                   placeholder="Nhập tên chủ tài khoản (không dấu, viết hoa)"
-                  value={formData.bankHolder}
+                  value={bankFormData.bankHolder}
                   onChange={(e) => {
                     // Remove accents and convert to uppercase
                     const removeAccents = (str: string) => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-                    setFormData(prev => ({ ...prev, bankHolder: removeAccents(e.target.value).toUpperCase() }));
+                    setBankFormData(prev => ({ ...prev, bankHolder: removeAccents(e.target.value).toUpperCase() }));
                   }}
                   required
                 />
-                {!user?.name && (
-                  <p className="text-xs text-amber-600 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" />
-                    Bạn chưa cập nhật họ tên trong hồ sơ. Vui lòng nhập chính xác tên chủ tài khoản ngân hàng.
-                  </p>
-                )}
-                {user?.name && (
-                  <p className="text-xs text-gray-500">
-                    Tên phải trùng khớp với tên đăng ký tài khoản ngân hàng
-                  </p>
-                )}
+                <p className="text-xs text-gray-500">
+                  Tên phải trùng khớp với tên đăng ký tài khoản ngân hàng
+                </p>
               </div>
+
+              <div className="flex gap-3 pt-4">
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setShowBankModal(false)}>
+                  Hủy
+                </Button>
+                <Button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700" disabled={isAddingBank}>
+                  {isAddingBank ? 'Đang lưu...' : 'Lưu thông tin'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create Withdrawal Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">Tạo yêu cầu rút tiền</h2>
+              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">✕</button>
+            </div>
+
+            <form onSubmit={handleSubmitWithdrawal} className="p-4 space-y-4">
+              {error && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  {error}
+                </div>
+              )}
+
+              {/* Bank Info Summary */}
+              <div className="p-3 bg-gray-50 rounded-lg space-y-2">
+                <p className="text-sm font-medium text-gray-700">Tài khoản nhận tiền:</p>
+                <div className="text-sm">
+                  <p className="text-gray-900">{bankInfo?.bankName}</p>
+                  <p className="text-gray-600">{bankInfo?.bankAccount} • {bankInfo?.bankHolder}</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Số tiền rút</Label>
+                <Input
+                  type="number"
+                  placeholder="Nhập số tiền"
+                  value={withdrawAmount}
+                  onChange={(e) => setWithdrawAmount(e.target.value)}
+                  min="10000"
+                  max={user?.balance || 0}
+                />
+                <p className="text-xs text-gray-500">Số dư: {(user?.balance || 0).toLocaleString('vi-VN')}đ</p>
+              </div>
+
+              {withdrawAmount && parseInt(withdrawAmount) >= 10000 && feePreview && (
+                <div className="p-3 bg-blue-50 rounded-lg space-y-2">
+                  {feePreview.freeWithdrawalsLeftThisWeek > 0 ? (
+                    <div className="text-sm text-green-600 font-medium flex items-center gap-1">
+                      <CheckCircle className="w-4 h-4" />
+                      Miễn phí! Còn {feePreview.freeWithdrawalsLeftThisWeek} lần miễn phí trong tuần
+                    </div>
+                  ) : (
+                    <div className="text-sm text-amber-600 font-medium flex items-center gap-1">
+                      <AlertCircle className="w-4 h-4" />
+                      Bạn đã hết lượt rút miễn phí trong tuần
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Phí ({feePreview.feeRate}%)</span>
+                    <span className="text-gray-900">{feePreview.fee > 0 ? `-${feePreview.fee.toLocaleString('vi-VN')}đ` : 'Miễn phí'}</span>
+                  </div>
+                  <div className="flex justify-between font-medium">
+                    <span className="text-gray-900">Thực nhận</span>
+                    <span className="text-green-600">{feePreview.netAmount.toLocaleString('vi-VN')}đ</span>
+                  </div>
+                </div>
+              )}
 
               <div className="flex gap-3 pt-4">
                 <Button type="button" variant="outline" className="flex-1" onClick={() => setShowModal(false)}>

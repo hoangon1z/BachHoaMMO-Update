@@ -27,6 +27,8 @@ import {
   Loader2,
   Send,
   AlertCircle,
+  Star,
+  ExternalLink,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -58,6 +60,13 @@ interface OrderItem {
   deliveries: Delivery[];
 }
 
+interface Review {
+  id: string;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+}
+
 interface Order {
   id: string;
   orderNumber: string;
@@ -79,6 +88,7 @@ interface Order {
       shopLogo: string;
     };
   };
+  review?: Review | null;
 }
 
 // Complaint reasons
@@ -119,6 +129,15 @@ export default function OrderDetailPage() {
   const [confirmSuccessModal, setConfirmSuccessModal] = useState(false);
   const [confirmErrorModal, setConfirmErrorModal] = useState<string | null>(null);
 
+  // Review state
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewHoverRating, setReviewHoverRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [reviewSuccessModal, setReviewSuccessModal] = useState(false);
+  const [orderReview, setOrderReview] = useState<Review | null>(null);
+
   useEffect(() => {
     checkAuth();
   }, []);
@@ -126,8 +145,26 @@ export default function OrderDetailPage() {
   useEffect(() => {
     if (user && orderId) {
       fetchOrder();
+      fetchReview();
     }
   }, [user, orderId]);
+
+  const fetchReview = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/orders/${orderId}/review`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data) {
+          setOrderReview(data);
+        }
+      }
+    } catch (error) {
+      // Review not found is ok
+    }
+  };
 
   const fetchOrder = async () => {
     setIsLoading(true);
@@ -170,6 +207,47 @@ export default function OrderDetailPage() {
       setConfirmErrorModal('Có lỗi xảy ra, vui lòng thử lại');
     } finally {
       setIsConfirming(false);
+    }
+  };
+
+  // Handle review submission
+  const handleSubmitReview = async () => {
+    if (reviewRating === 0) {
+      setErrorMessage('Vui lòng chọn số sao đánh giá');
+      return;
+    }
+
+    setIsSubmittingReview(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/orders/${orderId}/review`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          rating: reviewRating,
+          comment: reviewComment.trim() || undefined,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setOrderReview(data.review);
+        setShowReviewModal(false);
+        setReviewSuccessModal(true);
+        setReviewRating(0);
+        setReviewComment('');
+      } else {
+        const errorData = await res.json();
+        setErrorMessage(errorData.message || 'Có lỗi xảy ra');
+      }
+    } catch (error) {
+      console.error('Failed to submit review:', error);
+      setErrorMessage('Có lỗi xảy ra, vui lòng thử lại');
+    } finally {
+      setIsSubmittingReview(false);
     }
   };
 
@@ -398,6 +476,13 @@ export default function OrderDetailPage() {
                   <Store className="w-4 h-4" />
                   {order.seller?.sellerProfile?.shopName || order.seller?.name}
                 </span>
+                <Link 
+                  href={`/shop/${order.seller?.id}`}
+                  className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Xem Shop
+                </Link>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -430,6 +515,25 @@ export default function OrderDetailPage() {
                 <MessageSquare className="w-4 h-4 mr-2" />
                 Liên hệ shop
               </Button>
+              
+              {/* Review button - show when COMPLETED and not yet reviewed */}
+              {order.status === 'COMPLETED' && !orderReview && (
+                <Button
+                  onClick={() => setShowReviewModal(true)}
+                  className="bg-yellow-500 hover:bg-yellow-600"
+                >
+                  <Star className="w-4 h-4 mr-2" />
+                  Đánh giá
+                </Button>
+              )}
+              
+              {/* Show review badge if already reviewed */}
+              {orderReview && (
+                <div className="flex items-center gap-1 px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-full text-sm font-medium">
+                  <Star className="w-4 h-4 fill-yellow-500 text-yellow-500" />
+                  Đã đánh giá {orderReview.rating} sao
+                </div>
+              )}
             </div>
           </div>
 
@@ -461,7 +565,10 @@ export default function OrderDetailPage() {
                 {/* Product Header */}
                 <div className="p-5 border-b border-gray-100">
                   <div className="flex items-center gap-4">
-                    <div className="w-20 h-20 rounded-xl bg-gray-100 overflow-hidden flex-shrink-0">
+                    <Link 
+                      href={`/products/${item.productId}`}
+                      className="w-20 h-20 rounded-xl bg-gray-100 overflow-hidden flex-shrink-0 hover:opacity-80 transition-opacity"
+                    >
                       {images[0] ? (
                         <img src={images[0]} alt={item.product?.title} className="w-full h-full object-cover" />
                       ) : (
@@ -469,9 +576,14 @@ export default function OrderDetailPage() {
                           <Package className="w-8 h-8 text-gray-400" />
                         </div>
                       )}
-                    </div>
+                    </Link>
                     <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900">{item.product?.title}</h3>
+                      <Link 
+                        href={`/products/${item.productId}`}
+                        className="font-semibold text-gray-900 hover:text-blue-600 transition-colors"
+                      >
+                        {item.product?.title}
+                      </Link>
                       <p className="text-sm text-gray-500">
                         Số lượng: {item.quantity} × {formatPrice(item.price)}
                       </p>
@@ -481,6 +593,13 @@ export default function OrderDetailPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-lg font-bold text-gray-900">{formatPrice(item.total)}</p>
+                      <Link 
+                        href={`/products/${item.productId}`}
+                        className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 justify-end mt-1"
+                      >
+                        Xem sản phẩm
+                        <ExternalLink className="w-3 h-3" />
+                      </Link>
                     </div>
                   </div>
                 </div>
@@ -983,7 +1102,7 @@ export default function OrderDetailPage() {
       )}
 
       {/* Error Modal (for general errors) */}
-      {errorMessage && !showComplaintModal && (
+      {errorMessage && !showComplaintModal && !showReviewModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}
           <div 
@@ -1008,6 +1127,230 @@ export default function OrderDetailPage() {
               >
                 Đóng
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Review Modal */}
+      {showReviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => !isSubmittingReview && setShowReviewModal(false)}
+          />
+          
+          {/* Modal */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
+                  <Star className="w-5 h-5 text-yellow-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Đánh giá đơn hàng</h2>
+                  <p className="text-sm text-gray-500">{order.orderNumber}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => !isSubmittingReview && setShowReviewModal(false)}
+                disabled={isSubmittingReview}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors disabled:opacity-50"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            
+            {/* Body */}
+            <div className="p-5 space-y-5 max-h-[60vh] overflow-y-auto">
+              {/* Order info */}
+              <div className="p-4 bg-gray-50 rounded-xl">
+                <div className="flex items-center gap-3">
+                  {order.items[0]?.product?.images && (
+                    <img 
+                      src={JSON.parse(order.items[0].product.images)[0]} 
+                      alt="" 
+                      className="w-12 h-12 rounded-lg object-cover"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 truncate">
+                      {order.items.map(i => i.product?.title).join(', ')}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Shop: {order.seller?.sellerProfile?.shopName || order.seller?.name}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Star Rating */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3 text-center">
+                  Bạn hài lòng với đơn hàng này như thế nào?
+                </label>
+                <div className="flex items-center justify-center gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setReviewRating(star)}
+                      onMouseEnter={() => setReviewHoverRating(star)}
+                      onMouseLeave={() => setReviewHoverRating(0)}
+                      className="p-1 transition-transform hover:scale-110"
+                    >
+                      <Star
+                        className={`w-10 h-10 transition-colors ${
+                          star <= (reviewHoverRating || reviewRating)
+                            ? 'fill-yellow-400 text-yellow-400'
+                            : 'text-gray-300'
+                        }`}
+                      />
+                    </button>
+                  ))}
+                </div>
+                <p className="text-center text-sm text-gray-500 mt-2">
+                  {reviewRating === 0 && 'Chọn số sao để đánh giá'}
+                  {reviewRating === 1 && 'Rất không hài lòng'}
+                  {reviewRating === 2 && 'Không hài lòng'}
+                  {reviewRating === 3 && 'Bình thường'}
+                  {reviewRating === 4 && 'Hài lòng'}
+                  {reviewRating === 5 && 'Rất hài lòng'}
+                </p>
+              </div>
+              
+              {/* Comment */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Nhận xét (không bắt buộc)
+                </label>
+                <textarea
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  placeholder="Chia sẻ trải nghiệm của bạn với sản phẩm và shop..."
+                  rows={4}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl resize-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-500/20 transition-all text-sm"
+                />
+              </div>
+              
+              {/* Info notice */}
+              <div className="p-4 bg-blue-50 rounded-xl">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-blue-700">
+                    <p>Đánh giá sẽ được hiển thị công khai với tên của bạn trên trang sản phẩm.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Error message in modal */}
+            {errorMessage && showReviewModal && (
+              <div className="mx-5 mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                <p className="text-sm text-red-700">{errorMessage}</p>
+                <button 
+                  onClick={() => setErrorMessage(null)}
+                  className="ml-auto p-1 hover:bg-red-100 rounded"
+                >
+                  <X className="w-4 h-4 text-red-500" />
+                </button>
+              </div>
+            )}
+
+            {/* Footer */}
+            <div className="flex gap-3 p-5 border-t border-gray-100 bg-gray-50">
+              <Button 
+                variant="outline" 
+                className="flex-1"
+                onClick={() => {
+                  setShowReviewModal(false);
+                  setErrorMessage(null);
+                  setReviewRating(0);
+                  setReviewComment('');
+                }}
+                disabled={isSubmittingReview}
+              >
+                Hủy
+              </Button>
+              <Button 
+                className="flex-1 bg-yellow-500 hover:bg-yellow-600"
+                onClick={handleSubmitReview}
+                disabled={reviewRating === 0 || isSubmittingReview}
+              >
+                {isSubmittingReview ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Đang gửi...
+                  </>
+                ) : (
+                  <>
+                    <Star className="w-4 h-4 mr-2" />
+                    Gửi đánh giá
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Review Success Modal */}
+      {reviewSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          
+          {/* Modal */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-8 text-center">
+              {/* Success Icon */}
+              <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-yellow-100 flex items-center justify-center">
+                <Star className="w-10 h-10 text-yellow-500 fill-yellow-500" />
+              </div>
+              
+              <h2 className="text-xl font-bold text-gray-900 mb-2">
+                Cảm ơn bạn đã đánh giá!
+              </h2>
+              <p className="text-gray-600 mb-6">
+                Đánh giá của bạn sẽ giúp những người mua khác có thêm thông tin hữu ích.
+              </p>
+              
+              {/* Rating display */}
+              <div className="flex items-center justify-center gap-1 mb-6">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <Star
+                    key={star}
+                    className={`w-8 h-8 ${
+                      star <= (orderReview?.rating || 0)
+                        ? 'fill-yellow-400 text-yellow-400'
+                        : 'text-gray-300'
+                    }`}
+                  />
+                ))}
+              </div>
+              
+              <div className="flex gap-3">
+                <Button 
+                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  onClick={() => setReviewSuccessModal(false)}
+                >
+                  Đóng
+                </Button>
+                <Button 
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setReviewSuccessModal(false);
+                    router.push('/orders');
+                  }}
+                >
+                  <Package className="w-4 h-4 mr-2" />
+                  Xem đơn hàng
+                </Button>
+              </div>
             </div>
           </div>
         </div>

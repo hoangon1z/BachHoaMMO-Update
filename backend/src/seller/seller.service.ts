@@ -1106,26 +1106,185 @@ export class SellerService {
     });
   }
 
+  // ==================== BANK INFORMATION ====================
+
+  /**
+   * Get seller's bank information
+   */
+  async getBankInfo(userId: string) {
+    const sellerProfile = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+      select: {
+        bankName: true,
+        bankAccount: true,
+        bankHolder: true,
+        bankBranch: true,
+        bankInfoAddedAt: true,
+      },
+    });
+
+    if (!sellerProfile) {
+      throw new NotFoundException('Không tìm thấy thông tin cửa hàng');
+    }
+
+    return {
+      hasBankInfo: !!sellerProfile.bankInfoAddedAt,
+      bankName: sellerProfile.bankName,
+      bankAccount: sellerProfile.bankAccount,
+      bankHolder: sellerProfile.bankHolder,
+      bankBranch: sellerProfile.bankBranch,
+      bankInfoAddedAt: sellerProfile.bankInfoAddedAt,
+    };
+  }
+
+  /**
+   * Add bank information (can only be done once)
+   */
+  async addBankInfo(
+    userId: string,
+    data: { bankName: string; bankAccount: string; bankHolder: string; bankBranch?: string },
+  ) {
+    const sellerProfile = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!sellerProfile) {
+      throw new NotFoundException('Không tìm thấy thông tin cửa hàng');
+    }
+
+    // Check if bank info already exists
+    if (sellerProfile.bankInfoAddedAt) {
+      throw new BadRequestException(
+        'Bạn đã thêm thông tin ngân hàng trước đó. Nếu cần thay đổi, vui lòng liên hệ hỗ trợ.',
+      );
+    }
+
+    // Validate required fields
+    if (!data.bankName || !data.bankAccount || !data.bankHolder) {
+      throw new BadRequestException('Vui lòng điền đầy đủ thông tin ngân hàng');
+    }
+
+    // Update seller profile with bank info
+    const updated = await this.prisma.sellerProfile.update({
+      where: { userId },
+      data: {
+        bankName: data.bankName,
+        bankAccount: data.bankAccount,
+        bankHolder: data.bankHolder.toUpperCase(),
+        bankBranch: data.bankBranch || null,
+        bankInfoAddedAt: new Date(),
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Đã lưu thông tin ngân hàng thành công',
+      bankName: updated.bankName,
+      bankAccount: updated.bankAccount,
+      bankHolder: updated.bankHolder,
+      bankBranch: updated.bankBranch,
+      bankInfoAddedAt: updated.bankInfoAddedAt,
+    };
+  }
+
   // ==================== WITHDRAWAL MANAGEMENT ====================
 
-  async createWithdrawal(userId: string, dto: CreateWithdrawalDto) {
-    // Get user balance
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+  /**
+   * Get the start of the current week (Monday 00:00:00)
+   */
+  private getStartOfWeek(): Date {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is sunday
+    const monday = new Date(now.setDate(diff));
+    monday.setHours(0, 0, 0, 0);
+    return monday;
+  }
+
+  /**
+   * Calculate withdrawal fee based on weekly withdrawal count
+   * - Free for first 2 withdrawals per week
+   * - 3% for 3rd, 6% for 4th, 9% for 5th, etc.
+   */
+  async calculateWithdrawalFee(userId: string, amount: number): Promise<{ feeRate: number; fee: number; freeWithdrawalsLeft: number }> {
+    const startOfWeek = this.getStartOfWeek();
+    
+    // Count withdrawals this week (including pending ones)
+    const withdrawalsThisWeek = await this.prisma.sellerWithdrawal.count({
+      where: {
+        sellerId: userId,
+        createdAt: { gte: startOfWeek },
+        status: { in: ['PENDING', 'COMPLETED'] }, // Count both pending and completed
+      },
     });
+    
+    const FREE_WITHDRAWALS_PER_WEEK = 2;
+    const freeWithdrawalsLeft = Math.max(0, FREE_WITHDRAWALS_PER_WEEK - withdrawalsThisWeek);
+    
+    let feeRate = 0;
+    
+    if (withdrawalsThisWeek >= FREE_WITHDRAWALS_PER_WEEK) {
+      // Calculate fee: 3% for 3rd, 6% for 4th, 9% for 5th, etc.
+      const extraWithdrawals = withdrawalsThisWeek - FREE_WITHDRAWALS_PER_WEEK + 1;
+      feeRate = extraWithdrawals * 0.03; // 3% increase per withdrawal
+    }
+    
+    const fee = Math.round(amount * feeRate);
+    
+    return { feeRate, fee, freeWithdrawalsLeft };
+  }
+
+  async createWithdrawal(userId: string, dto: CreateWithdrawalDto) {
+    // Get user balance and seller profile with bank info
+    const [user, sellerProfile] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+      }),
+      this.prisma.sellerProfile.findUnique({
+        where: { userId },
+        select: {
+          bankName: true,
+          bankAccount: true,
+          bankHolder: true,
+          bankBranch: true,
+          bankInfoAddedAt: true,
+        },
+      }),
+    ]);
 
     if (!user) {
       throw new NotFoundException('Không tìm thấy người dùng');
+    }
+
+    if (!sellerProfile) {
+      throw new NotFoundException('Không tìm thấy thông tin cửa hàng');
+    }
+
+    // Check if bank info exists
+    if (!sellerProfile.bankInfoAddedAt || !sellerProfile.bankName || !sellerProfile.bankAccount || !sellerProfile.bankHolder) {
+      throw new BadRequestException(
+        'Bạn cần thêm thông tin ngân hàng trước khi rút tiền. Vui lòng vào phần Cài đặt ngân hàng.',
+      );
     }
 
     if (user.balance < dto.amount) {
       throw new BadRequestException('Số dư không đủ');
     }
 
-    // Calculate fee (2% fee for withdrawals)
-    const feeRate = 0.02;
-    const fee = Math.round(dto.amount * feeRate);
+    // Calculate fee based on weekly withdrawal count
+    const { feeRate, fee, freeWithdrawalsLeft } = await this.calculateWithdrawalFee(userId, dto.amount);
     const netAmount = dto.amount - fee;
+
+    // Use saved bank info from seller profile
+    const bankName = sellerProfile.bankName;
+    const bankAccount = sellerProfile.bankAccount;
+    const bankHolder = sellerProfile.bankHolder;
+
+    // Build description
+    let description = `Rút tiền về ${bankName} - ${bankAccount}`;
+    if (feeRate > 0) {
+      description += ` (Phí ${(feeRate * 100).toFixed(0)}%)`;
+    }
 
     // Create withdrawal and deduct balance
     const [withdrawal] = await this.prisma.$transaction([
@@ -1135,9 +1294,9 @@ export class SellerService {
           amount: dto.amount,
           fee,
           netAmount,
-          bankName: dto.bankName,
-          bankAccount: dto.bankAccount,
-          bankHolder: dto.bankHolder,
+          bankName,
+          bankAccount,
+          bankHolder,
           status: 'PENDING',
         },
       }),
@@ -1153,12 +1312,16 @@ export class SellerService {
           type: 'WITHDRAW',
           amount: -dto.amount,
           status: 'PENDING',
-          description: `Rút tiền về ${dto.bankName} - ${dto.bankAccount}`,
+          description,
         },
       }),
     ]);
 
-    return withdrawal;
+    return {
+      ...withdrawal,
+      feeRate: feeRate * 100, // Return as percentage
+      freeWithdrawalsLeftThisWeek: freeWithdrawalsLeft - 1, // After this withdrawal
+    };
   }
 
   async getWithdrawals(userId: string, page = 1, limit = 10, status?: string) {

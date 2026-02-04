@@ -381,15 +381,9 @@ export class ProductsService {
       this.prisma.review.count({ where: { productId } }),
     ]);
 
-    // Get buyer info for non-anonymous reviews
+    // Get buyer info for all reviews (always show name)
     const reviewsWithBuyer = await Promise.all(
       reviews.map(async (review) => {
-        if (review.isAnonymous) {
-          return {
-            ...review,
-            buyer: { name: 'Người mua ẩn danh', avatar: null },
-          };
-        }
         const buyer = await this.prisma.user.findUnique({
           where: { id: review.buyerId },
           select: { name: true, avatar: true },

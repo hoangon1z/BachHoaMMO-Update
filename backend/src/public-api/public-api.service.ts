@@ -11,6 +11,8 @@ import {
   UpdateStockDto,
   GetOrdersQueryDto,
   ManualDeliverDto,
+  CreateVariantDto,
+  UpdateVariantDto,
 } from './dto';
 
 @Injectable()
@@ -19,7 +21,69 @@ export class PublicApiService {
 
   constructor(private prisma: PrismaService) {}
 
+  // ==================== CATEGORIES ====================
+
+  async getCategories() {
+    const categories = await this.prisma.category.findMany({
+      include: {
+        _count: { select: { products: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return categories.map((c) => ({
+      id: c.id,
+      name: c.name,
+      slug: c.slug,
+      parentId: c.parentId,
+      productCount: c._count.products,
+    }));
+  }
+
   // ==================== INVENTORY ====================
+
+  async getInventoryCount(sellerId: string, productId?: string, variantId?: string) {
+    const where: any = { product: { sellerId } };
+    
+    if (productId) {
+      // Verify product belongs to seller
+      const product = await this.prisma.product.findFirst({
+        where: { id: productId, sellerId },
+      });
+      if (!product) {
+        throw new NotFoundException('Product not found');
+      }
+      where.productId = productId;
+    }
+    
+    if (variantId) {
+      where.variantId = variantId;
+    }
+
+    const stats = await this.prisma.productInventory.groupBy({
+      by: ['status'],
+      where,
+      _count: { status: true },
+    });
+
+    const result = {
+      total: 0,
+      available: 0,
+      reserved: 0,
+      sold: 0,
+      disabled: 0,
+    };
+
+    stats.forEach((s) => {
+      result.total += s._count.status;
+      const key = s.status.toLowerCase() as keyof typeof result;
+      if (key in result && key !== 'total') {
+        result[key] = s._count.status;
+      }
+    });
+
+    return result;
+  }
 
   async getInventory(sellerId: string, query: GetInventoryQueryDto) {
     const { productId, variantId, status, limit = 50, offset = 0 } = query;
@@ -226,12 +290,19 @@ export class PublicApiService {
   // ==================== PRODUCTS ====================
 
   async getProducts(sellerId: string, query: GetProductsQueryDto) {
-    const { categoryId, status, limit = 20, offset = 0 } = query;
+    const { categoryId, search, status, limit = 20, offset = 0 } = query;
 
     const where: any = { sellerId };
 
     if (categoryId) {
       where.categoryId = categoryId;
+    }
+
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
     }
 
     if (status) {
@@ -476,6 +547,162 @@ export class PublicApiService {
       where: { id: productId },
       data: { status: 'INACTIVE' },
     });
+
+    return { deleted: true };
+  }
+
+  // ==================== VARIANTS ====================
+
+  async getVariants(sellerId: string, productId: string) {
+    // Verify ownership
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, sellerId },
+      include: {
+        variants: {
+          orderBy: { position: 'asc' },
+        },
+      },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    return product.variants.map((v) => ({
+      id: v.id,
+      name: v.name,
+      price: v.price,
+      originalPrice: v.salePrice || undefined,
+      stock: v.stock,
+      isActive: v.isActive,
+      position: v.position,
+    }));
+  }
+
+  async createVariant(sellerId: string, productId: string, dto: CreateVariantDto) {
+    // Verify ownership
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, sellerId },
+      include: { variants: true },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    // Get max position
+    const maxPosition = product.variants.length > 0
+      ? Math.max(...product.variants.map((v) => v.position))
+      : -1;
+
+    const variant = await this.prisma.productVariant.create({
+      data: {
+        productId,
+        name: dto.name,
+        price: dto.price,
+        salePrice: dto.originalPrice || null,
+        stock: dto.stock || 0,
+        position: dto.position ?? maxPosition + 1,
+        isActive: true,
+      },
+    });
+
+    // Update product to have variants
+    await this.prisma.product.update({
+      where: { id: productId },
+      data: { hasVariants: true },
+    });
+
+    return {
+      id: variant.id,
+      name: variant.name,
+      price: variant.price,
+      originalPrice: variant.salePrice || undefined,
+      stock: variant.stock,
+      isActive: variant.isActive,
+      position: variant.position,
+    };
+  }
+
+  async updateVariant(sellerId: string, productId: string, variantId: string, dto: UpdateVariantDto) {
+    // Verify ownership
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, sellerId },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    // Verify variant exists and belongs to product
+    const existingVariant = await this.prisma.productVariant.findFirst({
+      where: { id: variantId, productId },
+    });
+
+    if (!existingVariant) {
+      throw new NotFoundException('Variant not found');
+    }
+
+    const updateData: any = {};
+    if (dto.name !== undefined) updateData.name = dto.name;
+    if (dto.price !== undefined) updateData.price = dto.price;
+    if (dto.originalPrice !== undefined) updateData.salePrice = dto.originalPrice;
+    if (dto.stock !== undefined) updateData.stock = dto.stock;
+    if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
+    if (dto.position !== undefined) updateData.position = dto.position;
+
+    const variant = await this.prisma.productVariant.update({
+      where: { id: variantId },
+      data: updateData,
+    });
+
+    return {
+      id: variant.id,
+      name: variant.name,
+      price: variant.price,
+      originalPrice: variant.salePrice || undefined,
+      stock: variant.stock,
+      isActive: variant.isActive,
+      position: variant.position,
+    };
+  }
+
+  async deleteVariant(sellerId: string, productId: string, variantId: string) {
+    // Verify ownership
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, sellerId },
+      include: { variants: true },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    // Verify variant exists and belongs to product
+    const existingVariant = await this.prisma.productVariant.findFirst({
+      where: { id: variantId, productId },
+    });
+
+    if (!existingVariant) {
+      throw new NotFoundException('Variant not found');
+    }
+
+    // Delete variant (or soft delete by setting isActive to false)
+    await this.prisma.productVariant.delete({
+      where: { id: variantId },
+    });
+
+    // Check if product still has variants
+    const remainingVariants = await this.prisma.productVariant.count({
+      where: { productId },
+    });
+
+    if (remainingVariants === 0) {
+      await this.prisma.product.update({
+        where: { id: productId },
+        data: { hasVariants: false },
+      });
+    }
 
     return { deleted: true };
   }

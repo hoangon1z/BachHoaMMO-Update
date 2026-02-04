@@ -9,6 +9,16 @@ const nextConfig = {
     ];
   },
 
+  // Rewrite /uploads/* to backend server for static files (avatars, products, etc.)
+  async rewrites() {
+    return [
+      {
+        source: '/uploads/:path*',
+        destination: `${process.env.BACKEND_URL || 'http://localhost:3001'}/uploads/:path*`,
+      },
+    ];
+  },
+
   // Add headers to prevent Cloudflare from caching dynamic pages
   async headers() {
     return [

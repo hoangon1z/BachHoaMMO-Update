@@ -11,11 +11,14 @@ import {
   PartyPopper, 
   Package, 
   MessageSquare, 
+  MessageCircle,
   Megaphone, 
   Gavel,
   AlertCircle,
   Gift,
-  Loader2
+  Loader2,
+  Wallet,
+  ShoppingBag
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -34,11 +37,14 @@ const iconMap: Record<string, any> = {
   PartyPopper: PartyPopper,
   Package: Package,
   MessageSquare: MessageSquare,
+  MessageCircle: MessageCircle,
   Megaphone: Megaphone,
   Gavel: Gavel,
   Bell: Bell,
   Gift: Gift,
   AlertCircle: AlertCircle,
+  Wallet: Wallet,
+  ShoppingBag: ShoppingBag,
 };
 
 const typeColors: Record<string, string> = {
@@ -49,6 +55,8 @@ const typeColors: Record<string, string> = {
   SYSTEM: 'bg-gray-100 text-gray-600',
   PROMOTION: 'bg-pink-100 text-pink-600',
   AUCTION: 'bg-amber-100 text-amber-600',
+  DEPOSIT: 'bg-emerald-100 text-emerald-600',
+  MESSAGE: 'bg-indigo-100 text-indigo-600',
 };
 
 export function NotificationDropdown() {

@@ -258,7 +258,51 @@ export class SellerController {
     return this.sellerService.sendComplaintMessage(req.user.id, id, dto);
   }
 
+  // ==================== BANK INFORMATION ====================
+
+  /**
+   * Get seller's bank information
+   */
+  @Get('bank-info')
+  async getBankInfo(@Request() req) {
+    return this.sellerService.getBankInfo(req.user.id);
+  }
+
+  /**
+   * Add bank information (can only be done once)
+   */
+  @Post('bank-info')
+  async addBankInfo(
+    @Request() req,
+    @Body() dto: { bankName: string; bankAccount: string; bankHolder: string; bankBranch?: string },
+  ) {
+    return this.sellerService.addBankInfo(req.user.id, dto);
+  }
+
   // ==================== WITHDRAWAL MANAGEMENT ====================
+
+  /**
+   * Get withdrawal fee preview
+   * Shows current fee rate based on weekly withdrawal count
+   */
+  @Get('withdrawals/fee-preview')
+  async getWithdrawalFeePreview(
+    @Request() req,
+    @Query('amount') amount: string,
+  ) {
+    const amountNum = amount ? parseInt(amount) : 0;
+    const { feeRate, fee, freeWithdrawalsLeft } = await this.sellerService.calculateWithdrawalFee(req.user.id, amountNum);
+    return {
+      amount: amountNum,
+      feeRate: feeRate * 100, // Return as percentage
+      fee,
+      netAmount: amountNum - fee,
+      freeWithdrawalsLeftThisWeek: freeWithdrawalsLeft,
+      message: freeWithdrawalsLeft > 0 
+        ? `Bạn còn ${freeWithdrawalsLeft} lần rút tiền miễn phí trong tuần này` 
+        : `Phí rút tiền: ${(feeRate * 100).toFixed(0)}%`,
+    };
+  }
 
   @Post('withdrawals')
   async createWithdrawal(@Request() req, @Body() dto: CreateWithdrawalDto) {

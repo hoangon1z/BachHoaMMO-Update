@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import * as crypto from 'crypto';
 
 interface PayOSConfig {
@@ -70,7 +71,10 @@ export class PayOSService {
   private readonly logger = new Logger(PayOSService.name);
   private config: PayOSConfig;
 
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {
     this.config = {
       clientId: process.env.PAYOS_CLIENT_ID || '',
       apiKey: process.env.PAYOS_API_KEY || '',
@@ -359,6 +363,13 @@ export class PayOSService {
           },
         }),
       ]);
+
+      // Send deposit notification to user
+      try {
+        await this.notificationsService.sendDepositNotification(transaction.userId, amount);
+      } catch (notifError) {
+        this.logger.warn(`Failed to send deposit notification: ${notifError.message}`);
+      }
 
       return { success: true, message: 'Payment processed successfully' };
     } catch (error) {

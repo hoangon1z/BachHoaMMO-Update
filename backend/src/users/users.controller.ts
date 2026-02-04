@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Put, Body, UseGuards, Request, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, UseGuards, Request, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { Public } from '../security/decorators/security.decorators';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
@@ -15,6 +16,13 @@ if (!existsSync(uploadDir)) {
 @Controller('users')
 export class UsersController {
   constructor(private usersService: UsersService) {}
+
+  // Public profile for viewing seller/user info in chat
+  @Public()
+  @Get(':id/public-profile')
+  async getPublicProfile(@Param('id') id: string) {
+    return this.usersService.getPublicProfile(id);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Get('profile')

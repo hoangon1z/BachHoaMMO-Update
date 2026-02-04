@@ -63,6 +63,9 @@ interface Product {
   description: string;
   price: number;
   originalPrice?: number;
+  minPrice?: number;  // Giá thấp nhất (khi có variants)
+  maxPrice?: number;  // Giá cao nhất (khi có variants)
+  hasVariants?: boolean;
   images: string;
   stock: number;
   sales: number;
@@ -512,7 +515,10 @@ function ExplorePageContent() {
                   {products.map((product) => {
                     let images: string[] = [];
                     try { images = JSON.parse(product.images); } catch {}
-                    const discount = product.originalPrice && product.originalPrice > product.price
+                    // Có price range? (nhiều phân loại với giá khác nhau)
+                    const hasPriceRange = product.minPrice && product.maxPrice && product.minPrice !== product.maxPrice;
+                    // Không hiển thị discount khi có price range
+                    const discount = !hasPriceRange && product.originalPrice && product.originalPrice > product.price
                       ? Math.round((1 - product.price / product.originalPrice) * 100)
                       : 0;
 
@@ -542,14 +548,22 @@ function ExplorePageContent() {
                               <span className="text-xs text-gray-600">{product.rating?.toFixed(1) || '0.0'}</span>
                               <span className="text-xs text-gray-400">• {product.sales} đã bán</span>
                             </div>
-                            <div className="flex items-baseline gap-2">
-                              <span className="text-lg font-bold text-blue-600">
-                                {product.price.toLocaleString('vi-VN')}đ
-                              </span>
-                              {product.originalPrice && product.originalPrice > product.price && (
-                                <span className="text-xs text-gray-400 line-through">
-                                  {product.originalPrice.toLocaleString('vi-VN')}đ
+                            <div className="flex items-baseline gap-2 flex-wrap">
+                              {hasPriceRange ? (
+                                <span className="text-lg font-bold text-blue-600">
+                                  {product.minPrice!.toLocaleString('vi-VN')}đ - {product.maxPrice!.toLocaleString('vi-VN')}đ
                                 </span>
+                              ) : (
+                                <>
+                                  <span className="text-lg font-bold text-blue-600">
+                                    {product.price.toLocaleString('vi-VN')}đ
+                                  </span>
+                                  {product.originalPrice && product.originalPrice > product.price && (
+                                    <span className="text-xs text-gray-400 line-through">
+                                      {product.originalPrice.toLocaleString('vi-VN')}đ
+                                    </span>
+                                  )}
+                                </>
                               )}
                             </div>
                           </div>
@@ -563,6 +577,8 @@ function ExplorePageContent() {
                   {products.map((product) => {
                     let images: string[] = [];
                     try { images = JSON.parse(product.images); } catch {}
+                    // Có price range? (nhiều phân loại với giá khác nhau)
+                    const hasPriceRange = product.minPrice && product.maxPrice && product.minPrice !== product.maxPrice;
 
                     return (
                       <Link key={product.id} href={`/products/${product.id}`}>
@@ -587,14 +603,22 @@ function ExplorePageContent() {
                               <span className="text-sm text-gray-400">• {product.sales} đã bán</span>
                               <span className="text-sm text-gray-400">• Còn {product.stock}</span>
                             </div>
-                            <div className="flex items-baseline gap-2">
-                              <span className="text-xl font-bold text-blue-600">
-                                {product.price.toLocaleString('vi-VN')}đ
-                              </span>
-                              {product.originalPrice && product.originalPrice > product.price && (
-                                <span className="text-sm text-gray-400 line-through">
-                                  {product.originalPrice.toLocaleString('vi-VN')}đ
+                            <div className="flex items-baseline gap-2 flex-wrap">
+                              {hasPriceRange ? (
+                                <span className="text-xl font-bold text-blue-600">
+                                  {product.minPrice!.toLocaleString('vi-VN')}đ - {product.maxPrice!.toLocaleString('vi-VN')}đ
                                 </span>
+                              ) : (
+                                <>
+                                  <span className="text-xl font-bold text-blue-600">
+                                    {product.price.toLocaleString('vi-VN')}đ
+                                  </span>
+                                  {product.originalPrice && product.originalPrice > product.price && (
+                                    <span className="text-sm text-gray-400 line-through">
+                                      {product.originalPrice.toLocaleString('vi-VN')}đ
+                                    </span>
+                                  )}
+                                </>
                               )}
                             </div>
                           </div>

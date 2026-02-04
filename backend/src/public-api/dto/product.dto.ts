@@ -18,6 +18,10 @@ export class GetProductsQueryDto {
   categoryId?: string;
 
   @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
   @IsEnum(ProductStatus)
   status?: ProductStatus;
 
@@ -157,6 +161,66 @@ export class UpdateStockDto {
   @Min(0)
   @Max(999999)
   stock: number;
+}
+
+export class CreateVariantDto {
+  @IsString()
+  name: string;
+
+  @IsNumber()
+  @Min(0)
+  @Max(999999999)
+  price: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(999999999)
+  originalPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(999999)
+  stock?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  position?: number;
+}
+
+export class UpdateVariantDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(999999999)
+  price?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(999999999)
+  originalPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(999999)
+  stock?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  position?: number;
 }
 
 // Response DTOs

@@ -102,6 +102,7 @@ export class PublicSellerController {
           stock: true,
           sales: true,
           rating: true,
+          hasVariants: true,
           createdAt: true,
           category: {
             select: {
@@ -109,6 +110,16 @@ export class PublicSellerController {
               name: true,
               slug: true,
             },
+          },
+          variants: {
+            select: {
+              id: true,
+              name: true,
+              price: true,
+              salePrice: true,
+              stock: true,
+            },
+            orderBy: { position: 'asc' },
           },
         },
         orderBy,

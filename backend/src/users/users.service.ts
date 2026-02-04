@@ -18,6 +18,34 @@ export class UsersService {
     });
   }
 
+  // Get public profile (for chat header, etc.)
+  async getPublicProfile(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        avatar: true,
+        isSeller: true,
+        sellerProfile: {
+          select: {
+            shopName: true,
+            shopLogo: true,
+            shopDescription: true,
+            rating: true,
+            totalSales: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return user;
+  }
+
   async create(data: { email: string; password: string; name?: string }): Promise<User> {
     return this.prisma.user.create({
       data,

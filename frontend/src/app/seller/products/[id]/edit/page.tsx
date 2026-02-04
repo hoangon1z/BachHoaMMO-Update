@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { validateImageUrl } from '@/lib/image-validation';
+import { RichTextEditor, sanitizeHtml } from '@/components/RichTextEditor';
 
 interface Category {
   id: string;
@@ -415,13 +416,11 @@ export default function EditProductPage() {
 
             <div className="space-y-2">
               <Label htmlFor="description">Mô tả sản phẩm *</Label>
-              <textarea
-                id="description"
+              <RichTextEditor
                 value={formData.description}
-                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                rows={5}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
+                onChange={(value) => setFormData(prev => ({ ...prev, description: sanitizeHtml(value) }))}
+                placeholder="Mô tả chi tiết về sản phẩm... (hỗ trợ in đậm, in nghiêng, và liên kết)"
+                minHeight="150px"
               />
             </div>
 

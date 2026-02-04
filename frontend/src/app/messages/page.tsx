@@ -8,7 +8,8 @@ import { useAuthStore } from '@/store/authStore';
 import { ConversationList, ChatWindow, AdminContactDialog } from '@/components/chat';
 import { Conversation } from '@/hooks/useChat';
 import { useChat } from '@/hooks/useChat';
-import { MessageCircle, Filter, Search, Plus, Shield } from 'lucide-react';
+import { MessageCircle, Filter, Search, Plus, Shield, Store, ExternalLink, Package, ShoppingBag } from 'lucide-react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Suspense } from 'react';
@@ -27,6 +28,10 @@ function MessagesContent() {
   const [showMobileChat, setShowMobileChat] = useState(false);
   const [showAdminDialog, setShowAdminDialog] = useState(false);
   const [isStartingChat, setIsStartingChat] = useState(false);
+  
+  // Order and seller info for chat header
+  const [chatOrderInfo, setChatOrderInfo] = useState<any>(null);
+  const [chatSellerInfo, setChatSellerInfo] = useState<any>(null);
 
   // Get params from URL
   const conversationIdFromUrl = searchParams.get('id');
@@ -57,6 +62,56 @@ function MessagesContent() {
       setSelectedConversation(conv);
     }
   }, [user, conversationIdFromUrl, chatHook.conversations]);
+
+  // Fetch order and seller info when conversation changes
+  useEffect(() => {
+    const fetchChatInfo = async () => {
+      if (!selectedConversation && !conversationIdFromUrl) {
+        setChatOrderInfo(null);
+        setChatSellerInfo(null);
+        return;
+      }
+      
+      const conv = selectedConversation || chatHook.conversations.find(c => c._id === conversationIdFromUrl);
+      if (!conv) return;
+      
+      const token = localStorage.getItem('token');
+      
+      // Fetch seller info
+      if (conv.sellerId && conv.sellerId !== user?.id) {
+        try {
+          const res = await fetch(`/api/users/${conv.sellerId}/public-profile`);
+          if (res.ok) {
+            const data = await res.json();
+            setChatSellerInfo(data);
+          }
+        } catch (error) {
+          console.error('Failed to fetch seller info:', error);
+        }
+      } else {
+        setChatSellerInfo(null);
+      }
+      
+      // Fetch order info if conversation has orderId
+      if (conv.orderId) {
+        try {
+          const res = await fetch(`/api/orders/${conv.orderId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setChatOrderInfo(data);
+          }
+        } catch (error) {
+          console.error('Failed to fetch order info:', error);
+        }
+      } else {
+        setChatOrderInfo(null);
+      }
+    };
+    
+    fetchChatInfo();
+  }, [selectedConversation, conversationIdFromUrl, chatHook.conversations, user]);
 
   // Handle starting conversation with seller from URL params
   useEffect(() => {
@@ -185,16 +240,89 @@ function MessagesContent() {
                 </div>
               ) : selectedConversation || conversationIdFromUrl ? (
                 <>
-                  {/* Mobile back button */}
-                  <div className="md:hidden p-3 border-b">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowMobileChat(false)}
-                    >
-                      ← Quay lại
-                    </Button>
+                  {/* Chat Header with Seller Info */}
+                  <div className="border-b bg-white">
+                    {/* Mobile back button */}
+                    <div className="md:hidden p-3 border-b">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowMobileChat(false)}
+                      >
+                        ← Quay lại
+                      </Button>
+                    </div>
+                    
+                    {/* Seller Profile Header */}
+                    {chatSellerInfo && (
+                      <div className="p-4 flex items-center justify-between bg-gradient-to-r from-blue-50 to-white">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center overflow-hidden">
+                            {chatSellerInfo.sellerProfile?.shopLogo ? (
+                              <img 
+                                src={chatSellerInfo.sellerProfile.shopLogo} 
+                                alt={chatSellerInfo.sellerProfile?.shopName}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <Store className="w-6 h-6 text-white" />
+                            )}
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-gray-900">
+                              {chatSellerInfo.sellerProfile?.shopName || chatSellerInfo.name}
+                            </h3>
+                            <p className="text-sm text-gray-500">Người bán</p>
+                          </div>
+                        </div>
+                        <Link 
+                          href={`/shop/${chatSellerInfo.id}`}
+                          className="flex items-center gap-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                        >
+                          <Store className="w-4 h-4" />
+                          Xem Shop
+                        </Link>
+                      </div>
+                    )}
+                    
+                    {/* Order Info Box */}
+                    {chatOrderInfo && (
+                      <div className="p-3 bg-gray-50 border-t">
+                        <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                          <Package className="w-3 h-3" />
+                          Tin nhắn về đơn hàng:
+                        </p>
+                        <Link 
+                          href={`/orders/${chatOrderInfo.id}`}
+                          className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all"
+                        >
+                          {chatOrderInfo.items?.[0]?.product?.images && (
+                            <img 
+                              src={JSON.parse(chatOrderInfo.items[0].product.images)[0]} 
+                              alt=""
+                              className="w-14 h-14 rounded-lg object-cover"
+                            />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-900 truncate">
+                              {chatOrderInfo.items?.map((i: any) => i.product?.title).join(', ')}
+                            </p>
+                            <div className="flex items-center gap-2 text-sm">
+                              <span className="text-blue-600 font-semibold">
+                                {new Intl.NumberFormat('vi-VN').format(chatOrderInfo.total)}đ
+                              </span>
+                              <span className="text-gray-400">•</span>
+                              <span className="text-gray-500">
+                                {chatOrderInfo.orderNumber}
+                              </span>
+                            </div>
+                          </div>
+                          <ExternalLink className="w-4 h-4 text-gray-400" />
+                        </Link>
+                      </div>
+                    )}
                   </div>
+                  
                   <ChatWindow
                     conversationId={selectedConversation?._id || conversationIdFromUrl || undefined}
                     chatHook={chatHook}

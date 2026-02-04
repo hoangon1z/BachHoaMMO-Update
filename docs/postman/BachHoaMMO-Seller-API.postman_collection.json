@@ -1,25 +1,28 @@
 {
   "info": {
-    "_postman_id": "bachhoammo-seller-api",
-    "name": "BachHoaMMO Seller API",
-    "description": "# BachHoaMMO Seller API\n\nAPI cho seller quản lý kho hàng, sản phẩm và đơn hàng trên BachHoaMMO.\n\n## Authentication\n\nMỗi request cần 3 headers:\n- `X-API-Key`: API Key của bạn (bắt đầu bằng `bhmmo_`)\n- `X-Timestamp`: Unix timestamp (giây)\n- `X-Signature`: HMAC-SHA256 signature\n\n### Tính signature\n\n```javascript\nconst crypto = require('crypto');\n\nconst signaturePayload = timestamp + method + path + body;\nconst signature = crypto\n  .createHmac('sha256', secretHash)\n  .update(signaturePayload)\n  .digest('hex');\n```\n\n## Rate Limits\n\n- Default: 100 requests/phút\n- Headers trả về: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`\n\n## Error Response\n\n```json\n{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"ERROR_CODE\",\n    \"message\": \"Error description\"\n  }\n}\n```\n\n## Support\n\n- Website: https://bachhoammo.store\n- Email: support@bachhoammo.store",
+    "_postman_id": "bachhoammo-seller-api-v1",
+    "name": "BachHoaMMO Seller API v1.0",
+    "description": "# BachHoaMMO Seller API\n\nAPI cho seller quản lý kho hàng, sản phẩm và đơn hàng trên BachHoaMMO.\n\n## 🔐 Authentication\n\nMỗi request (trừ /health) cần 3 headers:\n\n| Header | Mô tả |\n|--------|-------|\n| `X-API-Key` | API Key của bạn (bắt đầu bằng `bhmmo_`) |\n| `X-Timestamp` | Unix timestamp (giây) |\n| `X-Signature` | HMAC-SHA256 signature |\n\n### Cách tính Signature\n\n```javascript\nconst crypto = require('crypto');\n\n// 1. Tạo payload\nconst payload = timestamp + method + path + body;\n// Ví dụ: \"1706623200GET/api/v1/me\"\n// Ví dụ với body: \"1706623200POST/api/v1/inventory{\\\"productId\\\":\\\"abc\\\",\\\"items\\\":[\\\"acc1\\\"]}\"\n\n// 2. Tính HMAC-SHA256\nconst signature = crypto\n  .createHmac('sha256', YOUR_SECRET)\n  .update(payload)\n  .digest('hex');\n```\n\n⚠️ **Quan trọng:**\n- Timestamp phải trong khoảng ±5 phút so với server\n- Body phải được minify (không có whitespace thừa)\n- Path bao gồm query string nếu có\n\n## 📊 Rate Limits\n\n- Default: **100 requests/phút**\n- Headers trả về:\n  - `X-RateLimit-Limit`: Giới hạn\n  - `X-RateLimit-Remaining`: Còn lại\n  - `X-RateLimit-Reset`: Thời điểm reset (Unix timestamp)\n\n## ❌ Error Response\n\n```json\n{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"ERROR_CODE\",\n    \"message\": \"Mô tả lỗi\"\n  },\n  \"timestamp\": \"2024-01-30T10:00:00.000Z\",\n  \"requestId\": \"abc-123\"\n}\n```\n\n### Mã lỗi\n\n| Code | Mô tả |\n|------|-------|\n| `INVALID_API_KEY` | API key không hợp lệ hoặc không tồn tại |\n| `INVALID_SIGNATURE` | Chữ ký không đúng |\n| `EXPIRED_TIMESTAMP` | Timestamp quá cũ (>5 phút) |\n| `API_KEY_INACTIVE` | API key đã bị vô hiệu hóa |\n| `RATE_LIMIT_EXCEEDED` | Vượt quá giới hạn request |\n| `NOT_FOUND` | Không tìm thấy resource |\n| `VALIDATION_ERROR` | Dữ liệu không hợp lệ |\n\n## 📞 Support\n\n- Website: https://bachhoammo.store\n- Telegram: @bachhoammobot",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "base_url",
       "value": "https://bachhoammo.store",
-      "type": "string"
+      "type": "string",
+      "description": "URL của BachHoaMMO"
     },
     {
       "key": "api_key",
       "value": "bhmmo_your_api_key_here",
-      "type": "string"
+      "type": "string",
+      "description": "API Key (lấy từ Seller Settings)"
     },
     {
       "key": "api_secret",
       "value": "your_secret_here",
-      "type": "string"
+      "type": "string",
+      "description": "API Secret (chỉ hiển thị 1 lần khi tạo key)"
     }
   ],
   "event": [
@@ -31,9 +34,15 @@
           "// BachHoaMMO API - Auto-generate signature",
           "const timestamp = Math.floor(Date.now() / 1000).toString();",
           "const method = pm.request.method.toUpperCase();",
-          "const path = pm.request.url.getPath();",
           "",
-          "// Get body and minify (remove whitespace/newlines to match server)",
+          "// Build full path including query string",
+          "let path = pm.request.url.getPath();",
+          "const queryString = pm.request.url.getQueryString();",
+          "if (queryString) {",
+          "    path += '?' + queryString;",
+          "}",
+          "",
+          "// Get body and minify (critical: must match server)",
           "let body = '';",
           "if (pm.request.body && pm.request.body.raw) {",
           "    try {",
@@ -44,23 +53,23 @@
           "    }",
           "}",
           "",
-          "// Get API secret from collection variables",
+          "// Get API secret",
           "const secret = pm.collectionVariables.get('api_secret') || pm.variables.get('api_secret');",
+          "if (!secret || secret === 'your_secret_here') {",
+          "    console.warn('⚠️ API Secret chưa được set! Vào Collection Variables để cấu hình.');",
+          "}",
           "",
-          "// Create signature payload: timestamp + method + path + body",
+          "// Create signature: HMAC-SHA256(secret, timestamp + method + path + body)",
           "const signaturePayload = timestamp + method + path + body;",
-          "",
-          "// Generate HMAC-SHA256 signature",
           "const signature = CryptoJS.HmacSHA256(signaturePayload, secret).toString();",
           "",
-          "// Debug log (check in Postman Console)",
-          "console.log('=== Signature Debug ===');",
+          "// Debug (mở Postman Console để xem)",
+          "console.log('=== BachHoaMMO API Request ===');",
           "console.log('Timestamp:', timestamp);",
           "console.log('Method:', method);",
           "console.log('Path:', path);",
-          "console.log('Body:', body);",
-          "console.log('Payload:', signaturePayload);",
-          "console.log('Signature:', signature);",
+          "console.log('Body:', body || '(empty)');",
+          "console.log('Signature:', signature.substring(0, 16) + '...');",
           "",
           "// Set headers",
           "pm.request.headers.add({ key: 'X-API-Key', value: pm.collectionVariables.get('api_key') || pm.variables.get('api_key') });",
@@ -73,7 +82,8 @@
   ],
   "item": [
     {
-      "name": "Health & Info",
+      "name": "🏥 Health & Info",
+      "description": "Kiểm tra trạng thái API và thông tin seller",
       "item": [
         {
           "name": "Health Check",
@@ -85,20 +95,14 @@
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "health"]
             },
-            "description": "Kiểm tra API có hoạt động không. Endpoint này không cần authentication."
+            "description": "Kiểm tra API có hoạt động không.\n\n⚠️ **Không cần authentication** - endpoint này public."
           },
           "response": [
             {
               "name": "Success",
-              "originalRequest": {
-                "method": "GET",
-                "url": {
-                  "raw": "{{base_url}}/api/v1/health"
-                }
-              },
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"status\": \"ok\",\n    \"version\": \"1.0.0\",\n    \"timestamp\": \"2024-01-30T10:00:00.000Z\"\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"status\": \"ok\",\n    \"version\": \"1.0.0\",\n    \"timestamp\": \"2024-01-30T10:00:00.000Z\",\n    \"endpoints\": {\n      \"info\": [\"GET /me\", \"GET /stats\"],\n      \"categories\": [\"GET /categories\"],\n      \"products\": [\"GET /products\", \"POST /products\", \"PUT /products/:id\", \"DELETE /products/:id\"],\n      \"variants\": [\"GET /products/:id/variants\", \"POST /products/:id/variants\", \"PUT /products/:id/variants/:variantId\", \"DELETE /products/:id/variants/:variantId\"],\n      \"inventory\": [\"GET /inventory\", \"POST /inventory\", \"DELETE /inventory/:id\", \"DELETE /inventory\"],\n      \"orders\": [\"GET /orders\", \"GET /orders/:id\", \"POST /orders/:id/deliver\"]\n    }\n  }\n}"
             }
           ]
         },
@@ -112,14 +116,14 @@
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "me"]
             },
-            "description": "Lấy thông tin seller và shop."
+            "description": "Lấy thông tin seller và shop.\n\nTrả về:\n- Thông tin cá nhân (email, name, balance)\n- Thông tin shop (name, rating, totalSales, isVerified)"
           },
           "response": [
             {
               "name": "Success",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": \"user-uuid\",\n    \"email\": \"seller@example.com\",\n    \"name\": \"Shop Name\",\n    \"balance\": 1000000,\n    \"shop\": {\n      \"name\": \"My Shop\",\n      \"description\": \"Shop description\",\n      \"logo\": \"/uploads/logo.png\",\n      \"rating\": 4.5,\n      \"totalSales\": 100,\n      \"isVerified\": true\n    }\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": \"user-uuid\",\n    \"email\": \"seller@example.com\",\n    \"name\": \"Nguyen Van A\",\n    \"balance\": 1500000,\n    \"shop\": {\n      \"name\": \"My Awesome Shop\",\n      \"description\": \"Chuyên bán tài khoản premium\",\n      \"logo\": \"/uploads/shop-logo.png\",\n      \"rating\": 4.8,\n      \"totalSales\": 1250,\n      \"isVerified\": true\n    }\n  }\n}"
             }
           ]
         },
@@ -133,7 +137,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "stats"]
             },
-            "description": "Thống kê tổng quan: sản phẩm, đơn hàng, kho hàng."
+            "description": "Thống kê tổng quan dashboard:\n- Số lượng sản phẩm\n- Thống kê đơn hàng (pending, completed, revenue...)\n- Thống kê kho hàng (available, sold)\n- Đơn hàng 7 ngày gần đây"
           },
           "response": [
             {
@@ -147,7 +151,293 @@
       ]
     },
     {
-      "name": "Inventory",
+      "name": "📁 Categories",
+      "description": "Quản lý danh mục sản phẩm",
+      "item": [
+        {
+          "name": "Get All Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "categories"]
+            },
+            "description": "Lấy danh sách tất cả danh mục.\n\nDùng `categoryId` khi tạo sản phẩm mới."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": \"cat-uuid-1\",\n      \"name\": \"Tài khoản Netflix\",\n      \"slug\": \"tai-khoan-netflix\",\n      \"parentId\": null,\n      \"productCount\": 45\n    },\n    {\n      \"id\": \"cat-uuid-2\",\n      \"name\": \"Tài khoản Spotify\",\n      \"slug\": \"tai-khoan-spotify\",\n      \"parentId\": null,\n      \"productCount\": 32\n    }\n  ]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "📦 Products",
+      "description": "Quản lý sản phẩm",
+      "item": [
+        {
+          "name": "Get All Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products"],
+              "query": [
+                { "key": "search", "value": "", "description": "Tìm theo tên/mô tả", "disabled": true },
+                { "key": "categoryId", "value": "", "description": "Filter theo danh mục", "disabled": true },
+                { "key": "status", "value": "ACTIVE", "description": "ACTIVE, INACTIVE, OUT_OF_STOCK", "disabled": true },
+                { "key": "limit", "value": "20", "description": "Số lượng (max 100)" },
+                { "key": "offset", "value": "0", "description": "Bắt đầu từ" }
+              ]
+            },
+            "description": "Lấy danh sách sản phẩm của seller.\n\n**Query Parameters:**\n- `search`: Tìm theo tên hoặc mô tả\n- `categoryId`: Filter theo danh mục\n- `status`: ACTIVE, INACTIVE, OUT_OF_STOCK\n- `limit`: Số lượng trả về (max 100)\n- `offset`: Phân trang"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": \"prod-uuid\",\n        \"title\": \"Netflix Premium 1 tháng\",\n        \"description\": \"Tài khoản Netflix Premium...\",\n        \"price\": 50000,\n        \"originalPrice\": 100000,\n        \"stock\": 25,\n        \"status\": \"ACTIVE\",\n        \"images\": [\"https://...\"],\n        \"tags\": [\"netflix\", \"premium\"],\n        \"categoryId\": \"cat-uuid\",\n        \"categoryName\": \"Tài khoản Netflix\",\n        \"views\": 1520,\n        \"sales\": 48,\n        \"rating\": 4.8,\n        \"autoDelivery\": true,\n        \"productType\": \"STANDARD\",\n        \"hasVariants\": true,\n        \"variants\": [\n          { \"id\": \"var-1\", \"name\": \"1 tháng\", \"price\": 50000, \"stock\": 10 },\n          { \"id\": \"var-2\", \"name\": \"3 tháng\", \"price\": 120000, \"stock\": 15 }\n        ],\n        \"createdAt\": \"2024-01-15T10:00:00.000Z\",\n        \"updatedAt\": \"2024-01-30T10:00:00.000Z\"\n      }\n    ],\n    \"pagination\": {\n      \"limit\": 20,\n      \"offset\": 0,\n      \"total\": 15,\n      \"hasMore\": false\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Product Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products", ":id"],
+              "variable": [
+                { "key": "id", "value": "product-id-here", "description": "Product ID" }
+              ]
+            },
+            "description": "Lấy chi tiết một sản phẩm bao gồm tất cả variants."
+          }
+        },
+        {
+          "name": "Create Product",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Netflix Premium 1 tháng\",\n  \"description\": \"Tài khoản Netflix Premium 4K, xem trên 4 thiết bị cùng lúc.\\n\\n✅ Bảo hành 30 ngày\\n✅ Giao hàng tự động\",\n  \"price\": 50000,\n  \"originalPrice\": 100000,\n  \"categoryId\": \"category-id-here\",\n  \"images\": [\"https://example.com/netflix.jpg\"],\n  \"tags\": [\"netflix\", \"premium\", \"4k\"],\n  \"autoDelivery\": true,\n  \"productType\": \"STANDARD\",\n  \"hasVariants\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/products",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products"]
+            },
+            "description": "Tạo sản phẩm mới.\n\n**Body (required):**\n- `title`: Tên sản phẩm\n- `description`: Mô tả chi tiết\n- `price`: Giá bán (VNĐ)\n- `categoryId`: ID danh mục (lấy từ GET /categories)\n- `images`: Mảng URL ảnh\n\n**Body (optional):**\n- `originalPrice`: Giá gốc (gạch ngang)\n- `tags`: Mảng tags\n- `autoDelivery`: true = giao tự động, false = giao thủ công\n- `productType`: STANDARD hoặc UPGRADE\n- `hasVariants`: Có phân loại không\n- `variants`: Mảng phân loại (nếu hasVariants=true)"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": \"new-product-uuid\",\n    \"title\": \"Netflix Premium 1 tháng\",\n    \"status\": \"ACTIVE\",\n    \"...other fields\": \"...\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create Product with Variants",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Spotify Premium\",\n  \"description\": \"Tài khoản Spotify Premium, nghe nhạc không quảng cáo.\",\n  \"price\": 30000,\n  \"categoryId\": \"category-id-here\",\n  \"images\": [\"https://example.com/spotify.jpg\"],\n  \"autoDelivery\": true,\n  \"hasVariants\": true,\n  \"variants\": [\n    { \"name\": \"1 tháng\", \"price\": 30000, \"originalPrice\": 59000 },\n    { \"name\": \"3 tháng\", \"price\": 80000, \"originalPrice\": 150000 },\n    { \"name\": \"6 tháng\", \"price\": 150000, \"originalPrice\": 290000 },\n    { \"name\": \"1 năm\", \"price\": 280000, \"originalPrice\": 550000 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/products",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products"]
+            },
+            "description": "Tạo sản phẩm có nhiều phân loại (variants).\n\nGiá hiển thị trên trang Home sẽ là: \"30,000đ - 280,000đ\""
+          }
+        },
+        {
+          "name": "Update Product",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Netflix Premium - SALE\",\n  \"price\": 45000,\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products", ":id"],
+              "variable": [
+                { "key": "id", "value": "product-id-here" }
+              ]
+            },
+            "description": "Cập nhật sản phẩm.\n\n**Chỉ gửi các field muốn thay đổi:**\n- `title`, `description`, `price`, `originalPrice`\n- `status`: ACTIVE, INACTIVE, OUT_OF_STOCK\n- `images`, `tags`, `autoDelivery`"
+          }
+        },
+        {
+          "name": "Update Stock (Manual)",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stock\": 100\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id/stock",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products", ":id", "stock"],
+              "variable": [
+                { "key": "id", "value": "product-id-here" }
+              ]
+            },
+            "description": "Cập nhật số lượng stock thủ công.\n\n⚠️ **Lưu ý:** Với sản phẩm giao tự động, stock được tính từ inventory. Endpoint này dùng cho sản phẩm giao thủ công."
+          }
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products", ":id"],
+              "variable": [
+                { "key": "id", "value": "product-id-here" }
+              ]
+            },
+            "description": "Xóa sản phẩm (soft delete - chuyển status thành INACTIVE).\n\nSản phẩm sẽ không hiển thị trên trang chủ nhưng vẫn có thể khôi phục."
+          }
+        },
+        {
+          "name": "Get Product Inventory",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id/inventory?limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products", ":id", "inventory"],
+              "query": [
+                { "key": "variantId", "value": "", "disabled": true },
+                { "key": "status", "value": "AVAILABLE", "disabled": true },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0", "disabled": true }
+              ],
+              "variable": [
+                { "key": "id", "value": "product-id-here" }
+              ]
+            },
+            "description": "Lấy danh sách inventory của một sản phẩm cụ thể."
+          }
+        }
+      ]
+    },
+    {
+      "name": "🏷️ Variants",
+      "description": "Quản lý phân loại sản phẩm",
+      "item": [
+        {
+          "name": "Get Product Variants",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id/variants",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products", ":id", "variants"],
+              "variable": [
+                { "key": "id", "value": "product-id-here" }
+              ]
+            },
+            "description": "Lấy tất cả variants của một sản phẩm."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    { \"id\": \"var-1\", \"name\": \"1 tháng\", \"price\": 50000, \"originalPrice\": 100000, \"stock\": 10, \"isActive\": true, \"position\": 0 },\n    { \"id\": \"var-2\", \"name\": \"3 tháng\", \"price\": 120000, \"originalPrice\": 250000, \"stock\": 15, \"isActive\": true, \"position\": 1 }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create Variant",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"1 năm\",\n  \"price\": 400000,\n  \"originalPrice\": 800000,\n  \"stock\": 0\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id/variants",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products", ":id", "variants"],
+              "variable": [
+                { "key": "id", "value": "product-id-here" }
+              ]
+            },
+            "description": "Thêm phân loại mới cho sản phẩm.\n\nProduct sẽ tự động được đánh dấu `hasVariants: true`."
+          }
+        },
+        {
+          "name": "Update Variant",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 350000,\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id/variants/:variantId",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products", ":id", "variants", ":variantId"],
+              "variable": [
+                { "key": "id", "value": "product-id-here" },
+                { "key": "variantId", "value": "variant-id-here" }
+              ]
+            },
+            "description": "Cập nhật phân loại.\n\nCó thể cập nhật: name, price, originalPrice, stock, isActive, position"
+          }
+        },
+        {
+          "name": "Delete Variant",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id/variants/:variantId",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products", ":id", "variants", ":variantId"],
+              "variable": [
+                { "key": "id", "value": "product-id-here" },
+                { "key": "variantId", "value": "variant-id-here" }
+              ]
+            },
+            "description": "Xóa phân loại.\n\nNếu xóa hết variants, product sẽ tự động được đánh dấu `hasVariants: false`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "📋 Inventory",
+      "description": "Quản lý kho hàng (tài khoản)",
       "item": [
         {
           "name": "Get Inventory",
@@ -159,43 +449,46 @@
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "inventory"],
               "query": [
-                {
-                  "key": "productId",
-                  "value": "",
-                  "description": "Filter by product ID",
-                  "disabled": true
-                },
-                {
-                  "key": "variantId",
-                  "value": "",
-                  "description": "Filter by variant ID",
-                  "disabled": true
-                },
-                {
-                  "key": "status",
-                  "value": "AVAILABLE",
-                  "description": "AVAILABLE, RESERVED, SOLD, DISABLED",
-                  "disabled": true
-                },
-                {
-                  "key": "limit",
-                  "value": "50",
-                  "description": "Max 100"
-                },
-                {
-                  "key": "offset",
-                  "value": "0"
-                }
+                { "key": "productId", "value": "", "description": "Filter theo product", "disabled": true },
+                { "key": "variantId", "value": "", "description": "Filter theo variant", "disabled": true },
+                { "key": "status", "value": "AVAILABLE", "description": "AVAILABLE, RESERVED, SOLD, DISABLED", "disabled": true },
+                { "key": "limit", "value": "50", "description": "Số lượng (max 100)" },
+                { "key": "offset", "value": "0" }
               ]
             },
-            "description": "Lấy danh sách kho hàng. Có thể filter theo productId, status."
+            "description": "Lấy danh sách kho hàng.\n\n⚠️ **Lưu ý:** `accountData` không được trả về để bảo mật. Chỉ hiển thị metadata."
           },
           "response": [
             {
               "name": "Success",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": \"inv-uuid\",\n        \"productId\": \"product-uuid\",\n        \"variantId\": null,\n        \"status\": \"AVAILABLE\",\n        \"createdAt\": \"2024-01-30T10:00:00.000Z\"\n      }\n    ],\n    \"stats\": {\n      \"total\": 100,\n      \"available\": 90,\n      \"reserved\": 5,\n      \"sold\": 5,\n      \"disabled\": 0\n    },\n    \"pagination\": {\n      \"limit\": 50,\n      \"offset\": 0,\n      \"total\": 100,\n      \"hasMore\": true\n    }\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": \"inv-uuid\",\n        \"productId\": \"prod-uuid\",\n        \"variantId\": \"var-uuid\",\n        \"status\": \"AVAILABLE\",\n        \"createdAt\": \"2024-01-30T10:00:00.000Z\"\n      }\n    ],\n    \"stats\": {\n      \"total\": 100,\n      \"available\": 90,\n      \"reserved\": 5,\n      \"sold\": 5,\n      \"disabled\": 0\n    },\n    \"pagination\": {\n      \"limit\": 50,\n      \"offset\": 0,\n      \"total\": 100,\n      \"hasMore\": true\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Inventory Count",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/inventory/count",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "inventory", "count"],
+              "query": [
+                { "key": "productId", "value": "", "disabled": true },
+                { "key": "variantId", "value": "", "disabled": true }
+              ]
+            },
+            "description": "Đếm nhanh số lượng inventory.\n\nDùng để kiểm tra stock mà không cần load toàn bộ danh sách."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"total\": 150,\n    \"available\": 120,\n    \"reserved\": 10,\n    \"sold\": 20,\n    \"disabled\": 0\n  }\n}"
             }
           ]
         },
@@ -206,14 +499,14 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"productId\": \"your-product-id\",\n  \"variantId\": null,\n  \"items\": [\n    \"username1|password1|email1@gmail.com\",\n    \"username2|password2|email2@gmail.com\",\n    \"username3|password3|email3@gmail.com\"\n  ]\n}"
+              "raw": "{\n  \"productId\": \"your-product-id\",\n  \"variantId\": null,\n  \"items\": [\n    \"email1@gmail.com|password1|recovery_code1\",\n    \"email2@gmail.com|password2|recovery_code2\",\n    \"email3@gmail.com|password3|recovery_code3\"\n  ]\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/inventory",
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "inventory"]
             },
-            "description": "Thêm nhiều tài khoản vào kho cùng lúc.\n\n**Body:**\n- `productId` (required): ID sản phẩm\n- `variantId` (optional): ID phân loại\n- `items` (required): Mảng các tài khoản (mỗi dòng là một tài khoản)"
+            "description": "Thêm nhiều tài khoản vào kho cùng lúc.\n\n**Body:**\n- `productId` (required): ID sản phẩm\n- `variantId` (optional): ID phân loại (null nếu không có)\n- `items` (required): Mảng tài khoản\n\n**Format tài khoản:** Tùy ý, mỗi item là 1 string. Ví dụ:\n- `email|password`\n- `username:password:2fa_key`\n- `license-key-xxxxx`\n\n**Kết quả:**\n- `added`: Số lượng thêm thành công\n- `duplicates`: Số lượng trùng lặp (bỏ qua)\n- `errors`: Các lỗi nếu có"
           },
           "response": [
             {
@@ -221,6 +514,12 @@
               "status": "OK",
               "code": 200,
               "body": "{\n  \"success\": true,\n  \"data\": {\n    \"added\": 3,\n    \"duplicates\": 0,\n    \"errors\": []\n  }\n}"
+            },
+            {
+              "name": "With Duplicates",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"added\": 2,\n    \"duplicates\": 1,\n    \"errors\": []\n  }\n}"
             }
           ]
         },
@@ -234,22 +533,11 @@
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "inventory", ":id"],
               "variable": [
-                {
-                  "key": "id",
-                  "value": "inventory-id-here"
-                }
+                { "key": "id", "value": "inventory-id-here" }
               ]
             },
-            "description": "Xóa một item trong kho. Không thể xóa item đã bán."
-          },
-          "response": [
-            {
-              "name": "Success",
-              "status": "OK",
-              "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"deleted\": true\n  }\n}"
-            }
-          ]
+            "description": "Xóa một item trong kho.\n\n⚠️ **Không thể xóa item đã bán (status = SOLD).**"
+          }
         },
         {
           "name": "Delete Multiple Inventory",
@@ -265,178 +553,14 @@
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "inventory"]
             },
-            "description": "Xóa nhiều items trong kho cùng lúc."
-          },
-          "response": [
-            {
-              "name": "Success",
-              "status": "OK",
-              "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"deleted\": 3,\n    \"skipped\": 0\n  }\n}"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Products",
-      "item": [
-        {
-          "name": "Get Products",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/products?limit=20&offset=0",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "products"],
-              "query": [
-                {
-                  "key": "categoryId",
-                  "value": "",
-                  "description": "Filter by category",
-                  "disabled": true
-                },
-                {
-                  "key": "status",
-                  "value": "ACTIVE",
-                  "description": "ACTIVE, INACTIVE, OUT_OF_STOCK",
-                  "disabled": true
-                },
-                {
-                  "key": "limit",
-                  "value": "20"
-                },
-                {
-                  "key": "offset",
-                  "value": "0"
-                }
-              ]
-            },
-            "description": "Lấy danh sách sản phẩm của seller."
-          },
-          "response": [
-            {
-              "name": "Success",
-              "status": "OK",
-              "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": \"product-uuid\",\n        \"title\": \"Premium Account\",\n        \"description\": \"Description here\",\n        \"price\": 50000,\n        \"originalPrice\": 100000,\n        \"stock\": 50,\n        \"status\": \"ACTIVE\",\n        \"images\": [\"https://...\"],\n        \"categoryId\": \"cat-uuid\",\n        \"categoryName\": \"Tài khoản Premium\",\n        \"views\": 100,\n        \"sales\": 20,\n        \"rating\": 4.5,\n        \"autoDelivery\": true,\n        \"productType\": \"STANDARD\",\n        \"hasVariants\": false,\n        \"variants\": [],\n        \"createdAt\": \"2024-01-30T10:00:00.000Z\",\n        \"updatedAt\": \"2024-01-30T10:00:00.000Z\"\n      }\n    ],\n    \"pagination\": {\n      \"limit\": 20,\n      \"offset\": 0,\n      \"total\": 15,\n      \"hasMore\": false\n    }\n  }\n}"
-            }
-          ]
-        },
-        {
-          "name": "Get Product Detail",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/products/:id",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "products", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "product-id-here"
-                }
-              ]
-            },
-            "description": "Lấy chi tiết một sản phẩm."
-          }
-        },
-        {
-          "name": "Create Product",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"Premium Netflix Account\",\n  \"description\": \"Tài khoản Netflix Premium 1 tháng\",\n  \"price\": 50000,\n  \"originalPrice\": 100000,\n  \"stock\": 0,\n  \"categoryId\": \"your-category-id\",\n  \"images\": [\"https://example.com/image.jpg\"],\n  \"tags\": [\"netflix\", \"premium\"],\n  \"autoDelivery\": true,\n  \"productType\": \"STANDARD\",\n  \"hasVariants\": false\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/products",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "products"]
-            },
-            "description": "Tạo sản phẩm mới.\n\n**Body:**\n- `title` (required): Tên sản phẩm\n- `description` (required): Mô tả\n- `price` (required): Giá bán\n- `originalPrice` (optional): Giá gốc (gạch ngang)\n- `categoryId` (required): ID danh mục\n- `images` (required): Mảng URL ảnh\n- `productType`: STANDARD hoặc UPGRADE"
-          },
-          "response": [
-            {
-              "name": "Success",
-              "status": "OK",
-              "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": \"new-product-uuid\",\n    \"title\": \"Premium Netflix Account\",\n    \"...other fields\": \"...\"\n  }\n}"
-            }
-          ]
-        },
-        {
-          "name": "Update Product",
-          "request": {
-            "method": "PUT",
-            "header": [],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"Updated Title\",\n  \"price\": 60000,\n  \"status\": \"ACTIVE\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/products/:id",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "products", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "product-id-here"
-                }
-              ]
-            },
-            "description": "Cập nhật sản phẩm. Chỉ cần gửi các field muốn update."
-          }
-        },
-        {
-          "name": "Update Stock",
-          "request": {
-            "method": "PUT",
-            "header": [],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"stock\": 100\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/products/:id/stock",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "products", ":id", "stock"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "product-id-here"
-                }
-              ]
-            },
-            "description": "Cập nhật stock của sản phẩm (không phụ thuộc inventory)."
-          }
-        },
-        {
-          "name": "Delete Product",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/products/:id",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "products", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "product-id-here"
-                }
-              ]
-            },
-            "description": "Xóa sản phẩm (soft delete - chuyển status thành INACTIVE)."
+            "description": "Xóa nhiều items trong kho cùng lúc.\n\n**Kết quả:**\n- `deleted`: Số lượng đã xóa\n- `skipped`: Số lượng bỏ qua (đã bán hoặc không tìm thấy)"
           }
         }
       ]
     },
     {
-      "name": "Orders",
+      "name": "🛒 Orders",
+      "description": "Quản lý đơn hàng",
       "item": [
         {
           "name": "Get Orders",
@@ -448,48 +572,22 @@
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "orders"],
               "query": [
-                {
-                  "key": "status",
-                  "value": "PENDING",
-                  "description": "PENDING, PROCESSING, COMPLETED, CANCELLED, REFUNDED, DISPUTED",
-                  "disabled": true
-                },
-                {
-                  "key": "productId",
-                  "value": "",
-                  "description": "Filter by product",
-                  "disabled": true
-                },
-                {
-                  "key": "fromDate",
-                  "value": "2024-01-01",
-                  "description": "ISO date string",
-                  "disabled": true
-                },
-                {
-                  "key": "toDate",
-                  "value": "2024-12-31",
-                  "description": "ISO date string",
-                  "disabled": true
-                },
-                {
-                  "key": "limit",
-                  "value": "20"
-                },
-                {
-                  "key": "offset",
-                  "value": "0"
-                }
+                { "key": "status", "value": "PENDING", "description": "PENDING, PROCESSING, COMPLETED, CANCELLED, REFUNDED, DISPUTED", "disabled": true },
+                { "key": "productId", "value": "", "description": "Filter theo product", "disabled": true },
+                { "key": "fromDate", "value": "2024-01-01", "description": "Từ ngày (ISO)", "disabled": true },
+                { "key": "toDate", "value": "2024-12-31", "description": "Đến ngày (ISO)", "disabled": true },
+                { "key": "limit", "value": "20" },
+                { "key": "offset", "value": "0" }
               ]
             },
-            "description": "Lấy danh sách đơn hàng. Có thể filter theo status, productId, ngày."
+            "description": "Lấy danh sách đơn hàng.\n\n**Filter options:**\n- `status`: PENDING, PROCESSING, COMPLETED, CANCELLED, REFUNDED, DISPUTED\n- `productId`: Filter theo sản phẩm\n- `fromDate`, `toDate`: Filter theo ngày (ISO format)"
           },
           "response": [
             {
               "name": "Success",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": \"order-uuid\",\n        \"orderNumber\": \"ORD-123456\",\n        \"status\": \"PENDING\",\n        \"subtotal\": 100000,\n        \"commission\": 5000,\n        \"total\": 100000,\n        \"buyerName\": \"Buyer Name\",\n        \"items\": [\n          {\n            \"id\": \"item-uuid\",\n            \"productId\": \"product-uuid\",\n            \"productTitle\": \"Product Name\",\n            \"variantId\": null,\n            \"variantName\": null,\n            \"quantity\": 2,\n            \"price\": 50000,\n            \"total\": 100000,\n            \"deliveredQuantity\": 0,\n            \"productType\": \"STANDARD\"\n          }\n        ],\n        \"createdAt\": \"2024-01-30T10:00:00.000Z\",\n        \"deliveredAt\": null\n      }\n    ],\n    \"pagination\": {\n      \"limit\": 20,\n      \"offset\": 0,\n      \"total\": 50,\n      \"hasMore\": true\n    }\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": \"order-uuid\",\n        \"orderNumber\": \"ORD-20240130-ABC123\",\n        \"status\": \"PENDING\",\n        \"subtotal\": 100000,\n        \"commission\": 5000,\n        \"total\": 100000,\n        \"buyerName\": \"Tran Van B\",\n        \"items\": [\n          {\n            \"id\": \"item-uuid\",\n            \"productId\": \"prod-uuid\",\n            \"productTitle\": \"Netflix Premium 1 tháng\",\n            \"variantId\": \"var-uuid\",\n            \"variantName\": \"1 tháng\",\n            \"quantity\": 2,\n            \"price\": 50000,\n            \"total\": 100000,\n            \"deliveredQuantity\": 0,\n            \"productType\": \"STANDARD\"\n          }\n        ],\n        \"createdAt\": \"2024-01-30T10:00:00.000Z\",\n        \"deliveredAt\": null\n      }\n    ],\n    \"pagination\": {\n      \"limit\": 20,\n      \"offset\": 0,\n      \"total\": 50,\n      \"hasMore\": true\n    }\n  }\n}"
             }
           ]
         },
@@ -503,13 +601,10 @@
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "orders", ":id"],
               "variable": [
-                {
-                  "key": "id",
-                  "value": "order-id-here"
-                }
+                { "key": "id", "value": "order-id-here" }
               ]
             },
-            "description": "Lấy chi tiết đơn hàng, bao gồm các items đã giao."
+            "description": "Lấy chi tiết đơn hàng, bao gồm:\n- Thông tin buyer\n- Danh sách items\n- Lịch sử giao hàng (deliveries)"
           }
         },
         {
@@ -519,27 +614,221 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"orderItemId\": \"order-item-id\",\n  \"accountData\": [\n    \"username1|password1|email1@gmail.com\",\n    \"username2|password2|email2@gmail.com\"\n  ]\n}"
+              "raw": "{\n  \"orderItemId\": \"order-item-id-here\",\n  \"accountData\": [\n    \"email1@gmail.com|password1|recovery_code1\",\n    \"email2@gmail.com|password2|recovery_code2\"\n  ]\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/orders/:id/deliver",
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "orders", ":id", "deliver"],
               "variable": [
-                {
-                  "key": "id",
-                  "value": "order-id-here"
-                }
+                { "key": "id", "value": "order-id-here" }
               ]
             },
-            "description": "Giao hàng thủ công cho đơn hàng.\n\n**Body:**\n- `orderItemId` (required): ID của order item cần giao\n- `accountData` (required): Mảng tài khoản cần giao"
+            "description": "Giao hàng thủ công cho đơn hàng.\n\n**Dùng khi:**\n- Sản phẩm có `autoDelivery: false`\n- Cần giao bổ sung cho đơn hàng\n\n**Body:**\n- `orderItemId`: ID của order item cần giao\n- `accountData`: Mảng tài khoản cần giao\n\n**Lưu ý:** Số lượng giao không được vượt quá số lượng còn lại của order item."
+          },
+          "response": [
+            {
+              "name": "Success - Partial",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"delivered\": 2,\n    \"remaining\": 3,\n    \"orderStatus\": \"PROCESSING\"\n  }\n}"
+            },
+            {
+              "name": "Success - Complete",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"delivered\": 2,\n    \"remaining\": 0,\n    \"orderStatus\": \"COMPLETED\"\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "🔔 Webhooks",
+      "description": "Webhook cho tự động hóa giao hàng và thông báo real-time",
+      "item": [
+        {
+          "name": "Get Available Events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/webhooks/events",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "webhooks", "events"]
+            },
+            "description": "Lấy danh sách các event có thể subscribe."
           },
           "response": [
             {
               "name": "Success",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"delivered\": 2,\n    \"remaining\": 0,\n    \"orderStatus\": \"COMPLETED\"\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    { \"event\": \"order.created\", \"description\": \"Đơn hàng mới được tạo\" },\n    { \"event\": \"order.paid\", \"description\": \"Đơn hàng đã thanh toán (trigger giao hàng)\" },\n    { \"event\": \"order.completed\", \"description\": \"Đơn hàng hoàn thành\" },\n    { \"event\": \"order.cancelled\", \"description\": \"Đơn hàng bị hủy\" },\n    { \"event\": \"order.disputed\", \"description\": \"Đơn hàng bị khiếu nại\" },\n    { \"event\": \"order.refunded\", \"description\": \"Đơn hàng được hoàn tiền\" },\n    { \"event\": \"inventory.low\", \"description\": \"Kho hàng sắp hết (< 10 items)\" },\n    { \"event\": \"inventory.empty\", \"description\": \"Kho hàng đã hết\" }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get My Webhooks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/webhooks",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "webhooks"]
+            },
+            "description": "Lấy danh sách webhooks đã đăng ký."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": \"webhook-uuid\",\n      \"url\": \"https://my-server.com/webhook\",\n      \"name\": \"Auto Delivery\",\n      \"events\": [\"order.paid\", \"inventory.low\"],\n      \"isActive\": true,\n      \"lastTriggeredAt\": \"2024-01-30T10:00:00.000Z\",\n      \"lastStatus\": 200,\n      \"failureCount\": 0,\n      \"totalCalls\": 50,\n      \"createdAt\": \"2024-01-15T10:00:00.000Z\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create Webhook",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://my-server.com/webhook/bachhoammo\",\n  \"name\": \"Auto Delivery Webhook\",\n  \"events\": [\"order.paid\", \"inventory.low\", \"inventory.empty\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/webhooks",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "webhooks"]
+            },
+            "description": "Tạo webhook mới.\n\n**Body:**\n- `url` (required): URL nhận webhook (phải là HTTPS)\n- `name` (optional): Tên webhook\n- `events` (required): Mảng events muốn subscribe\n\n**⚠️ LƯU Ý:** `secret` chỉ trả về MỘT LẦN khi tạo. Hãy lưu lại!"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": \"webhook-uuid\",\n    \"url\": \"https://my-server.com/webhook/bachhoammo\",\n    \"name\": \"Auto Delivery Webhook\",\n    \"events\": [\"order.paid\", \"inventory.low\", \"inventory.empty\"],\n    \"secret\": \"abc123secret456...\",\n    \"isActive\": true,\n    \"createdAt\": \"2024-01-30T10:00:00.000Z\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Update Webhook",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Webhook Name\",\n  \"events\": [\"order.paid\", \"order.completed\"],\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/webhooks/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "webhooks", ":id"],
+              "variable": [
+                { "key": "id", "value": "webhook-id-here" }
+              ]
+            },
+            "description": "Cập nhật webhook. Chỉ gửi các field muốn thay đổi."
+          }
+        },
+        {
+          "name": "Delete Webhook",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/webhooks/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "webhooks", ":id"],
+              "variable": [
+                { "key": "id", "value": "webhook-id-here" }
+              ]
+            },
+            "description": "Xóa webhook."
+          }
+        },
+        {
+          "name": "Regenerate Secret",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/webhooks/:id/regenerate-secret",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "webhooks", ":id", "regenerate-secret"],
+              "variable": [
+                { "key": "id", "value": "webhook-id-here" }
+              ]
+            },
+            "description": "Tạo lại secret mới. Secret cũ sẽ ngừng hoạt động ngay lập tức."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"secret\": \"new_secret_abc123...\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Test Webhook",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/webhooks/:id/test",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "webhooks", ":id", "test"],
+              "variable": [
+                { "key": "id", "value": "webhook-id-here" }
+              ]
+            },
+            "description": "Gửi test event đến webhook để kiểm tra kết nối."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"success\": true,\n    \"statusCode\": 200,\n    \"duration\": 150\n  }\n}"
+            },
+            {
+              "name": "Failed",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"success\": false,\n    \"statusCode\": 500,\n    \"error\": \"HTTP 500\",\n    \"duration\": 2500\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Webhook Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/webhooks/:id/logs?limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "webhooks", ":id", "logs"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0", "disabled": true }
+              ],
+              "variable": [
+                { "key": "id", "value": "webhook-id-here" }
+              ]
+            },
+            "description": "Xem lịch sử gọi webhook, bao gồm status và errors."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": \"log-uuid\",\n        \"event\": \"order.paid\",\n        \"statusCode\": 200,\n        \"status\": \"SUCCESS\",\n        \"duration\": 150,\n        \"attempts\": 1,\n        \"createdAt\": \"2024-01-30T10:00:00.000Z\",\n        \"deliveredAt\": \"2024-01-30T10:00:00.150Z\"\n      },\n      {\n        \"id\": \"log-uuid-2\",\n        \"event\": \"order.paid\",\n        \"statusCode\": 500,\n        \"status\": \"FAILED\",\n        \"error\": \"HTTP 500\",\n        \"duration\": 10000,\n        \"attempts\": 3,\n        \"createdAt\": \"2024-01-30T09:00:00.000Z\"\n      }\n    ],\n    \"pagination\": {\n      \"limit\": 50,\n      \"offset\": 0,\n      \"total\": 100,\n      \"hasMore\": true\n    }\n  }\n}"
             }
           ]
         }
