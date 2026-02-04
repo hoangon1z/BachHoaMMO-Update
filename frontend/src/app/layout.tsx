@@ -68,13 +68,13 @@ export const metadata: Metadata = {
   alternates: { canonical: SITE_URL },
   icons: {
     icon: [
-      { url: "/favicon.ico", sizes: "48x48" },
-      { url: "/images/favicon-96x96.png", type: "image/png", sizes: "96x96" },
-      { url: "/images/favicon-192x192.png", type: "image/png", sizes: "192x192" },
+      { url: "/images/favicon-for-public/favicon.ico", sizes: "48x48" },
+      { url: "/images/favicon-for-public/icon1.png", type: "image/png", sizes: "96x96" },
+      { url: "/images/favicon-for-public/icon1.png", type: "image/png", sizes: "192x192" },
     ],
-    shortcut: "/favicon.ico",
+    shortcut: "/images/favicon-for-public/favicon.ico",
     apple: [
-      { url: "/images/apple-touch-icon.png", sizes: "180x180" },
+      { url: "/images/favicon-for-public/apple-icon.png", sizes: "180x180" },
     ],
   },
 };

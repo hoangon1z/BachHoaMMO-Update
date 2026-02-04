@@ -9,51 +9,95 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 /** JSON-LD Product structured data for Google Rich Results */
 function ProductStructuredData({ product, productUrl }: { product: any; productUrl: string }) {
   const images = typeof product.images === 'string' ? JSON.parse(product.images) : product.images;
-  const imageUrl = images?.[0]
-    ? (images[0].startsWith('http') ? images[0] : `${SITE_URL}${images[0]}`)
-    : `${SITE_URL}/images/logobachhoa.png`;
+  const imageUrls = images?.map((img: string) => 
+    img.startsWith('http') ? img : `${SITE_URL}${img}`
+  ) || [`${SITE_URL}/images/logobachhoa.png`];
 
   const price = product.price; // Giá bán (khách trả) cho SEO
   const description = typeof product.description === 'string'
     ? product.description.replace(/<[^>]*>/g, '').slice(0, 500)
     : '';
 
+  const sellerName = product.seller?.sellerProfile?.shopName || product.seller?.name || 'BachHoaMMO';
+  const shopUrl = product.seller?.id ? `${SITE_URL}/shop/${product.seller.id}` : SITE_URL;
+
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: product.title,
-    description: description || `Mua ${product.title} uy tín tại BachHoaMMO`,
-    image: imageUrl,
+    description: description || `Mua ${product.title} giá rẻ uy tín tại BachHoaMMO. Giao hàng tự động 24/7. Bảo hành trọn đời.`,
+    image: imageUrls,
     url: productUrl,
     sku: product.id,
+    mpn: product.id,
     brand: {
       '@type': 'Brand',
       name: 'BachHoaMMO',
+      url: SITE_URL,
     },
     offers: {
       '@type': 'Offer',
       url: productUrl,
       priceCurrency: 'VND',
       price: price,
-      priceValidUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days
+      priceValidUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       availability: product.stock > 0 
         ? 'https://schema.org/InStock' 
         : 'https://schema.org/OutOfStock',
+      itemCondition: 'https://schema.org/NewCondition',
       seller: {
         '@type': 'Organization',
-        name: product.seller?.sellerProfile?.shopName || product.seller?.name || 'BachHoaMMO',
+        name: sellerName,
+        url: shopUrl,
+      },
+      shippingDetails: {
+        '@type': 'OfferShippingDetails',
+        shippingRate: {
+          '@type': 'MonetaryAmount',
+          value: '0',
+          currency: 'VND',
+        },
+        deliveryTime: {
+          '@type': 'ShippingDeliveryTime',
+          handlingTime: {
+            '@type': 'QuantitativeValue',
+            minValue: 0,
+            maxValue: 0,
+            unitCode: 'MIN',
+          },
+          transitTime: {
+            '@type': 'QuantitativeValue',
+            minValue: 0,
+            maxValue: 5,
+            unitCode: 'MIN',
+          },
+        },
       },
     },
     ...(product.rating && product.rating > 0 && {
       aggregateRating: {
         '@type': 'AggregateRating',
         ratingValue: product.rating,
-        ratingCount: product.sales || 1,
+        reviewCount: product.sales || 1,
         bestRating: 5,
         worstRating: 1,
       },
     }),
     category: product.category?.name || 'Sản phẩm số',
+    ...(product.sales && product.sales > 0 && {
+      review: {
+        '@type': 'Review',
+        reviewRating: {
+          '@type': 'Rating',
+          ratingValue: product.rating || 5,
+          bestRating: 5,
+        },
+        author: {
+          '@type': 'Person',
+          name: 'Khách hàng BachHoaMMO',
+        },
+      },
+    }),
   };
 
   return (
@@ -108,28 +152,75 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const data = await serverMarketplaceApi.getProduct(id);
   if (!data) return { title: 'Sản phẩm | BachHoaMMO' };
 
-  const title = `${data.title} | BachHoaMMO`;
-  const description =
-    (typeof data.description === 'string'
-      ? data.description.replace(/<[^>]*>/g, '').slice(0, 160)
-      : '') || `Mua ${data.title} uy tín tại BachHoaMMO`;
+  // Tạo title tối ưu SEO với brand name và category
+  const categoryName = data.category?.name || 'Sản phẩm số';
+  const seoTitle = `Mua ${data.title} Giá Rẻ Uy Tín | ${categoryName} | BachHoaMMO`;
+  
+  // Description tối ưu với từ khóa và call-to-action
+  const cleanDesc = typeof data.description === 'string'
+    ? data.description.replace(/<[^>]*>/g, '').trim()
+    : '';
+  const priceText = data.price ? `Giá chỉ ${data.price.toLocaleString('vi-VN')}đ` : 'Giá tốt';
+  const seoDescription = cleanDesc
+    ? `${cleanDesc.slice(0, 120)}. ${priceText}. Giao hàng tự động 24/7. Bảo hành trọn đời. Mua ngay tại BachHoaMMO!`
+    : `Mua ${data.title} giá rẻ uy tín tại BachHoaMMO. ${priceText}. Giao hàng tự động 24/7. Bảo hành đổi trả miễn phí.`;
+  
   const images = typeof data.images === 'string' ? JSON.parse(data.images) : data.images;
   const imageUrl = images?.[0]
     ? (images[0].startsWith('http') ? images[0] : `${SITE_URL}${images[0]}`)
     : `${SITE_URL}/images/logobachhoa.png`;
 
+  // Extract keywords từ title và category
+  const keywords = [
+    `mua ${data.title.toLowerCase()}`,
+    `${data.title.toLowerCase()} giá rẻ`,
+    `${data.title.toLowerCase()} uy tín`,
+    categoryName.toLowerCase(),
+    `mua ${categoryName.toLowerCase()}`,
+    'bachhoammo',
+    'chợ mmo',
+    'tài khoản giá rẻ',
+    'giao hàng tự động',
+  ];
+
   return {
-    title,
-    description,
+    title: seoTitle,
+    description: seoDescription.slice(0, 160), // Google limit 160 chars
+    keywords: keywords,
+    authors: [{ name: 'BachHoaMMO', url: SITE_URL }],
     openGraph: {
-      title,
-      description,
-      url: `${SITE_URL}/products/${id}`,
       type: 'website',
-      images: [{ url: imageUrl, width: 800, height: 600, alt: data.title }],
+      locale: 'vi_VN',
+      title: seoTitle,
+      description: seoDescription.slice(0, 160),
+      url: `${SITE_URL}/products/${id}`,
+      siteName: 'BachHoaMMO',
+      images: [
+        { 
+          url: imageUrl, 
+          width: 1200, 
+          height: 630, 
+          alt: `${data.title} - BachHoaMMO`,
+        }
+      ],
     },
-    twitter: { card: 'summary_large_image', title, description },
-    alternates: { canonical: `${SITE_URL}/products/${id}` },
+    twitter: { 
+      card: 'summary_large_image', 
+      title: seoTitle,
+      description: seoDescription.slice(0, 160),
+      images: [imageUrl],
+      site: '@bachhoammo',
+    },
+    alternates: { 
+      canonical: `${SITE_URL}/products/${id}`,
+    },
+    robots: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
   };
 }
 

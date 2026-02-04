@@ -2,10 +2,10 @@
 const nextConfig = {
   reactStrictMode: true,
 
-  // Redirect /favicon.ico to logo so Google Search shows custom icon
+  // Redirect /favicon.ico to favicon từ favicon-for-public
   async redirects() {
     return [
-      { source: '/favicon.ico', destination: '/images/bachhoa.png', permanent: true },
+      { source: '/favicon.ico', destination: '/images/favicon-for-public/favicon.ico', permanent: true },
     ];
   },
 
