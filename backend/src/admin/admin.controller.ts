@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Put, Delete, Param, Query, Body, UseGuards, Request, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { extname, join } from 'path';
+import sharp from 'sharp';
+import * as fs from 'fs';
 import { AdminService } from './admin.service';
 import { BlogService } from '../blog/blog.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -243,11 +245,54 @@ export class AdminController {
       return { success: false, message: 'No file uploaded' };
     }
 
-    return {
-      success: true,
-      url: `/uploads/banners/${file.filename}`,
-      filename: file.filename,
-    };
+    try {
+      // Auto resize banner image
+      const BANNER_MAX_WIDTH = 1200;
+      const BANNER_QUALITY = 85;
+
+      const originalPath = file.path;
+      const fileNameWithoutExt = file.filename.replace(/\.[^.]+$/, '');
+      const outputFileName = `${fileNameWithoutExt}-optimized.webp`;
+      const outputPath = join('./uploads/banners', outputFileName);
+
+      // Get image metadata
+      const metadata = await sharp(originalPath).metadata();
+
+      // Resize if width > max, keep aspect ratio
+      let sharpInstance = sharp(originalPath);
+
+      if (metadata.width && metadata.width > BANNER_MAX_WIDTH) {
+        sharpInstance = sharpInstance.resize(BANNER_MAX_WIDTH, null, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        });
+      }
+
+      // Convert to WebP for better compression
+      await sharpInstance
+        .webp({ quality: BANNER_QUALITY })
+        .toFile(outputPath);
+
+      // Delete original file
+      fs.unlinkSync(originalPath);
+
+      return {
+        success: true,
+        url: `/uploads/banners/${outputFileName}`,
+        filename: outputFileName,
+        originalWidth: metadata.width,
+        originalHeight: metadata.height,
+      };
+    } catch (error) {
+      console.error('Error processing banner image:', error);
+      // If processing fails, return original file
+      return {
+        success: true,
+        url: `/uploads/banners/${file.filename}`,
+        filename: file.filename,
+        warning: 'Image optimization failed, using original',
+      };
+    }
   }
 
   // ==================== BANNER MANAGEMENT ====================

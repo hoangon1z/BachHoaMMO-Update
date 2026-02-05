@@ -208,7 +208,7 @@ export default function SellerBlogsPage() {
       </div>
 
       {/* Posts List */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200">
         {isLoading ? (
           <div className="p-8 text-center">
             <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
@@ -300,10 +300,10 @@ export default function SellerBlogsPage() {
                     {actionMenuOpen === post.id && (
                       <>
                         <div
-                          className="fixed inset-0 z-10"
+                          className="fixed inset-0 z-40"
                           onClick={() => setActionMenuOpen(null)}
                         />
-                        <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                        <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
                           <Link
                             href={`/seller/blogs/${post.id}/edit`}
                             className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"

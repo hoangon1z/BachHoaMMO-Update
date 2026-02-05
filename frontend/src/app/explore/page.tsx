@@ -7,9 +7,9 @@ import { Footer } from '@/components/Footer';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { 
-  Search, 
-  Filter, 
+import {
+  Search,
+  Filter,
   SlidersHorizontal,
   Grid3X3,
   List,
@@ -153,7 +153,7 @@ function ExplorePageContent() {
   useEffect(() => {
     const q = searchParams.get('q') || '';
     const cat = searchParams.get('category') || '';
-    
+
     if (q !== searchQuery) {
       setSearchQuery(q);
     }
@@ -184,7 +184,7 @@ function ExplorePageContent() {
       const params = new URLSearchParams();
       params.append('page', pagination.page.toString());
       params.append('limit', pagination.limit.toString());
-      
+
       if (searchQuery) params.append('search', searchQuery);
       if (selectedCategory) params.append('categoryId', selectedCategory);
       if (selectedPriceRange) {
@@ -202,7 +202,7 @@ function ExplorePageContent() {
         setPagination(prev => ({
           ...prev,
           total: data.total || 0,
-          page: data.page || 1,
+          // Keep current page from state, don't use server response
           totalPages: data.totalPages || 1
         }));
       }
@@ -312,25 +312,23 @@ function ExplorePageContent() {
                     {/* All categories button */}
                     <button
                       onClick={() => setSelectedCategory('')}
-                      className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                        !selectedCategory ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-700'
-                      }`}
+                      className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${!selectedCategory ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-700'
+                        }`}
                     >
                       <Package className={`w-4 h-4 ${!selectedCategory ? 'text-blue-500' : 'text-gray-400'}`} />
                       Tất cả danh mục
                     </button>
-                    
+
                     {/* Parent categories with children */}
                     {categories.map((cat) => (
                       <div key={cat.id} className="space-y-0.5">
                         {/* Parent category */}
                         <button
                           onClick={() => setSelectedCategory(cat.id)}
-                          className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-between ${
-                            selectedCategory === cat.id 
-                              ? 'bg-blue-50 text-blue-700 font-medium' 
+                          className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-between ${selectedCategory === cat.id
+                              ? 'bg-blue-50 text-blue-700 font-medium'
                               : 'hover:bg-gray-50 text-gray-700'
-                          }`}
+                            }`}
                         >
                           <span className="flex items-center gap-2">
                             <span className={selectedCategory === cat.id ? 'text-blue-500' : 'text-gray-400'}>
@@ -344,7 +342,7 @@ function ExplorePageContent() {
                             </span>
                           )}
                         </button>
-                        
+
                         {/* Child categories */}
                         {cat.children && cat.children.length > 0 && (
                           <div className="ml-4 pl-3 border-l-2 border-gray-100 space-y-0.5">
@@ -352,11 +350,10 @@ function ExplorePageContent() {
                               <button
                                 key={child.id}
                                 onClick={() => setSelectedCategory(child.id)}
-                                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                                  selectedCategory === child.id 
-                                    ? 'bg-blue-50 text-blue-700 font-medium' 
+                                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 ${selectedCategory === child.id
+                                    ? 'bg-blue-50 text-blue-700 font-medium'
                                     : 'hover:bg-gray-50 text-gray-600'
-                                }`}
+                                  }`}
                               >
                                 <span className={selectedCategory === child.id ? 'text-blue-500' : 'text-gray-400'}>
                                   {getCategoryIcon(child.slug)}
@@ -380,9 +377,8 @@ function ExplorePageContent() {
                   <div className="space-y-2">
                     <button
                       onClick={() => setSelectedPriceRange(null)}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                        !selectedPriceRange ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50'
-                      }`}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${!selectedPriceRange ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50'
+                        }`}
                     >
                       Tất cả
                     </button>
@@ -390,11 +386,10 @@ function ExplorePageContent() {
                       <button
                         key={idx}
                         onClick={() => setSelectedPriceRange(range)}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                          selectedPriceRange?.min === range.min && selectedPriceRange?.max === range.max
+                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${selectedPriceRange?.min === range.min && selectedPriceRange?.max === range.max
                             ? 'bg-blue-50 text-blue-700 font-medium'
                             : 'hover:bg-gray-50'
-                        }`}
+                          }`}
                       >
                         {range.label}
                       </button>
@@ -411,9 +406,8 @@ function ExplorePageContent() {
                   <div className="space-y-2">
                     <button
                       onClick={() => setMinRating(null)}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                        !minRating ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50'
-                      }`}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${!minRating ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50'
+                        }`}
                     >
                       Tất cả
                     </button>
@@ -421,9 +415,8 @@ function ExplorePageContent() {
                       <button
                         key={rating.value}
                         onClick={() => setMinRating(rating.value)}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                          minRating === rating.value ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50'
-                        }`}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 ${minRating === rating.value ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50'
+                          }`}
                       >
                         <div className="flex items-center gap-0.5">
                           {[...Array(5)].map((_, i) => (
@@ -514,7 +507,7 @@ function ExplorePageContent() {
                 <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                   {products.map((product) => {
                     let images: string[] = [];
-                    try { images = JSON.parse(product.images); } catch {}
+                    try { images = JSON.parse(product.images); } catch { }
                     // Có price range? (nhiều phân loại với giá khác nhau)
                     const hasPriceRange = product.minPrice && product.maxPrice && product.minPrice !== product.maxPrice;
                     // Không hiển thị discount khi có price range
@@ -576,7 +569,7 @@ function ExplorePageContent() {
                 <div className="space-y-4">
                   {products.map((product) => {
                     let images: string[] = [];
-                    try { images = JSON.parse(product.images); } catch {}
+                    try { images = JSON.parse(product.images); } catch { }
                     // Có price range? (nhiều phân loại với giá khác nhau)
                     const hasPriceRange = product.minPrice && product.maxPrice && product.minPrice !== product.maxPrice;
 
@@ -635,32 +628,57 @@ function ExplorePageContent() {
                   <Button
                     variant="outline"
                     disabled={pagination.page <= 1}
-                    onClick={() => setPagination(p => ({ ...p, page: p.page - 1 }))}
+                    onClick={() => {
+                      const newPage = pagination.page - 1;
+                      setPagination(p => ({ ...p, page: newPage }));
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
                   >
                     Trước
                   </Button>
                   <div className="flex items-center gap-1">
-                    {[...Array(Math.min(5, pagination.totalPages))].map((_, i) => {
-                      const page = i + 1;
-                      return (
+                    {(() => {
+                      // Calculate which pages to show
+                      const totalPages = pagination.totalPages;
+                      const currentPage = pagination.page;
+                      let startPage = Math.max(1, currentPage - 2);
+                      let endPage = Math.min(totalPages, startPage + 4);
+
+                      // Adjust if near the end
+                      if (endPage - startPage < 4) {
+                        startPage = Math.max(1, endPage - 4);
+                      }
+
+                      const pages = [];
+                      for (let i = startPage; i <= endPage; i++) {
+                        pages.push(i);
+                      }
+
+                      return pages.map((page) => (
                         <button
                           key={page}
-                          onClick={() => setPagination(p => ({ ...p, page }))}
-                          className={`w-10 h-10 rounded-lg font-medium ${
-                            pagination.page === page
+                          onClick={() => {
+                            setPagination(p => ({ ...p, page }));
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          className={`w-10 h-10 rounded-lg font-medium ${pagination.page === page
                               ? 'bg-blue-600 text-white'
                               : 'hover:bg-gray-100'
-                          }`}
+                            }`}
                         >
                           {page}
                         </button>
-                      );
-                    })}
+                      ));
+                    })()}
                   </div>
                   <Button
                     variant="outline"
                     disabled={pagination.page >= pagination.totalPages}
-                    onClick={() => setPagination(p => ({ ...p, page: p.page + 1 }))}
+                    onClick={() => {
+                      const newPage = pagination.page + 1;
+                      setPagination(p => ({ ...p, page: newPage }));
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
                   >
                     Sau
                   </Button>

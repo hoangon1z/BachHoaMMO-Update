@@ -9,11 +9,11 @@ import { Footer } from '@/components/Footer';
 import { useAuthStore } from '@/store/authStore';
 import { useCartStore } from '@/store/cartStore';
 import { Button } from '@/components/ui/button';
-import { 
-  Store, 
-  Star, 
-  Package, 
-  Clock, 
+import {
+  Store,
+  Star,
+  Package,
+  Clock,
   MessageCircle,
   Grid3X3,
   List,
@@ -90,7 +90,7 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
   const router = useRouter();
   const { user, logout } = useAuthStore();
   const { addItem } = useCartStore();
-  
+
   const [products] = useState<Product[]>(initialProducts);
   const [sortBy, setSortBy] = useState('newest');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -168,16 +168,16 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
 
         {/* Shop Profile Card */}
         <div className="container mx-auto px-3 sm:px-4 lg:px-8 -mt-12 sm:-mt-16 md:-mt-20 relative z-10">
-          <div className="bg-white rounded-xl sm:rounded-2xl shadow-xl border border-gray-100 mb-6 sm:mb-8 overflow-hidden">
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-xl border border-gray-100 mb-6 sm:mb-8">
             {/* Profile Header */}
             <div className="p-3 sm:p-4 md:p-6">
               <div className="flex flex-col items-center gap-3 sm:gap-4">
                 {/* Avatar - centered on mobile */}
-                <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-xl overflow-hidden border-4 border-white shadow-lg flex-shrink-0 -mt-10 sm:-mt-12 md:-mt-16 bg-white">
+                <div className="relative z-20 w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-xl overflow-hidden border-4 border-white shadow-lg flex-shrink-0 -mt-10 sm:-mt-12 md:-mt-16 bg-white">
                   {shopLogoUrl ? (
-                    <img 
-                      src={shopLogoUrl} 
-                      alt={shop.name} 
+                    <img
+                      src={shopLogoUrl}
+                      alt={shop.name}
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -199,7 +199,7 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
                       </span>
                     )}
                   </div>
-                  
+
                   {/* Stats Row - Inline */}
                   <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 text-xs sm:text-sm mb-2">
                     <span className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 bg-yellow-50 rounded-full">
@@ -220,7 +220,7 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
 
                 {/* Action Buttons - Full width on mobile */}
                 <div className="flex items-center justify-center gap-2 w-full max-w-sm">
-                  <Button 
+                  <Button
                     className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm h-9 sm:h-10"
                     onClick={handleStartChat}
                   >
@@ -228,7 +228,7 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
                     <span className="hidden xs:inline">Chat với Shop</span>
                     <span className="xs:hidden">Chat</span>
                   </Button>
-                  <Button 
+                  <Button
                     variant="outline"
                     onClick={() => setIsFollowing(!isFollowing)}
                     className={`flex-1 text-xs sm:text-sm h-9 sm:h-10 ${isFollowing ? "border-red-200 text-red-500 hover:bg-red-50" : ""}`}
@@ -312,32 +312,32 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
                     <span className="font-semibold text-gray-700">{products.length}</span>/<span className="font-semibold text-gray-700">{pagination.total}</span> sản phẩm
                   </p>
                 </div>
-                
+
                 {/* View Mode Toggle - Always visible */}
                 <div className="flex rounded-lg sm:rounded-xl border-2 border-gray-200 overflow-hidden flex-shrink-0">
                   <button
                     onClick={() => setViewMode('grid')}
-                    className={`p-2 sm:p-2.5 transition-all ${viewMode === 'grid' 
-                      ? 'bg-blue-600 text-white' 
+                    className={`p-2 sm:p-2.5 transition-all ${viewMode === 'grid'
+                      ? 'bg-blue-600 text-white'
                       : 'bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-                    }`}
+                      }`}
                     title="Xem dạng lưới"
                   >
                     <Grid3X3 className="w-4 h-4 sm:w-5 sm:h-5" />
                   </button>
                   <button
                     onClick={() => setViewMode('list')}
-                    className={`p-2 sm:p-2.5 transition-all ${viewMode === 'list' 
-                      ? 'bg-blue-600 text-white' 
+                    className={`p-2 sm:p-2.5 transition-all ${viewMode === 'list'
+                      ? 'bg-blue-600 text-white'
                       : 'bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-                    }`}
+                      }`}
                     title="Xem dạng danh sách"
                   >
                     <List className="w-4 h-4 sm:w-5 sm:h-5" />
                   </button>
                 </div>
               </div>
-              
+
               {/* Sort Dropdown - Full width on mobile */}
               <div className="relative">
                 <select
@@ -364,13 +364,13 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
                 const hasPriceRange = product.minPrice && product.maxPrice && product.minPrice !== product.maxPrice;
                 // Không hiển thị discount khi có price range
                 const discount = !hasPriceRange && product.originalPrice && product.originalPrice > product.price
-                  ? Math.round((1 - product.price / product.originalPrice) * 100) 
+                  ? Math.round((1 - product.price / product.originalPrice) * 100)
                   : 0;
                 const isHovered = hoveredProduct === product.id;
 
                 return (
-                  <Link 
-                    key={product.id} 
+                  <Link
+                    key={product.id}
                     href={`/products/${product.id}`}
                     className="group"
                     onMouseEnter={() => setHoveredProduct(product.id)}
@@ -390,7 +390,7 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
                             <Package className="w-10 h-10 sm:w-16 sm:h-16 text-gray-300" />
                           </div>
                         )}
-                        
+
                         {/* Discount Badge */}
                         {discount > 0 && (
                           <div className="absolute top-2 left-2 sm:top-3 sm:left-3 px-1.5 sm:px-2.5 py-0.5 sm:py-1 bg-red-500 text-white text-[10px] sm:text-xs font-bold rounded-md sm:rounded-lg shadow-lg">
@@ -399,10 +399,9 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
                         )}
 
                         {/* Quick Actions - Desktop only */}
-                        <div className={`hidden sm:block absolute inset-x-0 bottom-0 p-3 bg-black/60 transition-all duration-300 ${
-                          isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
-                        }`}>
-                          <button 
+                        <div className={`hidden sm:block absolute inset-x-0 bottom-0 p-3 bg-black/60 transition-all duration-300 ${isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+                          }`}>
+                          <button
                             onClick={(e) => handleAddToCart(e, product)}
                             className="w-full py-2.5 bg-white hover:bg-blue-600 hover:text-white text-gray-900 text-sm font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg"
                           >
@@ -412,7 +411,7 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
                         </div>
 
                         {/* Wishlist Button */}
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -473,7 +472,7 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
                 const hasPriceRange = product.minPrice && product.maxPrice && product.minPrice !== product.maxPrice;
                 // Không hiển thị discount khi có price range
                 const discount = !hasPriceRange && product.originalPrice && product.originalPrice > product.price
-                  ? Math.round((1 - product.price / product.originalPrice) * 100) 
+                  ? Math.round((1 - product.price / product.originalPrice) * 100)
                   : 0;
 
                 return (
@@ -564,7 +563,7 @@ export default function ShopPageClient({ shop, initialProducts, initialPaginatio
               <p className="text-gray-500 max-w-md mx-auto">
                 Shop này hiện chưa có sản phẩm nào. Hãy quay lại sau nhé!
               </p>
-              <Button 
+              <Button
                 onClick={() => router.push('/explore')}
                 className="mt-6 bg-[#2563eb] hover:bg-blue-700"
               >

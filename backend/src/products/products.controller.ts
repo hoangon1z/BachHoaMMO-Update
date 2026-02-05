@@ -10,6 +10,8 @@ export class ProductsController {
   @Get()
   @Public()
   findAll(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Query('skip') skip?: string,
     @Query('take') take?: string,
     @Query('categoryId') categoryId?: string,
@@ -18,9 +20,24 @@ export class ProductsController {
     @Query('maxPrice') maxPrice?: string,
     @Query('sortBy') sortBy?: string,
   ) {
+    // Support both page/limit and skip/take
+    // Priority: page/limit over skip/take
+    let finalSkip: number | undefined;
+    let finalTake: number | undefined;
+
+    if (page) {
+      const pageNum = parseInt(page) || 1;
+      const limitNum = limit ? parseInt(limit) : 20;
+      finalSkip = (pageNum - 1) * limitNum;
+      finalTake = limitNum;
+    } else {
+      finalSkip = skip ? parseInt(skip) : undefined;
+      finalTake = take ? parseInt(take) : undefined;
+    }
+
     return this.productsService.findAll({
-      skip: skip ? parseInt(skip) : undefined,
-      take: take ? parseInt(take) : undefined,
+      skip: finalSkip,
+      take: finalTake,
       categoryId,
       search,
       minPrice: minPrice ? parseFloat(minPrice) : undefined,

@@ -123,7 +123,7 @@ export function Header({ user, onLogout, onSearch }: HeaderProps) {
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2.5 flex-shrink-0 group">
               <img 
-                src="/images/logobachhoa.png" 
+                src="/images/logotetapp.png" 
                 alt="BachHoaMMO Logo" 
                 className="w-11 h-11 lg:w-12 lg:h-12 rounded-lg shadow-md group-hover:shadow-lg transition-shadow object-contain"
               />

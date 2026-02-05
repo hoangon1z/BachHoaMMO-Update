@@ -41,94 +41,102 @@ interface HeroSectionProps {
 export function HeroSection({ banners }: HeroSectionProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
 
-  useEffect(() => {
-    if (!banners || banners.length === 0) return;
-    const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % banners.length);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [banners]);
-
   const hasBanners = banners && banners.length > 0;
+
+  // Fixed Tet video banner - shows first
+  const tetVideoBanner = {
+    id: 'tet-video-2025',
+    title: 'Chúc Mừng Năm Mới 2025',
+    isVideo: true,
+    videoSrc: '/images/videotet/Red and Gold Modern Happy Chinese New Year Video.mp4',
+    link: '/explore',
+  };
+
+  // Combine Tet video with regular banners
+  const allBanners = hasBanners ? [tetVideoBanner, ...banners] : [tetVideoBanner];
+  const totalBanners = allBanners.length;
+
+  useEffect(() => {
+    if (totalBanners <= 1) return;
+    const timer = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % totalBanners);
+    }, 6000); // 6 seconds to give video more time
+    return () => clearInterval(timer);
+  }, [totalBanners]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 lg:gap-4">
       {/* Main Banner - Takes 8 columns on desktop */}
       <div className="lg:col-span-8 relative group">
         <div className="relative h-[200px] sm:h-[280px] lg:h-full lg:min-h-[320px] rounded-2xl overflow-hidden">
-          {hasBanners ? (
-            <>
-              {banners.map((banner, index) => (
-                <Link
-                  key={banner.id}
-                  href={banner.link}
-                  aria-label={`Banner: ${banner.title}`}
-                  className={`absolute inset-0 transition-all duration-700 ${
-                    index === currentSlide ? 'opacity-100 z-10' : 'opacity-0 z-0'
-                  }`}
-                  style={{ pointerEvents: index === currentSlide ? 'auto' : 'none' }}
-                >
-                  <div className="w-full h-full">
-                    {banner.image && (
-                      <img 
-                        src={getImageUrl(banner.image)} 
-                        alt={banner.title || 'Banner khuyến mãi'}
-                        className="absolute inset-0 w-full h-full object-cover"
-                        fetchPriority={index === 0 ? 'high' : 'auto'}
-                        loading={index === 0 ? 'eager' : 'lazy'}
-                        decoding="async"
-                      />
-                    )}
-                  </div>
-                </Link>
-              ))}
-
-              {/* Slide indicators */}
-              {banners.length > 1 && (
-                <div className="absolute bottom-5 right-5 sm:right-8 flex gap-1.5 z-20" role="tablist" aria-label="Chọn banner">
-                  {banners.map((_, index) => (
-                    <button
-                      key={index}
-                      role="tab"
-                      aria-label={`Xem banner ${index + 1}`}
-                      aria-selected={index === currentSlide}
-                      onClick={(e) => { e.preventDefault(); setCurrentSlide(index); }}
-                      className={`h-2.5 min-w-[10px] rounded-full transition-all ${
-                        index === currentSlide ? 'w-6 bg-white' : 'w-2.5 bg-white/40 hover:bg-white/60'
-                      }`}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Navigation */}
-              {banners.length > 1 && (
-                <>
-                  <button
-                    aria-label="Banner trước"
-                    onClick={(e) => { e.preventDefault(); setCurrentSlide((prev) => (prev - 1 + banners.length) % banners.length); }}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-black/30 backdrop-blur-sm hover:bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-20"
-                  >
-                    <ChevronLeft className="w-5 h-5 text-white" />
-                  </button>
-                  <button
-                    aria-label="Banner tiếp theo"
-                    onClick={(e) => { e.preventDefault(); setCurrentSlide((prev) => (prev + 1) % banners.length); }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-black/30 backdrop-blur-sm hover:bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-20"
-                  >
-                    <ChevronRight className="w-5 h-5 text-white" />
-                  </button>
-                </>
-              )}
-            </>
-          ) : (
-            <div className="w-full h-full bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 flex items-center justify-center">
-              <div className="text-center text-white p-6">
-                <Sparkles className="w-12 h-12 mx-auto mb-4 opacity-80" />
-                <h2 className="text-2xl sm:text-3xl font-bold mb-2">BachHoaMMO</h2>
-                <p className="text-white/80">Chợ tài khoản số uy tín #1 Việt Nam</p>
+          {allBanners.map((banner: any, index: number) => (
+            <Link
+              key={banner.id}
+              href={banner.link}
+              aria-label={`Banner: ${banner.title}`}
+              className={`absolute inset-0 transition-all duration-700 ${index === currentSlide ? 'opacity-100 z-10' : 'opacity-0 z-0'
+                }`}
+              style={{ pointerEvents: index === currentSlide ? 'auto' : 'none' }}
+            >
+              <div className="w-full h-full">
+                {banner.isVideo ? (
+                  <video
+                    src={banner.videoSrc}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                ) : banner.image && (
+                  <img
+                    src={getImageUrl(banner.image)}
+                    alt={banner.title || 'Banner khuyến mãi'}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    fetchPriority={index === 0 ? 'high' : 'auto'}
+                    loading={index === 0 ? 'eager' : 'lazy'}
+                    decoding="async"
+                  />
+                )}
               </div>
+            </Link>
+          ))}
+
+          {/* Slide indicators */}
+          {totalBanners > 1 && (
+            <div className="absolute bottom-5 right-5 sm:right-8 flex gap-1.5 z-20" role="tablist" aria-label="Chọn banner">
+              {allBanners.map((_, index) => (
+                <button
+                  key={index}
+                  role="tab"
+                  aria-label={`Xem banner ${index + 1}`}
+                  aria-selected={index === currentSlide}
+                  onClick={(e) => { e.preventDefault(); setCurrentSlide(index); }}
+                  className={`h-2.5 min-w-[10px] rounded-full transition-all ${index === currentSlide ? 'w-6 bg-white' : 'w-2.5 bg-white/40 hover:bg-white/60'
+                    }`}
+                />
+              ))}
             </div>
+          )}
+
+          {/* Navigation */}
+          {totalBanners > 1 && (
+            <>
+              <button
+                aria-label="Banner trước"
+                onClick={(e) => { e.preventDefault(); setCurrentSlide((prev) => (prev - 1 + totalBanners) % totalBanners); }}
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-black/30 backdrop-blur-sm hover:bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-20"
+              >
+                <ChevronLeft className="w-5 h-5 text-white" />
+              </button>
+              <button
+                aria-label="Banner tiếp theo"
+                onClick={(e) => { e.preventDefault(); setCurrentSlide((prev) => (prev + 1) % totalBanners); }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-black/30 backdrop-blur-sm hover:bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-20"
+              >
+                <ChevronRight className="w-5 h-5 text-white" />
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -190,9 +198,9 @@ export function HeroSection({ banners }: HeroSectionProps) {
           </div>
           <span className="sm:hidden text-xs font-medium text-gray-700">Bảo hành 100%</span>
         </div>
-        
+
         <div className="w-px h-8 bg-gray-200 flex-shrink-0" />
-        
+
         <div className="flex items-center gap-2 flex-shrink-0">
           <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
             <Zap className="w-4 h-4 text-green-600" />
@@ -203,9 +211,9 @@ export function HeroSection({ banners }: HeroSectionProps) {
           </div>
           <span className="sm:hidden text-xs font-medium text-gray-700">Giao tự động</span>
         </div>
-        
+
         <div className="w-px h-8 bg-gray-200 flex-shrink-0" />
-        
+
         <div className="flex items-center gap-2 flex-shrink-0">
           <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
             <HeadphonesIcon className="w-4 h-4 text-purple-600" />
@@ -216,9 +224,9 @@ export function HeroSection({ banners }: HeroSectionProps) {
           </div>
           <span className="sm:hidden text-xs font-medium text-gray-700">Hỗ trợ 24/7</span>
         </div>
-        
+
         <div className="w-px h-8 bg-gray-200 flex-shrink-0 hidden sm:block" />
-        
+
         <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
           <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
             <Sparkles className="w-4 h-4 text-orange-600" />

@@ -67,9 +67,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = SITE_URL;
 
   // Fetch dynamic data in parallel
-  const [products, categories, shops, blogPosts] = await Promise.all([
+  const [products, shops, blogPosts] = await Promise.all([
     getAllProducts(),
-    getAllCategories(),
     getAllShops(),
     getAllBlogPosts(),
   ]);
@@ -96,13 +95,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.85, // High priority for product pages
   }));
 
-  // Category pages (for explore with category filter)
-  const categoryRoutes: MetadataRoute.Sitemap = categories.map((category: any) => ({
-    url: `${baseUrl}/explore?category=${category.id}`,
-    lastModified: new Date(),
-    changeFrequency: 'daily' as const,
-    priority: 0.8,
-  }));
+  // Category pages - DISABLED: Query params URLs can cause duplicate content issues
+  // Google prefers clean URLs. Consider creating /explore/[category-slug] pages instead.
+  // const categoryRoutes: MetadataRoute.Sitemap = categories.map((category: any) => ({
+  //   url: `${baseUrl}/explore?category=${category.id}`,
+  //   lastModified: new Date(),
+  //   changeFrequency: 'daily' as const,
+  //   priority: 0.8,
+  // }));
 
   // Shop pages
   const shopRoutes: MetadataRoute.Sitemap = shops.map((shop: any) => ({
@@ -125,7 +125,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [
     ...staticRoutes,
     ...productRoutes,
-    ...categoryRoutes,
+    // ...categoryRoutes, // Disabled - query params URLs cause duplicate content issues
     ...shopRoutes,
     ...blogRoutes,
   ];
