@@ -52,7 +52,7 @@ export class TelegramService implements OnModuleInit {
   private orderBotLastUpdateId = 0;
   private chatBotLastUpdateId = 0;
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async onModuleInit() {
     // Start polling for both bots
@@ -145,7 +145,7 @@ export class TelegramService implements OnModuleInit {
     this.logger.log(`[${botName}] Received message from ${username} (${chatId}): ${text}`);
 
     // Choose which send method to use based on bot type
-    const sendFn = botType === 'chat' 
+    const sendFn = botType === 'chat'
       ? (msg: TelegramMessage) => this.sendChatBotMessage(msg)
       : (msg: TelegramMessage) => this.sendMessage(msg);
 
@@ -161,7 +161,7 @@ export class TelegramService implements OnModuleInit {
         const welcomeMsg = botType === 'chat'
           ? `🎉 Chào mừng ${username} đến với <b>BachHoaMMO Chat Bot</b>!\n\n💬 Bot này sẽ gửi thông báo khi bạn có <b>tin nhắn mới</b> từ khách hàng.\n\nĐể nhận thông báo, vui lòng truy cập trang Cài đặt Shop trên website và nhấn "Kết nối Telegram Chat".`
           : `🎉 Chào mừng ${username} đến với <b>BachHoaMMO Order Bot</b>!\n\n🛒 Bot này sẽ gửi thông báo khi bạn có:\n• Đơn hàng mới\n• Khiếu nại từ khách hàng\n• Thông báo từ Admin\n\nĐể nhận thông báo, vui lòng truy cập trang Cài đặt Shop trên website và nhấn "Kết nối Telegram".`;
-        
+
         await sendFn({
           chat_id: chatId,
           text: welcomeMsg,
@@ -172,7 +172,7 @@ export class TelegramService implements OnModuleInit {
       const helpMsg = botType === 'chat'
         ? `📚 <b>Hướng dẫn sử dụng BachHoaMMO Chat Bot</b>\n\n💬 Bot này chuyên gửi <b>thông báo tin nhắn mới</b>.\n\n🔗 <b>Kết nối tài khoản:</b>\n1. Truy cập website BachHoaMMO\n2. Vào Seller Dashboard > Cài đặt\n3. Nhấn "Kết nối Telegram Chat"\n\n❓ Có thắc mắc? Liên hệ Admin qua website.`
         : `📚 <b>Hướng dẫn sử dụng BachHoaMMO Order Bot</b>\n\n🔗 <b>Kết nối tài khoản:</b>\n1. Truy cập website BachHoaMMO\n2. Vào Seller Dashboard > Cài đặt\n3. Nhấn "Kết nối Telegram"\n4. Nhấn vào link được cung cấp\n\n📬 <b>Thông báo bạn sẽ nhận:</b>\n• Đơn hàng mới\n• Khiếu nại từ khách hàng\n• Thông báo từ Admin\n\n❓ Có thắc mắc? Liên hệ Admin qua website.`;
-      
+
       await sendFn({
         chat_id: chatId,
         text: helpMsg,
@@ -207,7 +207,7 @@ export class TelegramService implements OnModuleInit {
    */
   private async handleLinkingCode(chatId: string, code: string, username: string, botType: 'order' | 'chat' = 'order') {
     // Choose which send method to use based on bot type
-    const sendFn = botType === 'chat' 
+    const sendFn = botType === 'chat'
       ? (msg: TelegramMessage) => this.sendChatBotMessage(msg)
       : (msg: TelegramMessage) => this.sendMessage(msg);
 
@@ -256,9 +256,10 @@ export class TelegramService implements OnModuleInit {
         return;
       }
 
-      // Check if this Telegram is already linked to another account
+      // Check if this Telegram is already linked to another account for this specific bot
+      const chatIdField = botType === 'chat' ? 'telegramChatBotChatId' : 'telegramChatId';
       const existingUser = await this.prisma.user.findFirst({
-        where: { telegramChatId: chatId, NOT: { id: userId } },
+        where: { [chatIdField]: chatId, NOT: { id: userId } },
       });
 
       if (existingUser) {
@@ -269,14 +270,24 @@ export class TelegramService implements OnModuleInit {
         return;
       }
 
-      // Link Telegram to user
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          telegramChatId: chatId,
-          telegramLinkedAt: new Date(),
-        },
-      });
+      // Link Telegram to user - save to the appropriate field based on bot type
+      if (botType === 'chat') {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: {
+            telegramChatBotChatId: chatId,
+            telegramChatBotLinkedAt: new Date(),
+          },
+        });
+      } else {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: {
+            telegramChatId: chatId,
+            telegramLinkedAt: new Date(),
+          },
+        });
+      }
 
       // Different success messages for each bot
       const successMsg = botType === 'chat'
@@ -384,7 +395,7 @@ export class TelegramService implements OnModuleInit {
     items: { title: string; quantity: number }[];
   }) {
     const itemsList = order.items.map(i => `• ${i.title} x${i.quantity}`).join('\n');
-    
+
     const message = `🛒 <b>ĐƠN HÀNG MỚI!</b>\n\n` +
       `📋 Mã đơn: <code>${order.orderNumber}</code>\n` +
       `👤 Khách hàng: ${order.buyerName}\n` +
@@ -435,15 +446,15 @@ export class TelegramService implements OnModuleInit {
     try {
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
-        select: { telegramChatId: true },
+        select: { telegramChatBotChatId: true },
       });
 
-      if (!user?.telegramChatId) {
+      if (!user?.telegramChatBotChatId) {
         return false;
       }
 
       return this.sendChatBotMessage({
-        chat_id: user.telegramChatId,
+        chat_id: user.telegramChatBotChatId,
         text,
         parse_mode: parseMode,
       });
@@ -462,7 +473,7 @@ export class TelegramService implements OnModuleInit {
     reason?: string;
   }) {
     let message: string;
-    
+
     if (withdrawal.status === 'APPROVED') {
       message = `✅ <b>RÚT TIỀN THÀNH CÔNG</b>\n\n` +
         `💰 Số tiền: <b>${withdrawal.amount.toLocaleString('vi-VN')}đ</b>\n` +
@@ -554,29 +565,55 @@ export class TelegramService implements OnModuleInit {
 
   /**
    * Unlink Telegram from user
+   * @param botType - 'order' to unlink order bot only, 'chat' to unlink chat bot only, undefined to unlink both
    */
-  async unlinkTelegram(userId: string): Promise<boolean> {
+  async unlinkTelegram(userId: string, botType?: 'order' | 'chat'): Promise<boolean> {
     try {
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
-        select: { telegramChatId: true },
+        select: { telegramChatId: true, telegramChatBotChatId: true },
       });
 
-      if (user?.telegramChatId) {
-        // Notify user before unlinking
-        await this.sendMessage({
-          chat_id: user.telegramChatId,
-          text: '🔓 <b>Đã hủy liên kết</b>\n\nTài khoản Telegram của bạn đã được hủy liên kết khỏi BachHoaMMO. Bạn sẽ không nhận được thông báo nữa.',
-          parse_mode: 'HTML',
-        });
+      // Notify user before unlinking based on botType
+      if (botType === 'order' || !botType) {
+        if (user?.telegramChatId) {
+          await this.sendMessage({
+            chat_id: user.telegramChatId,
+            text: '🔓 <b>Đã hủy liên kết Bot Đơn hàng</b>\n\nBạn sẽ không nhận được thông báo đơn hàng, khiếu nại nữa.',
+            parse_mode: 'HTML',
+          });
+        }
+      }
+
+      if (botType === 'chat' || !botType) {
+        if (user?.telegramChatBotChatId) {
+          await this.sendChatBotMessage({
+            chat_id: user.telegramChatBotChatId,
+            text: '🔓 <b>Đã hủy liên kết Bot Tin nhắn</b>\n\nBạn sẽ không nhận được thông báo tin nhắn mới nữa.',
+            parse_mode: 'HTML',
+          });
+        }
+      }
+
+      // Update database based on botType
+      const updateData: any = {};
+      if (botType === 'order') {
+        updateData.telegramChatId = null;
+        updateData.telegramLinkedAt = null;
+      } else if (botType === 'chat') {
+        updateData.telegramChatBotChatId = null;
+        updateData.telegramChatBotLinkedAt = null;
+      } else {
+        // Unlink both
+        updateData.telegramChatId = null;
+        updateData.telegramLinkedAt = null;
+        updateData.telegramChatBotChatId = null;
+        updateData.telegramChatBotLinkedAt = null;
       }
 
       await this.prisma.user.update({
         where: { id: userId },
-        data: {
-          telegramChatId: null,
-          telegramLinkedAt: null,
-        },
+        data: updateData,
       });
 
       return true;

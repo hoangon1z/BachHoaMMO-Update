@@ -34,9 +34,13 @@ model User {
   resetOtp          String?
   resetOtpExpires   DateTime?
 
-  // Telegram Integration
-  telegramChatId    String?   // Chat ID for Telegram notifications
-  telegramLinkedAt  DateTime? // When Telegram was linked
+  // Telegram Integration - Order Bot (thông báo đơn hàng)
+  telegramChatId    String?   // Chat ID for Order Bot notifications
+  telegramLinkedAt  DateTime? // When Order Bot was linked
+  
+  // Telegram Integration - Chat Bot (thông báo tin nhắn)
+  telegramChatBotChatId    String?   // Chat ID for Chat Bot notifications
+  telegramChatBotLinkedAt  DateTime? // When Chat Bot was linked
 
   // Relations
   products           Product[]

@@ -3,12 +3,16 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { AdminService } from './admin.service';
+import { BlogService } from '../blog/blog.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
 export class AdminController {
-  constructor(private adminService: AdminService) {}
+  constructor(
+    private adminService: AdminService,
+    private blogService: BlogService,
+  ) { }
 
   /**
    * Get dashboard statistics
@@ -234,7 +238,7 @@ export class AdminController {
   )
   async uploadBannerImage(@UploadedFile() file: any, @Request() req) {
     await this.adminService.verifyAdmin(req.user.id);
-    
+
     if (!file) {
       return { success: false, message: 'No file uploaded' };
     }
@@ -494,5 +498,52 @@ export class AdminController {
   ) {
     await this.adminService.verifyAdmin(req.user.id);
     return this.adminService.rejectSellerApplication(id, req.user.id, body.reason);
+  }
+
+  // ==================== BLOG MANAGEMENT ====================
+
+  /**
+   * Get all blog posts (admin)
+   * GET /admin/blogs?status=DRAFT&search=keyword&page=1&limit=20
+   */
+  @Get('blogs')
+  async getAllBlogs(
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Request() req?,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.blogService.getAllPostsAdmin({
+      status,
+      search,
+      page,
+      limit,
+    });
+  }
+
+  /**
+   * Update blog post status (admin)
+   * PUT /admin/blogs/:id/status
+   */
+  @Put('blogs/:id/status')
+  async updateBlogStatus(
+    @Param('id') id: string,
+    @Body('status') status: string,
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.blogService.updatePostStatusAdmin(id, status);
+  }
+
+  /**
+   * Delete blog post (admin)
+   * DELETE /admin/blogs/:id
+   */
+  @Delete('blogs/:id')
+  async deleteBlog(@Param('id') id: string, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.blogService.deletePostAdmin(id);
   }
 }

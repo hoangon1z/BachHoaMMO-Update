@@ -10,7 +10,7 @@ import Link from 'next/link';
 
 export default function SellerApiPage() {
   const { user } = useAuthStore();
-  
+
   // API Key states
   const [apiKeys, setApiKeys] = useState<any[]>([]);
   const [isLoadingApiKeys, setIsLoadingApiKeys] = useState(true);
@@ -103,7 +103,7 @@ export default function SellerApiPage() {
   // Revoke API key
   const revokeApiKey = async (keyId: string) => {
     if (!confirm('Bạn có chắc muốn xóa API key này?')) return;
-    
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`/api/seller/api-keys/${keyId}`, {
@@ -160,7 +160,7 @@ export default function SellerApiPage() {
         {/* Quick Links */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <a
-            href="https://documenter.getpostman.com/view/27876203/2sBXc7MQTs"
+            href="https://documenter.getpostman.com/view/27876203/2sBXc7Mjo5"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-4 p-4 bg-gradient-to-r from-purple-600 to-purple-700 rounded-xl text-white hover:shadow-lg transition-shadow"
@@ -201,7 +201,7 @@ export default function SellerApiPage() {
               </div>
             </div>
           </div>
-          
+
           <div className="p-6 space-y-6">
             {/* Generate New API Key */}
             <div className="space-y-3">
@@ -312,11 +312,10 @@ export default function SellerApiPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-medium text-gray-900">{key.name}</span>
-                            <span className={`px-2 py-0.5 text-xs rounded-full ${
-                              key.isActive 
-                                ? 'bg-green-100 text-green-700' 
+                            <span className={`px-2 py-0.5 text-xs rounded-full ${key.isActive
+                                ? 'bg-green-100 text-green-700'
                                 : 'bg-gray-100 text-gray-500'
-                            }`}>
+                              }`}>
                               {key.isActive ? 'Active' : 'Inactive'}
                             </span>
                           </div>
@@ -358,11 +357,10 @@ export default function SellerApiPage() {
 
             {/* API Key Message */}
             {apiKeyMessage && (
-              <div className={`p-3 rounded-lg flex items-center gap-2 ${
-                apiKeyMessage.type === 'success' 
-                  ? 'bg-green-50 border border-green-200 text-green-700' 
+              <div className={`p-3 rounded-lg flex items-center gap-2 ${apiKeyMessage.type === 'success'
+                  ? 'bg-green-50 border border-green-200 text-green-700'
                   : 'bg-red-50 border border-red-200 text-red-700'
-              }`}>
+                }`}>
                 {apiKeyMessage.type === 'success' ? (
                   <CheckCircle className="w-4 h-4" />
                 ) : (
@@ -428,7 +426,7 @@ export default function SellerApiPage() {
             </p>
             <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
               <pre className="text-sm text-green-400 font-mono whitespace-pre">
-{`X-API-Key: your_api_key
+                {`X-API-Key: your_api_key
 X-Timestamp: 1700000000000
 X-Signature: hmac_sha256(api_key + timestamp + body, secret)`}
               </pre>

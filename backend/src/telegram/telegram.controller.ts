@@ -9,10 +9,10 @@ export class TelegramController {
   constructor(
     private telegramService: TelegramService,
     private prisma: PrismaService,
-  ) {}
+  ) { }
 
   /**
-   * Get Telegram connection status
+   * Get Telegram connection status for both bots
    * GET /telegram/status
    */
   @Get('status')
@@ -22,10 +22,19 @@ export class TelegramController {
       select: {
         telegramChatId: true,
         telegramLinkedAt: true,
+        telegramChatBotChatId: true,
+        telegramChatBotLinkedAt: true,
       },
     });
 
     return {
+      // Order Bot status
+      orderBotConnected: !!user?.telegramChatId,
+      orderBotLinkedAt: user?.telegramLinkedAt,
+      // Chat Bot status
+      chatBotConnected: !!user?.telegramChatBotChatId,
+      chatBotLinkedAt: user?.telegramChatBotLinkedAt,
+      // Legacy fields for backward compatibility
       connected: !!user?.telegramChatId,
       linkedAt: user?.telegramLinkedAt,
     };
@@ -38,7 +47,7 @@ export class TelegramController {
   @Get('link')
   async getLink(@Request() req) {
     const botLink = this.telegramService.getBotLinkWithCode(req.user.id, 'order');
-    
+
     return {
       link: botLink,
       botUsername: 'bachhoammobot',
@@ -57,7 +66,7 @@ export class TelegramController {
   @Get('links')
   async getLinks(@Request() req) {
     const botLinks = this.telegramService.getBotLinks(req.user.id);
-    
+
     return {
       orderBot: botLinks.orderBot,
       chatBot: botLinks.chatBot,
@@ -84,16 +93,21 @@ export class TelegramController {
   }
 
   /**
-   * Unlink Telegram
-   * DELETE /telegram/unlink
+   * Unlink Telegram - supports unlinking specific bot or all
+   * DELETE /telegram/unlink?botType=order|chat
    */
   @Delete('unlink')
   async unlink(@Request() req) {
-    const success = await this.telegramService.unlinkTelegram(req.user.id);
-    
+    // Get botType from query string
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const botType = url.searchParams.get('botType') as 'order' | 'chat' | null;
+
+    const success = await this.telegramService.unlinkTelegram(req.user.id, botType || undefined);
+
+    const botName = botType === 'order' ? 'Bot Đơn hàng' : botType === 'chat' ? 'Bot Tin nhắn' : 'Telegram';
     return {
       success,
-      message: success ? 'Đã hủy liên kết Telegram' : 'Có lỗi xảy ra',
+      message: success ? `Đã hủy liên kết ${botName}` : 'Có lỗi xảy ra',
     };
   }
 

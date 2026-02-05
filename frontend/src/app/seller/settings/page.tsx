@@ -54,15 +54,18 @@ export default function SellerSettingsPage() {
   const [showSecret, setShowSecret] = useState(false);
   const [apiKeyMessage, setApiKeyMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Telegram states - Support 2 bots
-  const [telegramConnected, setTelegramConnected] = useState(false);
-  const [telegramLinkedAt, setTelegramLinkedAt] = useState<string | null>(null);
+  // Telegram states - Support 2 bots (separate connection status)
+  const [orderBotConnected, setOrderBotConnected] = useState(false);
+  const [orderBotLinkedAt, setOrderBotLinkedAt] = useState<string | null>(null);
+  const [chatBotConnected, setChatBotConnected] = useState(false);
+  const [chatBotLinkedAt, setChatBotLinkedAt] = useState<string | null>(null);
   const [telegramOrderBotLink, setTelegramOrderBotLink] = useState<string | null>(null);
   const [telegramChatBotLink, setTelegramChatBotLink] = useState<string | null>(null);
   const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [telegramMessage, setTelegramMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showUnlinkDialog, setShowUnlinkDialog] = useState(false);
+  const [unlinkBotType, setUnlinkBotType] = useState<'order' | 'chat'>('order');
 
   useEffect(() => {
     fetchStore();
@@ -125,7 +128,7 @@ export default function SellerSettingsPage() {
   // Revoke API key
   const revokeApiKey = async (keyId: string) => {
     if (!confirm('Bạn có chắc muốn xóa API key này?')) return;
-    
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`/api/seller/api-keys/${keyId}`, {
@@ -199,7 +202,7 @@ export default function SellerSettingsPage() {
     }
   };
 
-  // Fetch Telegram connection status
+  // Fetch Telegram connection status for both bots
   const fetchTelegramStatus = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -209,8 +212,12 @@ export default function SellerSettingsPage() {
 
       if (response.ok) {
         const data = await response.json();
-        setTelegramConnected(data.connected);
-        setTelegramLinkedAt(data.linkedAt);
+        // Order Bot status
+        setOrderBotConnected(data.orderBotConnected || data.connected);
+        setOrderBotLinkedAt(data.orderBotLinkedAt || data.linkedAt);
+        // Chat Bot status
+        setChatBotConnected(data.chatBotConnected || false);
+        setChatBotLinkedAt(data.chatBotLinkedAt || null);
       }
     } catch (error) {
       console.error('Error fetching Telegram status:', error);
@@ -221,7 +228,7 @@ export default function SellerSettingsPage() {
   const getTelegramLinks = async () => {
     setIsLoadingTelegram(true);
     setTelegramMessage(null);
-    
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch('/api/telegram/links', {
@@ -252,28 +259,34 @@ export default function SellerSettingsPage() {
     }
   };
 
-  // Unlink Telegram
-  const unlinkTelegramClick = () => {
+  // Unlink Telegram - show dialog with bot type
+  const unlinkTelegramClick = (botType: 'order' | 'chat') => {
+    setUnlinkBotType(botType);
     setShowUnlinkDialog(true);
   };
 
   const unlinkTelegramConfirm = async () => {
     setIsLoadingTelegram(true);
     setTelegramMessage(null);
-    
+
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/telegram/unlink', {
+      const response = await fetch(`/api/telegram/unlink?botType=${unlinkBotType}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
       if (response.ok) {
-        setTelegramConnected(false);
-        setTelegramLinkedAt(null);
-        setTelegramOrderBotLink(null);
-        setTelegramChatBotLink(null);
-        setTelegramMessage({ type: 'success', text: 'Đã hủy kết nối Telegram' });
+        if (unlinkBotType === 'order') {
+          setOrderBotConnected(false);
+          setOrderBotLinkedAt(null);
+          setTelegramOrderBotLink(null);
+        } else {
+          setChatBotConnected(false);
+          setChatBotLinkedAt(null);
+          setTelegramChatBotLink(null);
+        }
+        setTelegramMessage({ type: 'success', text: `Đã hủy kết nối ${unlinkBotType === 'order' ? 'Bot Đơn hàng' : 'Bot Tin nhắn'}` });
         setShowUnlinkDialog(false);
       } else {
         setTelegramMessage({ type: 'error', text: 'Không thể hủy kết nối' });
@@ -290,7 +303,7 @@ export default function SellerSettingsPage() {
   const sendTestNotification = async () => {
     setIsSendingTest(true);
     setTelegramMessage(null);
-    
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch('/api/telegram/test', {
@@ -314,7 +327,7 @@ export default function SellerSettingsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.shopName.trim()) {
       setMessage({ type: 'error', text: 'Vui lòng nhập tên cửa hàng' });
       return;
@@ -345,7 +358,7 @@ export default function SellerSettingsPage() {
         setFormData(prev => ({ ...prev, ...data }));
         setHasStore(true);
         setMessage({ type: 'success', text: hasStore ? 'Cap nhat cua hang thanh cong!' : 'Tao cua hang thanh cong!' });
-        
+
         if (!hasStore) {
           setTimeout(() => {
             router.push('/seller');
@@ -377,9 +390,9 @@ export default function SellerSettingsPage() {
     const maxSize = 5 * 1024 * 1024; // 5MB for all file types
     if (file.size > maxSize) {
       const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
-      setMessage({ 
-        type: 'error', 
-        text: `File quá lớn (${fileSizeMB}MB). Vui lòng chọn file nhỏ hơn 5MB${file.type === 'image/gif' ? '. Tip: Nén GIF tại ezgif.com' : ''}` 
+      setMessage({
+        type: 'error',
+        text: `File quá lớn (${fileSizeMB}MB). Vui lòng chọn file nhỏ hơn 5MB${file.type === 'image/gif' ? '. Tip: Nén GIF tại ezgif.com' : ''}`
       });
       return;
     }
@@ -458,11 +471,10 @@ export default function SellerSettingsPage() {
 
         {/* Message Alert */}
         {message && (
-          <div className={`flex items-center gap-3 p-4 rounded-lg border ${
-            message.type === 'success' 
-              ? 'bg-green-50 border-green-200 text-green-800' 
-              : 'bg-red-50 border-red-200 text-red-800'
-          }`}>
+          <div className={`flex items-center gap-3 p-4 rounded-lg border ${message.type === 'success'
+            ? 'bg-green-50 border-green-200 text-green-800'
+            : 'bg-red-50 border-red-200 text-red-800'
+            }`}>
             <div className={`w-2 h-2 rounded-full ${message.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`} />
             <span className="text-sm font-medium">{message.text}</span>
           </div>
@@ -493,7 +505,7 @@ export default function SellerSettingsPage() {
                     )}
                   </div>
                   <p className="text-sm text-gray-500 mb-3">ID: {formData.id?.slice(0, 8)}...</p>
-                  
+
                   {formData.shopDescription && (
                     <p className="text-sm text-gray-600 line-clamp-2">{formData.shopDescription}</p>
                   )}
@@ -578,9 +590,9 @@ export default function SellerSettingsPage() {
                   <p className="text-sm text-gray-600 mb-3">
                     Tải lên logo cho cửa hàng. Khuyến nghị ảnh vuông, kích thước tối thiểu 200x200px.
                   </p>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     size="sm"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isUploadingLogo}
@@ -637,17 +649,17 @@ export default function SellerSettingsPage() {
 
           {/* Form Footer */}
           <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
-            <Button 
-              type="button" 
-              variant="outline" 
+            <Button
+              type="button"
+              variant="outline"
               onClick={() => router.back()}
               className="h-10"
             >
               Huy
             </Button>
-            <Button 
-              type="submit" 
-              disabled={isSaving} 
+            <Button
+              type="submit"
+              disabled={isSaving}
               className="h-10 bg-blue-600 hover:bg-blue-700"
             >
               {isSaving ? (
@@ -679,12 +691,12 @@ export default function SellerSettingsPage() {
                 </div>
               </div>
             </div>
-            
+
             <div className="p-6 space-y-4">
               {/* Status */}
               <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
                 <div className="flex items-center gap-3">
-                  {telegramConnected ? (
+                  {orderBotConnected ? (
                     <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
                       <CheckCircle className="w-5 h-5 text-green-600" />
                     </div>
@@ -694,18 +706,18 @@ export default function SellerSettingsPage() {
                     </div>
                   )}
                   <div>
-                    <p className={`font-medium ${telegramConnected ? 'text-green-700' : 'text-gray-700'}`}>
-                      {telegramConnected ? 'Đã kết nối' : 'Chưa kết nối'}
+                    <p className={`font-medium ${orderBotConnected ? 'text-green-700' : 'text-gray-700'}`}>
+                      {orderBotConnected ? 'Đã kết nối' : 'Chưa kết nối'}
                     </p>
-                    {telegramLinkedAt && (
+                    {orderBotLinkedAt && (
                       <p className="text-xs text-gray-500">
-                        Kết nối lúc: {new Date(telegramLinkedAt).toLocaleString('vi-VN')}
+                        Kết nối lúc: {new Date(orderBotLinkedAt).toLocaleString('vi-VN')}
                       </p>
                     )}
                   </div>
                 </div>
-                
-                {telegramConnected ? (
+
+                {orderBotConnected ? (
                   <div className="flex gap-2">
                     <Button
                       type="button"
@@ -726,7 +738,7 @@ export default function SellerSettingsPage() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={unlinkTelegramClick}
+                      onClick={() => unlinkTelegramClick('order')}
                       disabled={isLoadingTelegram}
                       className="gap-2 text-red-600 border-red-200 hover:bg-red-50"
                     >
@@ -753,7 +765,7 @@ export default function SellerSettingsPage() {
               </div>
 
               {/* Order Bot Link */}
-              {telegramOrderBotLink && !telegramConnected && (
+              {telegramOrderBotLink && !orderBotConnected && (
                 <div className="p-4 bg-green-50 border border-green-200 rounded-xl space-y-3">
                   <div className="flex items-start gap-3">
                     <Send className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
@@ -766,7 +778,7 @@ export default function SellerSettingsPage() {
                       </ol>
                     </div>
                   </div>
-                  
+
                   <a
                     href={telegramOrderBotLink}
                     target="_blank"
@@ -776,7 +788,7 @@ export default function SellerSettingsPage() {
                     <ExternalLink className="w-4 h-4" />
                     Mở Bot Đơn hàng
                   </a>
-                  
+
                   <Button
                     type="button"
                     variant="outline"
@@ -820,12 +832,12 @@ export default function SellerSettingsPage() {
                 </div>
               </div>
             </div>
-            
+
             <div className="p-6 space-y-4">
               {/* Status */}
               <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
                 <div className="flex items-center gap-3">
-                  {telegramConnected ? (
+                  {chatBotConnected ? (
                     <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
                       <CheckCircle className="w-5 h-5 text-purple-600" />
                     </div>
@@ -835,18 +847,30 @@ export default function SellerSettingsPage() {
                     </div>
                   )}
                   <div>
-                    <p className={`font-medium ${telegramConnected ? 'text-purple-700' : 'text-gray-700'}`}>
-                      {telegramConnected ? 'Đã kết nối' : 'Chưa kết nối'}
+                    <p className={`font-medium ${chatBotConnected ? 'text-purple-700' : 'text-gray-700'}`}>
+                      {chatBotConnected ? 'Đã kết nối' : 'Chưa kết nối'}
                     </p>
-                    {telegramLinkedAt && (
+                    {chatBotLinkedAt && (
                       <p className="text-xs text-gray-500">
-                        Cùng tài khoản với Bot Đơn hàng
+                        Kết nối lúc: {new Date(chatBotLinkedAt).toLocaleString('vi-VN')}
                       </p>
                     )}
                   </div>
                 </div>
-                
-                {!telegramConnected && (
+
+                {chatBotConnected ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => unlinkTelegramClick('chat')}
+                    disabled={isLoadingTelegram}
+                    className="gap-2 text-red-600 border-red-200 hover:bg-red-50"
+                  >
+                    <Unlink className="w-4 h-4" />
+                    Hủy
+                  </Button>
+                ) : (
                   <Button
                     type="button"
                     size="sm"
@@ -865,7 +889,7 @@ export default function SellerSettingsPage() {
               </div>
 
               {/* Chat Bot Link */}
-              {telegramChatBotLink && !telegramConnected && (
+              {telegramChatBotLink && !chatBotConnected && (
                 <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl space-y-3">
                   <div className="flex items-start gap-3">
                     <Send className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
@@ -874,11 +898,11 @@ export default function SellerSettingsPage() {
                       <ol className="text-sm text-purple-700 space-y-1 list-decimal list-inside">
                         <li>Nhấn nút bên dưới để mở Telegram</li>
                         <li>Nhấn <strong>Start</strong> trong bot</li>
-                        <li>Bạn sẽ nhận thông báo tin nhắn mới</li>
+                        <li>Quay lại đây và nhấn &quot;Kiểm tra&quot;</li>
                       </ol>
                     </div>
                   </div>
-                  
+
                   <a
                     href={telegramChatBotLink}
                     target="_blank"
@@ -888,6 +912,19 @@ export default function SellerSettingsPage() {
                     <ExternalLink className="w-4 h-4" />
                     Mở Bot Tin nhắn
                   </a>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      fetchTelegramStatus();
+                      setTelegramMessage({ type: 'success', text: 'Đang kiểm tra...' });
+                      setTimeout(() => setTelegramMessage(null), 2000);
+                    }}
+                  >
+                    Kiểm tra kết nối
+                  </Button>
                 </div>
               )}
 
@@ -898,24 +935,16 @@ export default function SellerSettingsPage() {
                   <li>Có tin nhắn mới từ khách hàng</li>
                 </ul>
               </div>
-
-              {/* Note */}
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-xs text-amber-700">
-                  <strong>Lưu ý:</strong> Bot này dùng cùng tài khoản Telegram với Bot Đơn hàng. Kết nối Bot Đơn hàng trước để liên kết tài khoản.
-                </p>
-              </div>
             </div>
           </div>
         )}
 
         {/* Telegram Message */}
         {telegramMessage && (
-          <div className={`p-3 rounded-lg flex items-center gap-2 ${
-            telegramMessage.type === 'success' 
-              ? 'bg-green-50 border border-green-200 text-green-700' 
-              : 'bg-red-50 border border-red-200 text-red-700'
-          }`}>
+          <div className={`p-3 rounded-lg flex items-center gap-2 ${telegramMessage.type === 'success'
+            ? 'bg-green-50 border border-green-200 text-green-700'
+            : 'bg-red-50 border border-red-200 text-red-700'
+            }`}>
             {telegramMessage.type === 'success' ? (
               <CheckCircle className="w-4 h-4" />
             ) : (
@@ -939,7 +968,7 @@ export default function SellerSettingsPage() {
                 </div>
               </div>
             </div>
-            
+
             <div className="p-6 space-y-6">
               {/* API Documentation Link */}
               <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl">
@@ -951,7 +980,7 @@ export default function SellerSettingsPage() {
                       Sử dụng API để tự động thêm hàng vào kho, quản lý sản phẩm, xem đơn hàng từ hệ thống của bạn.
                     </p>
                     <a
-                      href="https://documenter.getpostman.com/view/27876203/2sBXc7MQTs"
+                      href="https://documenter.getpostman.com/view/27876203/2sBXc7Mjo5"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors"
@@ -1072,11 +1101,10 @@ export default function SellerSettingsPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="font-medium text-gray-900">{key.name}</span>
-                              <span className={`px-2 py-0.5 text-xs rounded-full ${
-                                key.isActive 
-                                  ? 'bg-green-100 text-green-700' 
-                                  : 'bg-gray-100 text-gray-500'
-                              }`}>
+                              <span className={`px-2 py-0.5 text-xs rounded-full ${key.isActive
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-gray-100 text-gray-500'
+                                }`}>
                                 {key.isActive ? 'Active' : 'Inactive'}
                               </span>
                             </div>
@@ -1118,11 +1146,10 @@ export default function SellerSettingsPage() {
 
               {/* API Key Message */}
               {apiKeyMessage && (
-                <div className={`p-3 rounded-lg flex items-center gap-2 ${
-                  apiKeyMessage.type === 'success' 
-                    ? 'bg-green-50 border border-green-200 text-green-700' 
-                    : 'bg-red-50 border border-red-200 text-red-700'
-                }`}>
+                <div className={`p-3 rounded-lg flex items-center gap-2 ${apiKeyMessage.type === 'success'
+                  ? 'bg-green-50 border border-green-200 text-green-700'
+                  : 'bg-red-50 border border-red-200 text-red-700'
+                  }`}>
                   {apiKeyMessage.type === 'success' ? (
                     <CheckCircle className="w-4 h-4" />
                   ) : (
@@ -1159,9 +1186,9 @@ export default function SellerSettingsPage() {
               <p className="text-sm text-gray-600 mb-4">
                 Một khi đóng cửa hàng, bạn sẽ không thể bán hàng nữa. Dữ liệu sản phẩm và đơn hàng vẫn được giữ lại.
               </p>
-              <Button 
+              <Button
                 type="button"
-                variant="outline" 
+                variant="outline"
                 className="h-10 border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
               >
                 Đóng cửa hàng

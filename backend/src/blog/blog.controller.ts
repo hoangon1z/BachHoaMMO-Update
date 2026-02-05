@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { BlogService } from './blog.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Public } from '../security/decorators/security.decorators';
 import { CreateBlogPostDto, UpdateBlogPostDto, CreateCommentDto, BlogQueryDto } from './dto/blog.dto';
 
 // Custom decorator for optional auth
@@ -26,7 +27,7 @@ export const OptionalUser = createParamDecorator(
 
 @Controller('blog')
 export class BlogController {
-  constructor(private blogService: BlogService) {}
+  constructor(private blogService: BlogService) { }
 
   // ============================================
   // PUBLIC ENDPOINTS (no auth required)
@@ -36,6 +37,7 @@ export class BlogController {
    * Get all published blog posts
    * GET /blog/posts
    */
+  @Public()
   @Get('posts')
   async getPosts(@Query() query: BlogQueryDto) {
     return this.blogService.getPublicPosts(query);
@@ -45,6 +47,7 @@ export class BlogController {
    * Get popular posts
    * GET /blog/posts/popular
    */
+  @Public()
   @Get('posts/popular')
   async getPopularPosts(@Query('limit') limit?: string) {
     return this.blogService.getPopularPosts(limit ? parseInt(limit) : 6);
@@ -54,6 +57,7 @@ export class BlogController {
    * Get all categories
    * GET /blog/categories
    */
+  @Public()
   @Get('categories')
   async getCategories() {
     return this.blogService.getCategories();
@@ -63,6 +67,7 @@ export class BlogController {
    * Get popular tags
    * GET /blog/tags
    */
+  @Public()
   @Get('tags')
   async getTags() {
     return this.blogService.getTags();
@@ -72,6 +77,7 @@ export class BlogController {
    * Get post by slug
    * GET /blog/posts/:slug
    */
+  @Public()
   @Get('posts/slug/:slug')
   async getPostBySlug(@Param('slug') slug: string, @Request() req) {
     // Try to extract user ID from token if present
@@ -94,6 +100,7 @@ export class BlogController {
    * Get comments for a post
    * GET /blog/posts/:id/comments
    */
+  @Public()
   @Get('posts/:id/comments')
   async getPostComments(
     @Param('id') postId: string,

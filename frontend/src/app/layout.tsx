@@ -17,6 +17,8 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+
+
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
@@ -74,13 +76,17 @@ export const metadata: Metadata = {
   alternates: { canonical: SITE_URL },
   icons: {
     icon: [
-      { url: "/images/favicon-for-public/favicon.ico", sizes: "48x48" },
-      { url: "/images/favicon-for-public/icon1.png", type: "image/png", sizes: "96x96" },
+      // ✅ THÊM: PNG 512x512 - ƯU TIÊN CAO NHẤT cho Google Search
+      { url: "/images/favicon-for-public/icon-512.png", type: "image/png", sizes: "512x512" },
+      // Giữ các kích thước khác
       { url: "/images/favicon-for-public/icon1.png", type: "image/png", sizes: "192x192" },
+      { url: "/images/favicon-for-public/icon96.png", type: "image/png", sizes: "96x96" },
+      // .ico để cuối (dành cho trình duyệt cũ)
+      { url: "/images/favicon-for-public/favicon.ico", sizes: "48x48" },
     ],
     shortcut: "/images/favicon-for-public/favicon.ico",
     apple: [
-      { url: "/images/favicon-for-public/apple-icon.png", sizes: "180x180" },
+      { url: "/images/favicon-for-public/icon180.png", sizes: "180x180" },
     ],
   },
 };

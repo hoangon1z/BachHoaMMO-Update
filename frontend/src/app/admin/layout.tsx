@@ -4,12 +4,12 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import Link from 'next/link';
-import { 
-  LayoutDashboard, 
-  Users, 
-  ShoppingBag, 
-  DollarSign, 
-  TrendingUp, 
+import {
+  LayoutDashboard,
+  Users,
+  ShoppingBag,
+  DollarSign,
+  TrendingUp,
   Lock,
   Menu,
   X,
@@ -28,6 +28,7 @@ import {
   Gavel,
   Wallet,
 } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const sidebarLinks = [
@@ -36,6 +37,7 @@ const sidebarLinks = [
   { href: '/admin/notifications', label: 'Gửi thông báo', icon: Bell },
   { href: '/admin/auction', label: 'Đấu giá TOP', icon: Gavel },
   { href: '/admin/banners', label: 'Banners', icon: Image },
+  { href: '/admin/blogs', label: 'Blogs', icon: FileText },
   { href: '/admin/categories', label: 'Danh mục', icon: FolderOpen },
   { href: '/admin/products', label: 'Sản phẩm', icon: Package },
   { href: '/admin/sellers', label: 'Người bán', icon: Store },
@@ -80,7 +82,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const fetchPendingCounts = async () => {
       try {
         const token = localStorage.getItem('token');
-        
+
         // Fetch pending recharges
         const rechargesRes = await fetch('/api/admin/recharges/pending', {
           headers: { 'Authorization': `Bearer ${token}` },
@@ -89,7 +91,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           const data = await rechargesRes.json();
           setPendingCount(data.length || 0);
         }
-        
+
         // Fetch pending withdrawals
         const withdrawalsRes = await fetch('/api/admin/withdrawals/pending-count', {
           headers: { 'Authorization': `Bearer ${token}` },
@@ -98,7 +100,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           const data = await withdrawalsRes.json();
           setPendingWithdrawalsCount(data.count || 0);
         }
-        
+
         // Fetch pending seller applications
         const sellersRes = await fetch('/api/admin/seller-applications/pending-count', {
           headers: { 'Authorization': `Bearer ${token}` },
@@ -179,7 +181,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {sidebarLinks.map((link) => {
             const Icon = link.icon;
             const isActive = pathname === link.href;
-            
+
             // Get badge count based on badge type
             const getBadgeCount = () => {
               if (link.badge === true) return pendingCount;

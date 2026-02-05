@@ -4,7 +4,7 @@ import { CreateBlogPostDto, UpdateBlogPostDto, CreateCommentDto, BlogQueryDto, B
 
 @Injectable()
 export class BlogService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   // ============================================
   // HELPER METHODS
@@ -702,5 +702,123 @@ export class BlogService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  // ============================================
+  // ADMIN METHODS
+  // ============================================
+
+  /**
+   * Get all posts for admin (includes all statuses)
+   */
+  async getAllPostsAdmin(query: BlogQueryDto) {
+    const page = parseInt(query.page || '1');
+    const limit = parseInt(query.limit || '20');
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+
+    if (query.status) {
+      where.status = query.status;
+    }
+
+    if (query.search) {
+      where.OR = [
+        { title: { contains: query.search, mode: 'insensitive' } },
+        { excerpt: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+
+    if (query.authorId) {
+      where.authorId = query.authorId;
+    }
+
+    const [posts, total] = await Promise.all([
+      this.prisma.blogPost.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          author: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatar: true,
+              sellerProfile: {
+                select: {
+                  shopName: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.blogPost.count({ where }),
+    ]);
+
+    return {
+      posts: posts.map(post => ({
+        ...post,
+        tags: post.tags ? JSON.parse(post.tags) : [],
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Update post status (admin only)
+   */
+  async updatePostStatusAdmin(postId: string, status: string) {
+    const post = await this.prisma.blogPost.findUnique({
+      where: { id: postId },
+    });
+
+    if (!post) {
+      throw new NotFoundException('Bài viết không tồn tại');
+    }
+
+    const updatedPost = await this.prisma.blogPost.update({
+      where: { id: postId },
+      data: {
+        status,
+        publishedAt: status === 'PUBLISHED' && !post.publishedAt ? new Date() : undefined,
+      },
+    });
+
+    return {
+      ...updatedPost,
+      tags: updatedPost.tags ? JSON.parse(updatedPost.tags) : [],
+    };
+  }
+
+  /**
+   * Delete post (admin only - can delete any post)
+   */
+  async deletePostAdmin(postId: string) {
+    const post = await this.prisma.blogPost.findUnique({
+      where: { id: postId },
+    });
+
+    if (!post) {
+      throw new NotFoundException('Bài viết không tồn tại');
+    }
+
+    // Delete related records first
+    await this.prisma.blogComment.deleteMany({ where: { postId } });
+    await this.prisma.blogLike.deleteMany({ where: { postId } });
+    await this.prisma.blogBookmark.deleteMany({ where: { postId } });
+
+    await this.prisma.blogPost.delete({
+      where: { id: postId },
+    });
+
+    return { message: 'Đã xóa bài viết' };
   }
 }
