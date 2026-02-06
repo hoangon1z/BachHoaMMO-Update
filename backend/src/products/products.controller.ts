@@ -58,6 +58,16 @@ export class ProductsController {
     return this.productsService.getLatest();
   }
 
+  /**
+   * Get product by SEO-friendly slug
+   * GET /products/slug/:slug
+   */
+  @Get('slug/:slug')
+  @Public()
+  findBySlug(@Param('slug') slug: string) {
+    return this.productsService.findBySlug(slug);
+  }
+
   @Get(':id')
   @Public()
   findOne(@Param('id') id: string) {

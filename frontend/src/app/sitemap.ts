@@ -1,5 +1,9 @@
 import { MetadataRoute } from 'next';
 
+// Force dynamic generation - sitemap should always fetch fresh data
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://bachhoammo.store';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 
@@ -7,7 +11,7 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 async function getAllProducts() {
   try {
     const response = await fetch(`${BACKEND_URL}/products?limit=1000&status=active`, {
-      next: { revalidate: 3600 }, // Revalidate every hour
+      cache: 'no-store', // Always fetch fresh data
     });
     if (!response.ok) return [];
     const data = await response.json();
@@ -22,7 +26,7 @@ async function getAllProducts() {
 async function getAllCategories() {
   try {
     const response = await fetch(`${BACKEND_URL}/categories`, {
-      next: { revalidate: 86400 }, // Revalidate every day
+      cache: 'no-store',
     });
     if (!response.ok) return [];
     return await response.json();
@@ -36,7 +40,7 @@ async function getAllCategories() {
 async function getAllShops() {
   try {
     const response = await fetch(`${BACKEND_URL}/shops?limit=500`, {
-      next: { revalidate: 86400 },
+      cache: 'no-store',
     });
     if (!response.ok) return [];
     const data = await response.json();
@@ -52,7 +56,7 @@ async function getAllBlogPosts() {
   try {
     const response = await fetch(
       `${BACKEND_URL}/blog/posts?status=PUBLISHED&limit=500`,
-      { next: { revalidate: 3600 } }
+      { cache: 'no-store' }
     );
     if (!response.ok) return [];
     const data = await response.json();
@@ -88,12 +92,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 
   // Product pages (HIGH PRIORITY for SEO - these are your money pages!)
-  const productRoutes: MetadataRoute.Sitemap = products.map((product: any) => ({
-    url: `${baseUrl}/products/${product.id}`,
-    lastModified: new Date(product.updatedAt || product.createdAt || Date.now()),
-    changeFrequency: 'daily' as const,
-    priority: 0.85, // High priority for product pages
-  }));
+  // Use slug for SEO-friendly URLs: /products/mua-tai-khoan-netflix-premium
+  const productRoutes: MetadataRoute.Sitemap = products
+    .filter((product: any) => product.slug) // Only include products with slug
+    .map((product: any) => ({
+      url: `${baseUrl}/products/${product.slug}`,
+      lastModified: new Date(product.updatedAt || product.createdAt || Date.now()),
+      changeFrequency: 'daily' as const,
+      priority: 0.85, // High priority for product pages
+    }));
 
   // Category pages - DISABLED: Query params URLs can cause duplicate content issues
   // Google prefers clean URLs. Consider creating /explore/[category-slug] pages instead.

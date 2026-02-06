@@ -1,9 +1,28 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { generateSlug, createUniqueSlug } from '../common/utils/slug.util';
 
 @Injectable()
 export class ProductsService {
   constructor(private prisma: PrismaService) { }
+
+  /**
+   * Check if a product slug already exists
+   */
+  private async slugExists(slug: string, excludeId?: string): Promise<boolean> {
+    const existing = await this.prisma.product.findUnique({
+      where: { slug },
+      select: { id: true },
+    });
+    return existing !== null && existing.id !== excludeId;
+  }
+
+  /**
+   * Generate unique slug for product
+   */
+  private async generateProductSlug(title: string, excludeId?: string): Promise<string> {
+    return createUniqueSlug(title, (slug) => this.slugExists(slug, excludeId));
+  }
 
   async findAll(params?: {
     skip?: number;
@@ -34,7 +53,7 @@ export class ProductsService {
         where: { parentId: categoryId },
         select: { id: true },
       });
-      
+
       if (childCategories.length > 0) {
         // Parent category selected - include products from all child categories
         const categoryIds = [categoryId, ...childCategories.map(c => c.id)];
@@ -99,10 +118,73 @@ export class ProductsService {
     };
   }
 
-  async findOne(id: string) {
-    // Find first - avoid "Record to update not found" when id is invalid (e.g. slug)
+  /**
+   * Find product by ID or slug
+   * Automatically detects if the identifier is a UUID or slug
+   */
+  async findOne(idOrSlug: string) {
+    // UUID pattern detection (standard UUID format)
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug);
+
+    let product;
+
+    if (isUuid) {
+      // Query by ID
+      product = await this.prisma.product.findUnique({
+        where: { id: idOrSlug },
+        include: {
+          seller: {
+            include: {
+              sellerProfile: true,
+            },
+          },
+          category: true,
+          variants: {
+            where: { isActive: true },
+            orderBy: { position: 'asc' },
+          },
+        },
+      });
+    } else {
+      // Query by slug (SEO-friendly URL)
+      product = await this.prisma.product.findUnique({
+        where: { slug: idOrSlug },
+        include: {
+          seller: {
+            include: {
+              sellerProfile: true,
+            },
+          },
+          category: true,
+          variants: {
+            where: { isActive: true },
+            orderBy: { position: 'asc' },
+          },
+        },
+      });
+    }
+
+    if (!product) {
+      throw new NotFoundException('Sản phẩm không tồn tại');
+    }
+
+    // Increment views (fire-and-forget, don't block response)
+    this.prisma.product
+      .update({
+        where: { id: product.id },
+        data: { views: { increment: 1 } },
+      })
+      .catch(() => { });
+
+    return product;
+  }
+
+  /**
+   * Find product by SEO-friendly slug
+   */
+  async findBySlug(slug: string) {
     const product = await this.prisma.product.findUnique({
-      where: { id },
+      where: { slug },
       include: {
         seller: {
           include: {
@@ -124,10 +206,10 @@ export class ProductsService {
     // Increment views (fire-and-forget, don't block response)
     this.prisma.product
       .update({
-        where: { id },
+        where: { slug },
         data: { views: { increment: 1 } },
       })
-      .catch(() => {});
+      .catch(() => { });
 
     return product;
   }
@@ -153,11 +235,15 @@ export class ProductsService {
   }) {
     const { variants, hasVariants, ...productData } = data;
 
+    // Generate SEO-friendly slug from title
+    const slug = await this.generateProductSlug(data.title);
+
     // Nếu có variants, tạo product với variants
     if (hasVariants && variants && variants.length > 0) {
       return this.prisma.product.create({
         data: {
           ...productData,
+          slug,
           hasVariants: true,
           variants: {
             create: variants.map((v, index) => ({
@@ -185,7 +271,10 @@ export class ProductsService {
 
     // Không có variants
     return this.prisma.product.create({
-      data: productData,
+      data: {
+        ...productData,
+        slug,
+      },
       include: {
         seller: {
           include: {
@@ -200,6 +289,18 @@ export class ProductsService {
 
   async update(id: string, data: any) {
     const { variants, ...productData } = data;
+
+    // If title is being updated, regenerate slug
+    if (productData.title) {
+      const existingProduct = await this.prisma.product.findUnique({
+        where: { id },
+        select: { title: true },
+      });
+      // Only regenerate slug if title actually changed
+      if (existingProduct && existingProduct.title !== productData.title) {
+        productData.slug = await this.generateProductSlug(productData.title, id);
+      }
+    }
 
     // Nếu có cập nhật variants
     if (variants !== undefined) {

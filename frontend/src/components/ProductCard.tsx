@@ -20,12 +20,12 @@ function SellerAvatar({ shopLogo, avatar, shopName }: { shopLogo?: string; avata
   const [imgError, setImgError] = useState(false);
   const logoUrl = shopLogo || avatar;
   const fullLogoUrl = logoUrl ? getImageUrl(logoUrl) : null;
-  
+
   return (
     <div className="flex items-center gap-1 mb-2 min-w-0">
       {fullLogoUrl && !imgError ? (
-        <img 
-          src={fullLogoUrl} 
+        <img
+          src={fullLogoUrl}
           alt={shopName}
           className="w-4 h-4 rounded-full object-cover flex-shrink-0"
           onError={() => setImgError(true)}
@@ -48,6 +48,7 @@ function SellerAvatar({ shopLogo, avatar, shopName }: { shopLogo?: string; avata
 interface ProductCardProps {
   product: {
     id: string;
+    slug?: string;  // SEO-friendly URL slug
     title: string;
     price: number;
     originalPrice?: number;
@@ -75,7 +76,7 @@ export function ProductCard({ product }: ProductCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [imageError, setImageError] = useState(false);
-  
+
   let images: string[] = [];
   try {
     images = JSON.parse(product.images || '[]');
@@ -83,10 +84,10 @@ export function ProductCard({ product }: ProductCardProps) {
     images = [];
   }
   const thumbnail = getImageUrl(images[0] || product.thumbnail || '');
-  
+
   // Có price range? (nhiều phân loại với giá khác nhau)
   const hasPriceRange = product.minPrice && product.maxPrice && product.minPrice !== product.maxPrice;
-  
+
   // Giá bán (price) = khách trả, giá gốc (originalPrice) = gạch ngang. Giảm % khi originalPrice > price
   // Không hiển thị discount khi có price range
   const discount = !hasPriceRange && product.originalPrice && product.originalPrice > product.price
@@ -103,9 +104,12 @@ export function ProductCard({ product }: ProductCardProps) {
     setIsWishlisted(!isWishlisted);
   };
 
+  // Use slug for SEO-friendly URLs, fallback to ID
+  const productUrl = `/products/${product.slug || product.id}`;
+
   return (
-    <Link href={`/products/${product.id}`}>
-      <div 
+    <Link href={productUrl}>
+      <div
         className="group relative bg-white rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -114,8 +118,8 @@ export function ProductCard({ product }: ProductCardProps) {
         <div className="relative aspect-[4/3] overflow-hidden bg-gray-100">
           {/* Product Image or Placeholder */}
           {thumbnail && !imageError ? (
-            <img 
-              src={thumbnail} 
+            <img
+              src={thumbnail}
               alt={product.title}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
               onError={() => setImageError(true)}
@@ -127,44 +131,42 @@ export function ProductCard({ product }: ProductCardProps) {
               </div>
             </div>
           )}
-          
+
           {/* Discount Badge */}
           {discount > 0 && (
             <div className="absolute top-2 left-2 px-1.5 sm:px-2.5 py-0.5 sm:py-1 bg-red-500 text-white text-[10px] sm:text-xs font-bold rounded-md sm:rounded-lg shadow-md">
               -{discount}%
             </div>
           )}
-          
+
           {/* Wishlist Button */}
           <button
             onClick={handleWishlist}
-            className={`absolute top-2 right-2 w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-all ${
-              isWishlisted 
-                ? 'bg-red-500 text-white' 
+            className={`absolute top-2 right-2 w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-all ${isWishlisted
+                ? 'bg-red-500 text-white'
                 : 'bg-white/80 backdrop-blur-sm text-gray-600 hover:bg-white hover:text-red-500'
-            } shadow-md`}
+              } shadow-md`}
           >
             <Heart className={`w-3 h-3 sm:w-4 sm:h-4 ${isWishlisted ? 'fill-current' : ''}`} />
           </button>
-          
+
           {/* Quick Actions Overlay - Hidden on mobile */}
-          <div className={`hidden sm:block absolute inset-x-0 bottom-0 p-3 bg-black/50 transition-all duration-300 ${
-            isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
-          }`}>
+          <div className={`hidden sm:block absolute inset-x-0 bottom-0 p-3 bg-black/50 transition-all duration-300 ${isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+            }`}>
             <button className="w-full py-2.5 bg-white hover:bg-blue-600 hover:text-white text-gray-900 text-sm font-semibold rounded-xl transition-colors flex items-center justify-center gap-2">
               <ShoppingCart className="w-4 h-4" />
               Thêm vào giỏ
             </button>
           </div>
         </div>
-        
+
         {/* Content */}
         <div className="p-2.5 sm:p-4">
           {/* Title */}
           <h3 className="font-semibold text-gray-900 text-xs sm:text-sm leading-snug line-clamp-2 mb-1.5 sm:mb-2 group-hover:text-blue-600 transition-colors min-h-[2rem] sm:min-h-[2.5rem]">
             {product.title}
           </h3>
-          
+
           {/* Stats Row - Simplified for mobile */}
           <div className="flex items-center gap-2 mb-2 text-[10px] sm:text-xs">
             <div className="flex items-center gap-0.5">
@@ -174,14 +176,14 @@ export function ProductCard({ product }: ProductCardProps) {
             <span className="text-gray-300">|</span>
             <span className="text-gray-500 truncate">Đã bán {product.sales}</span>
           </div>
-          
+
           {/* Seller */}
-          <SellerAvatar 
+          <SellerAvatar
             shopLogo={product.seller.sellerProfile?.shopLogo}
             avatar={product.seller.avatar}
             shopName={product.seller.sellerProfile?.shopName || product.seller.name}
           />
-          
+
           {/* Price */}
           <div className="flex items-baseline gap-1.5 flex-wrap">
             {/* Hiển thị price range khi có nhiều phân loại với giá khác nhau */}

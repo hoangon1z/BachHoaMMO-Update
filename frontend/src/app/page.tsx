@@ -18,6 +18,7 @@ function HomePageStructuredData() {
         name: 'BachHoaMMO',
         description: 'Nền tảng mua bán tài khoản game, vật phẩm game, dịch vụ MMO uy tín hàng đầu Việt Nam',
         inLanguage: 'vi-VN',
+        publisher: { '@id': `${SITE_URL}/#organization` },
         potentialAction: {
           '@type': 'SearchAction',
           target: { '@type': 'EntryPoint', urlTemplate: `${SITE_URL}/explore?q={search_term_string}` },
@@ -28,9 +29,34 @@ function HomePageStructuredData() {
         '@type': 'Organization',
         '@id': `${SITE_URL}/#organization`,
         name: 'BachHoaMMO',
+        alternateName: 'Bach Hoa MMO',
         url: SITE_URL,
-        logo: { '@type': 'ImageObject', url: `${SITE_URL}/images/logobachhoa.png` },
-        description: 'Chợ MMO mua bán tài khoản game uy tín hàng đầu Việt Nam',
+        // Logo configuration for Google Search - must be high-res (512x512 recommended)
+        logo: {
+          '@type': 'ImageObject',
+          '@id': `${SITE_URL}/#logo`,
+          url: `${SITE_URL}/icon-512.png`,
+          contentUrl: `${SITE_URL}/icon-512.png`,
+          caption: 'BachHoaMMO Logo',
+          width: 512,
+          height: 512,
+        },
+        image: {
+          '@id': `${SITE_URL}/#logo`,
+        },
+        description: 'BachHoaMMO - Chợ MMO mua bán tài khoản game, tài khoản premium (Netflix, Spotify, CapCut, Canva, ChatGPT) uy tín hàng đầu Việt Nam. Giao hàng tự động 24/7.',
+        // Social media profiles (add your actual profiles)
+        sameAs: [
+          'https://www.facebook.com/bachhoammo',
+          'https://t.me/bachhoammo',
+        ],
+        // Contact information
+        contactPoint: {
+          '@type': 'ContactPoint',
+          contactType: 'customer service',
+          availableLanguage: ['Vietnamese', 'English'],
+          url: `${SITE_URL}/messages`,
+        },
       },
     ],
   };
@@ -61,7 +87,7 @@ export default async function HomePage() {
   return (
     <>
       <HomePageStructuredData />
-      <HomePageClient 
+      <HomePageClient
         initialFeaturedProducts={featuredProducts}
         initialLatestProducts={latestProducts}
         initialCategories={categories}

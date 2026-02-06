@@ -6,7 +6,7 @@ import { Providers } from "@/components/Providers";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://bachhoammo.store";
 
-const inter = Inter({ 
+const inter = Inter({
   subsets: ["latin", "vietnamese"],
   weight: ["300", "400", "500", "600", "700"],
 });
@@ -74,21 +74,8 @@ export const metadata: Metadata = {
     // google: "your-google-verification-code",
   },
   alternates: { canonical: SITE_URL },
-  icons: {
-    icon: [
-      // ✅ THÊM: PNG 512x512 - ƯU TIÊN CAO NHẤT cho Google Search
-      { url: "/images/favicon-for-public/icon-512.png", type: "image/png", sizes: "512x512" },
-      // Giữ các kích thước khác
-      { url: "/images/favicon-for-public/icon1.png", type: "image/png", sizes: "192x192" },
-      { url: "/images/favicon-for-public/icon96.png", type: "image/png", sizes: "96x96" },
-      // .ico để cuối (dành cho trình duyệt cũ)
-      { url: "/images/favicon-for-public/favicon.ico", sizes: "48x48" },
-    ],
-    shortcut: "/images/favicon-for-public/favicon.ico",
-    apple: [
-      { url: "/images/favicon-for-public/icon180.png", sizes: "180x180" },
-    ],
-  },
+  // Next.js 14 App Router auto-detects favicon.ico, icon.png, apple-icon.png from app/ folder
+  // No manual icon configuration needed!
 };
 
 export default function RootLayout({
@@ -112,8 +99,8 @@ export default function RootLayout({
           {`(function(){var o=console.log;console.log=function(){if(arguments[0]&&typeof arguments[0]==='string'&&arguments[0].includes('[Telegram.WebView]'))return;o.apply(console,arguments)};})();`}
         </Script>
         {/* Telegram Mini App SDK */}
-        <Script 
-          src="https://telegram.org/js/telegram-web-app.js" 
+        <Script
+          src="https://telegram.org/js/telegram-web-app.js"
           strategy="beforeInteractive"
         />
         <Providers>

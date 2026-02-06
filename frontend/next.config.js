@@ -2,12 +2,8 @@
 const nextConfig = {
   reactStrictMode: true,
 
-  // Redirect /favicon.ico to favicon từ favicon-for-public
-  async redirects() {
-    return [
-      { source: '/favicon.ico', destination: '/images/favicon-for-public/favicon.ico', permanent: true },
-    ];
-  },
+  // Next.js 14 App Router auto-serves favicon.ico from app/ folder
+  // No redirect needed!
 
   // Rewrite /uploads/* to backend server for static files (avatars, products, etc.)
   async rewrites() {
