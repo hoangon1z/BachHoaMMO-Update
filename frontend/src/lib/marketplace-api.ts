@@ -35,6 +35,8 @@ export interface Product {
       rating: number;
       totalSales: number;
       isVerified: boolean;
+      insuranceLevel?: number;
+      insuranceTier?: string;
     };
   };
   createdAt: string;

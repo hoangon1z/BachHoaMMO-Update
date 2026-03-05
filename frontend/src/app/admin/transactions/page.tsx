@@ -21,13 +21,24 @@ export default function TransactionsPage() {
   const [filterType, setFilterType] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
   const itemsPerPage = 15;
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     if (user) fetchTransactions();
-  }, [user, filterType, filterStatus]);
+  }, [user, filterType, filterStatus, currentPage, debouncedSearch]);
 
   const fetchTransactions = async () => {
     setIsLoading(true);
@@ -36,13 +47,18 @@ export default function TransactionsPage() {
       const params = new URLSearchParams();
       if (filterType) params.append('type', filterType);
       if (filterStatus) params.append('status', filterStatus);
-      
+      const offset = (currentPage - 1) * itemsPerPage;
+      params.append('limit', itemsPerPage.toString());
+      params.append('offset', offset.toString());
+      if (debouncedSearch.trim()) params.append('search', debouncedSearch.trim());
+
       const response = await fetch(`/api/admin/transactions?${params}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (response.ok) {
         const data = await response.json();
         setTransactions(data.transactions);
+        setTotalItems(data.total);
       }
     } catch (error) {
       console.error('Failed to fetch transactions:', error);
@@ -71,20 +87,10 @@ export default function TransactionsPage() {
     }
   };
 
-  const filteredTransactions = transactions.filter(tx =>
-    tx.user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    tx.user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    tx.description.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
-  const paginatedTransactions = filteredTransactions.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
 
   const stats = {
-    total: transactions.length,
+    total: totalItems,
     deposits: transactions.filter(t => t.type === 'DEPOSIT' && t.status === 'COMPLETED').reduce((sum, t) => sum + t.amount, 0),
     purchases: transactions.filter(t => t.type === 'PURCHASE').reduce((sum, t) => sum + t.amount, 0),
     earnings: transactions.filter(t => t.type === 'EARNING').reduce((sum, t) => sum + t.amount, 0),
@@ -251,7 +257,7 @@ export default function TransactionsPage() {
 
       {/* Transactions Table */}
       <DataTable
-        data={paginatedTransactions}
+        data={transactions}
         columns={columns}
         keyExtractor={(tx) => tx.id}
         isLoading={isLoading}
@@ -259,18 +265,18 @@ export default function TransactionsPage() {
           <EmptyState
             icon={<TrendingUp className="w-10 h-10 text-gray-400" />}
             title="Không có giao dịch"
-            description="Không tìm thấy giao dịch nào phù hợp với bộ lọc"
+            description={debouncedSearch ? `Không tìm thấy giao dịch với từ khóa "${debouncedSearch}"` : "Không tìm thấy giao dịch nào phù hợp với bộ lọc"}
           />
         }
       />
 
       {/* Pagination */}
-      {!isLoading && filteredTransactions.length > 0 && (
+      {!isLoading && transactions.length > 0 && totalPages > 1 && (
         <div className="bg-white rounded-2xl border border-gray-100">
           <Pagination
             currentPage={currentPage}
             totalPages={totalPages}
-            totalItems={filteredTransactions.length}
+            totalItems={totalItems}
             itemsPerPage={itemsPerPage}
             onPageChange={setCurrentPage}
           />

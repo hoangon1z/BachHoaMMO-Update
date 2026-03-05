@@ -1,6 +1,8 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TelegramService } from '../telegram/telegram.service';
+import { PaymentGateway } from './payos.gateway';
 import * as crypto from 'crypto';
 
 interface PayOSConfig {
@@ -9,6 +11,9 @@ interface PayOSConfig {
   checksumKey: string;
   baseUrl: string;
 }
+
+// Supported bank keys
+export type BankKey = 'bidv' | 'mbbank';
 
 interface CreatePaymentLinkParams {
   orderCode: number;
@@ -69,70 +74,135 @@ interface WebhookPayload {
 @Injectable()
 export class PayOSService {
   private readonly logger = new Logger(PayOSService.name);
-  private config: PayOSConfig;
+  private configs: Record<BankKey, PayOSConfig>;
 
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
+    private telegramService: TelegramService,
+    private paymentGateway: PaymentGateway,
   ) {
-    this.config = {
-      clientId: process.env.PAYOS_CLIENT_ID || '',
-      apiKey: process.env.PAYOS_API_KEY || '',
-      checksumKey: process.env.PAYOS_CHECKSUM_KEY || '',
-      baseUrl: process.env.PAYOS_BASE_URL || 'https://api-merchant.payos.vn',
+    const baseUrl = process.env.PAYOS_BASE_URL || 'https://api-merchant.payos.vn';
+
+    this.configs = {
+      bidv: {
+        clientId: process.env.PAYOS_CLIENT_ID || '',
+        apiKey: process.env.PAYOS_API_KEY || '',
+        checksumKey: process.env.PAYOS_CHECKSUM_KEY || '',
+        baseUrl,
+      },
+      mbbank: {
+        clientId: process.env.PAYOS_MB_CLIENT_ID || '',
+        apiKey: process.env.PAYOS_MB_API_KEY || '',
+        checksumKey: process.env.PAYOS_MB_CHECKSUM_KEY || '',
+        baseUrl,
+      },
     };
 
-    if (!this.config.clientId || !this.config.apiKey || !this.config.checksumKey) {
-      this.logger.warn('PayOS credentials not configured. Payment features will be disabled.');
+    // Log config status for each bank
+    for (const [bank, cfg] of Object.entries(this.configs)) {
+      if (!cfg.clientId || !cfg.apiKey || !cfg.checksumKey) {
+        this.logger.warn(`PayOS [${bank.toUpperCase()}] credentials not configured.`);
+      } else {
+        this.logger.log(`PayOS [${bank.toUpperCase()}] configured ✓`);
+      }
     }
   }
 
   /**
-   * Generate signature for PayOS request
-   * Format: amount=$amount&cancelUrl=$cancelUrl&description=$description&orderCode=$orderCode&returnUrl=$returnUrl
+   * Get config for a specific bank. Falls back to BIDV if not specified.
    */
-  private generateSignature(data: Record<string, any>): string {
-    // Sort keys alphabetically and create query string
+  private getConfig(bank?: BankKey): PayOSConfig {
+    const key = bank || 'bidv';
+    return this.configs[key] || this.configs.bidv;
+  }
+
+  /**
+   * Check if a specific bank is configured
+   */
+  isBankConfigured(bank: BankKey): boolean {
+    const cfg = this.configs[bank];
+    return !!(cfg && cfg.clientId && cfg.apiKey && cfg.checksumKey);
+  }
+
+  /**
+   * Get list of available (configured) banks
+   */
+  getAvailableBanks(): { key: BankKey; name: string; configured: boolean }[] {
+    return [
+      { key: 'bidv', name: 'BIDV', configured: this.isBankConfigured('bidv') },
+      { key: 'mbbank', name: 'MB Bank', configured: this.isBankConfigured('mbbank') },
+    ];
+  }
+
+  /**
+   * Generate signature for PayOS request
+   */
+  private generateSignature(data: Record<string, any>, checksumKey: string): string {
     const sortedKeys = Object.keys(data).sort();
     const signatureString = sortedKeys
       .map(key => `${key}=${data[key]}`)
       .join('&');
 
     return crypto
-      .createHmac('sha256', this.config.checksumKey)
+      .createHmac('sha256', checksumKey)
       .update(signatureString)
       .digest('hex');
   }
 
   /**
-   * Verify webhook signature
+   * Verify webhook signature for a specific bank
    */
-  verifyWebhookSignature(payload: WebhookPayload): boolean {
+  verifyWebhookSignature(payload: WebhookPayload, bank?: BankKey): boolean {
+    const config = this.getConfig(bank);
     const { data, signature } = payload;
-    
-    // Create signature string from webhook data
-    const signatureData = {
-      amount: data.amount,
-      code: data.code,
-      desc: data.desc,
-      orderCode: data.orderCode,
-      paymentLinkId: data.paymentLinkId,
-      reference: data.reference,
-      transactionDateTime: data.transactionDateTime,
-    };
 
-    const computedSignature = this.generateSignature(signatureData);
-    return computedSignature === signature;
+    const signatureData: Record<string, any> = {};
+    if (data.amount !== undefined) signatureData.amount = data.amount;
+    if (data.code !== undefined) signatureData.code = data.code;
+    if (data.desc !== undefined) signatureData.desc = data.desc;
+    if (data.orderCode !== undefined) signatureData.orderCode = data.orderCode;
+    if (data.paymentLinkId !== undefined) signatureData.paymentLinkId = data.paymentLinkId;
+    if (data.reference !== undefined) signatureData.reference = data.reference;
+    if (data.transactionDateTime !== undefined) signatureData.transactionDateTime = data.transactionDateTime;
+
+    const computedSignature = this.generateSignature(signatureData, config.checksumKey);
+
+    if (computedSignature !== signature) {
+      const sortedKeys = Object.keys(signatureData).sort();
+      const signString = sortedKeys.map(k => `${k}=${signatureData[k]}`).join('&');
+      this.logger.warn(`[${(bank || 'bidv').toUpperCase()}] Signature mismatch — computed: ${computedSignature.substring(0, 16)}... vs received: ${signature?.substring(0, 16)}...`);
+      this.logger.warn(`Signature input: ${signString}`);
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Verify payment via PayOS API (fallback when signature verification fails)
+   */
+  async verifyPaymentViaAPI(orderCode: number | string, amount: number, bank?: BankKey): Promise<boolean> {
+    try {
+      const status = await this.getPaymentStatus(orderCode, bank);
+      if (status.code === '00' && status.data?.status === 'PAID' && status.data?.amount === amount) {
+        this.logger.log(`Payment verified via PayOS API [${(bank || 'bidv').toUpperCase()}]: orderCode ${orderCode}, amount ${amount}`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      this.logger.error(`PayOS API verification failed: ${error.message}`);
+      return false;
+    }
   }
 
   /**
    * Generate unique order code (integer)
    */
   private generateOrderCode(): number {
-    // Use timestamp + random number to ensure uniqueness
     const timestamp = Date.now();
     const random = Math.floor(Math.random() * 1000);
-    return parseInt(`${timestamp}${random}`.slice(-9)); // Max 9 digits for safety
+    return parseInt(`${timestamp}${random}`.slice(-9));
   }
 
   /**
@@ -143,16 +213,19 @@ export class PayOSService {
     amount: number,
     returnUrl: string,
     cancelUrl: string,
+    bank?: BankKey,
   ): Promise<{ paymentLink: PaymentLinkResponse['data']; transaction: any }> {
-    if (!this.config.clientId || !this.config.apiKey) {
-      throw new BadRequestException('PayOS not configured');
+    const config = this.getConfig(bank);
+    const bankLabel = (bank || 'bidv').toUpperCase();
+
+    if (!config.clientId || !config.apiKey) {
+      throw new BadRequestException(`PayOS [${bankLabel}] not configured`);
     }
 
     if (amount < 10000) {
       throw new BadRequestException('Minimum recharge amount is 10,000 VND');
     }
 
-    // Get user info
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, name: true, email: true },
@@ -162,28 +235,27 @@ export class PayOSService {
       throw new BadRequestException('User not found');
     }
 
-    // Generate unique order code
     const orderCode = this.generateOrderCode();
 
-    // Create transaction record first (PENDING status)
+    // Create transaction record (PENDING status) — store bank info in metadata
     const transaction = await this.prisma.transaction.create({
       data: {
         userId,
         type: 'DEPOSIT',
         amount,
         status: 'PENDING',
-        description: `Nạp tiền qua PayOS - Mã: ${orderCode}`,
+        description: `Nạp tiền qua ${bankLabel} - Mã: ${orderCode}`,
         metadata: JSON.stringify({
           paymentMethod: 'payos',
+          bank: bank || 'bidv',
           orderCode,
           requestedAt: new Date().toISOString(),
         }),
       },
     });
 
-    // Prepare PayOS request
-    const description = `NAP${orderCode}`; // Max 9 characters for bank description
-    
+    const description = `NAP${orderCode}`;
+
     const requestData: CreatePaymentLinkParams = {
       orderCode,
       amount,
@@ -192,10 +264,9 @@ export class PayOSService {
       buyerEmail: user.email || undefined,
       cancelUrl,
       returnUrl,
-      expiredAt: Math.floor(Date.now() / 1000) + 15 * 60, // 15 minutes expiry
+      expiredAt: Math.floor(Date.now() / 1000) + 15 * 60,
     };
 
-    // Generate signature
     const signatureData = {
       amount: requestData.amount,
       cancelUrl: requestData.cancelUrl,
@@ -203,24 +274,23 @@ export class PayOSService {
       orderCode: requestData.orderCode,
       returnUrl: requestData.returnUrl,
     };
-    const signature = this.generateSignature(signatureData);
+    const signature = this.generateSignature(signatureData, config.checksumKey);
 
-    // Retry mechanism for PayOS API call
+    // Retry mechanism
     const maxRetries = 3;
     let lastError: any = null;
     let result: PaymentLinkResponse | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        this.logger.log(`Creating payment link attempt ${attempt}/${maxRetries}`);
-        
-        // Call PayOS API
-        const response = await fetch(`${this.config.baseUrl}/v2/payment-requests`, {
+        this.logger.log(`[${bankLabel}] Creating payment link attempt ${attempt}/${maxRetries}`);
+
+        const response = await fetch(`${config.baseUrl}/v2/payment-requests`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-client-id': this.config.clientId,
-            'x-api-key': this.config.apiKey,
+            'x-client-id': config.clientId,
+            'x-api-key': config.apiKey,
           },
           body: JSON.stringify({
             ...requestData,
@@ -229,36 +299,31 @@ export class PayOSService {
         });
 
         result = await response.json() as PaymentLinkResponse;
-        
+
         if (result.code === '00') {
-          // Success, break out of retry loop
           break;
         }
 
-        this.logger.warn(`PayOS attempt ${attempt} failed: ${result.desc}`);
+        this.logger.warn(`[${bankLabel}] PayOS attempt ${attempt} failed: ${result.desc}`);
         lastError = new Error(result.desc);
-        
-        // Wait before retry (exponential backoff)
+
         if (attempt < maxRetries) {
           await new Promise(resolve => setTimeout(resolve, 500 * attempt));
         }
       } catch (err) {
-        this.logger.error(`PayOS attempt ${attempt} error: ${err.message}`);
+        this.logger.error(`[${bankLabel}] PayOS attempt ${attempt} error: ${err.message}`);
         lastError = err;
-        
-        // Wait before retry
+
         if (attempt < maxRetries) {
           await new Promise(resolve => setTimeout(resolve, 500 * attempt));
         }
       }
     }
 
-    // Check final result
     if (!result || result.code !== '00') {
-      // Update transaction to failed
       await this.prisma.transaction.update({
         where: { id: transaction.id },
-        data: { 
+        data: {
           status: 'REJECTED',
           metadata: JSON.stringify({
             ...JSON.parse(transaction.metadata || '{}'),
@@ -269,21 +334,20 @@ export class PayOSService {
       throw new BadRequestException(`PayOS error: ${lastError?.message || 'Failed to create payment'}`);
     }
 
-      // Update transaction with PayOS info
-      await this.prisma.transaction.update({
-        where: { id: transaction.id },
-        data: {
-          metadata: JSON.stringify({
-            ...JSON.parse(transaction.metadata || '{}'),
-            paymentLinkId: result.data.paymentLinkId,
-            checkoutUrl: result.data.checkoutUrl,
-            qrCode: result.data.qrCode,
-            accountNumber: result.data.accountNumber,
-            accountName: result.data.accountName,
-            bin: result.data.bin,
-          }),
-        },
-      });
+    await this.prisma.transaction.update({
+      where: { id: transaction.id },
+      data: {
+        metadata: JSON.stringify({
+          ...JSON.parse(transaction.metadata || '{}'),
+          paymentLinkId: result.data.paymentLinkId,
+          checkoutUrl: result.data.checkoutUrl,
+          qrCode: result.data.qrCode,
+          accountNumber: result.data.accountNumber,
+          accountName: result.data.accountName,
+          bin: result.data.bin,
+        }),
+      },
+    });
 
     return {
       paymentLink: result.data,
@@ -296,14 +360,10 @@ export class PayOSService {
 
   /**
    * Handle webhook from PayOS
+   * IMPORTANT: This method must be idempotent
    */
-  async handleWebhook(payload: WebhookPayload): Promise<{ success: boolean; message: string }> {
-
-    // Verify signature (skip in development if needed)
-    // if (!this.verifyWebhookSignature(payload)) {
-    //   this.logger.warn('Invalid webhook signature');
-    //   return { success: false, message: 'Invalid signature' };
-    // }
+  async handleWebhook(payload: WebhookPayload, bank?: BankKey): Promise<{ success: boolean; message: string }> {
+    const bankLabel = (bank || 'bidv').toUpperCase();
 
     if (!payload.success || payload.code !== '00') {
       return { success: false, message: payload.desc };
@@ -311,86 +371,178 @@ export class PayOSService {
 
     const { orderCode, amount } = payload.data;
 
-    // Find transaction by orderCode in metadata
-    const transactions = await this.prisma.transaction.findMany({
+    this.logger.log(`[${bankLabel}] Processing payment webhook for orderCode: ${orderCode}, amount: ${amount}`);
+
+    const orderCodeStr = String(orderCode);
+    const candidates = await this.prisma.transaction.findMany({
       where: {
         type: 'DEPOSIT',
-        status: 'PENDING',
+        status: { in: ['PENDING', 'COMPLETED'] },
+        metadata: { contains: orderCodeStr },
       },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
     });
 
-    const transaction = transactions.find(t => {
+    const transaction = candidates.find(t => {
       try {
         const metadata = JSON.parse(t.metadata || '{}');
-        return metadata.orderCode === orderCode;
+        return Number(metadata.orderCode) === Number(orderCode);
       } catch {
         return false;
       }
     });
 
     if (!transaction) {
+      this.logger.warn(`[${bankLabel}] Transaction not found for orderCode: ${orderCode}`);
       return { success: false, message: 'Transaction not found' };
     }
 
-    // Verify amount
+    // IDEMPOTENCY CHECK
+    if (transaction.status === 'COMPLETED') {
+      this.logger.warn(`[${bankLabel}] Transaction ${transaction.id} already completed for orderCode: ${orderCode}. Skipping duplicate processing.`);
+      return { success: true, message: 'Payment already processed' };
+    }
+
+    if (transaction.status !== 'PENDING') {
+      this.logger.warn(`[${bankLabel}] Transaction ${transaction.id} has status ${transaction.status}, expected PENDING. Skipping.`);
+      return { success: false, message: `Transaction status is ${transaction.status}, not PENDING` };
+    }
+
     if (transaction.amount !== amount) {
+      this.logger.warn(`[${bankLabel}] Amount mismatch for orderCode ${orderCode}: expected ${transaction.amount}, got ${amount}`);
       return { success: false, message: 'Amount mismatch' };
     }
 
-    // Update transaction and user balance in a single database transaction
+    // ATOMIC CLAIM
     try {
-      await this.prisma.$transaction([
-        // Update transaction status
-        this.prisma.transaction.update({
-          where: { id: transaction.id },
-          data: {
-            status: 'COMPLETED',
-            metadata: JSON.stringify({
-              ...JSON.parse(transaction.metadata || '{}'),
-              completedAt: new Date().toISOString(),
-              payosReference: payload.data.reference,
-              transactionDateTime: payload.data.transactionDateTime,
-            }),
+      const updateResult = await this.prisma.transaction.updateMany({
+        where: {
+          id: transaction.id,
+          status: 'PENDING',
+        },
+        data: {
+          status: 'COMPLETED',
+          metadata: JSON.stringify({
+            ...JSON.parse(transaction.metadata || '{}'),
+            completedAt: new Date().toISOString(),
+            payosReference: payload.data.reference,
+            transactionDateTime: payload.data.transactionDateTime,
+          }),
+        },
+      });
+
+      if (updateResult.count === 0) {
+        this.logger.warn(`[${bankLabel}] Transaction ${transaction.id} was already claimed by another request. Skipping duplicate for orderCode: ${orderCode}`);
+        return { success: true, message: 'Payment already processed' };
+      }
+
+      this.logger.log(`[${bankLabel}] Transaction ${transaction.id} claimed successfully. Adding balance ${amount} to user ${transaction.userId}`);
+
+      await this.prisma.user.update({
+        where: { id: transaction.userId },
+        data: {
+          balance: {
+            increment: amount,
           },
-        }),
-        // Add balance to user
-        this.prisma.user.update({
-          where: { id: transaction.userId },
-          data: {
-            balance: {
-              increment: amount,
-            },
-          },
-        }),
-      ]);
+        },
+      });
 
       // Send deposit notification to user
       try {
-        await this.notificationsService.sendDepositNotification(transaction.userId, amount);
+        await this.notificationsService.sendDepositNotification(transaction.userId, amount, bank);
       } catch (notifError) {
         this.logger.warn(`Failed to send deposit notification: ${notifError.message}`);
       }
 
+      // Send Telegram notification
+      try {
+        const user = await this.prisma.user.findUnique({
+          where: { id: transaction.userId },
+          select: { email: true, name: true },
+        });
+
+        await this.telegramService.notifyDeposit({
+          userEmail: user?.email || 'Unknown',
+          userName: user?.name || undefined,
+          amount,
+          orderCode,
+          transactionId: transaction.id,
+          bank: bank || 'bidv',
+        });
+      } catch (tgError) {
+        this.logger.warn(`Failed to send Telegram deposit notification: ${tgError.message}`);
+      }
+
+      // Push real-time WebSocket notification
+      try {
+        this.paymentGateway.notifyPaymentConfirmed(transaction.userId, {
+          orderCode: Number(orderCode),
+          amount,
+          message: 'Thanh toán thành công!',
+        });
+      } catch (wsError) {
+        this.logger.warn(`Failed to send WebSocket payment notification: ${wsError.message}`);
+      }
+
+      this.logger.log(`[${bankLabel}] Payment processed successfully for orderCode: ${orderCode}, transactionId: ${transaction.id}`);
       return { success: true, message: 'Payment processed successfully' };
     } catch (error) {
+      this.logger.error(`Failed to process payment for orderCode ${orderCode}: ${error.message}`);
       return { success: false, message: 'Failed to process payment' };
     }
   }
 
   /**
+   * Find a transaction by orderCode (for ownership verification)
+   */
+  async findTransactionByOrderCode(orderCode: string): Promise<{ id: string; userId: string; status: string; bank?: string } | null> {
+    const candidates = await this.prisma.transaction.findMany({
+      where: {
+        type: 'DEPOSIT',
+        metadata: { contains: orderCode },
+      },
+      select: { id: true, userId: true, status: true, metadata: true },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    });
+
+    const match = candidates.find(t => {
+      try {
+        const metadata = JSON.parse(t.metadata || '{}');
+        return Number(metadata.orderCode) === Number(orderCode);
+      } catch {
+        return false;
+      }
+    });
+
+    if (!match) return null;
+
+    let bank: string | undefined;
+    try {
+      const metadata = JSON.parse(match.metadata || '{}');
+      bank = metadata.bank;
+    } catch { }
+
+    return { id: match.id, userId: match.userId, status: match.status, bank };
+  }
+
+  /**
    * Get payment status by orderCode
    */
-  async getPaymentStatus(orderCode: number | string): Promise<any> {
-    if (!this.config.clientId || !this.config.apiKey) {
-      throw new BadRequestException('PayOS not configured');
+  async getPaymentStatus(orderCode: number | string, bank?: BankKey): Promise<any> {
+    const config = this.getConfig(bank);
+
+    if (!config.clientId || !config.apiKey) {
+      throw new BadRequestException(`PayOS [${(bank || 'bidv').toUpperCase()}] not configured`);
     }
 
     try {
-      const response = await fetch(`${this.config.baseUrl}/v2/payment-requests/${orderCode}`, {
+      const response = await fetch(`${config.baseUrl}/v2/payment-requests/${orderCode}`, {
         method: 'GET',
         headers: {
-          'x-client-id': this.config.clientId,
-          'x-api-key': this.config.apiKey,
+          'x-client-id': config.clientId,
+          'x-api-key': config.apiKey,
         },
       });
 
@@ -405,18 +557,20 @@ export class PayOSService {
   /**
    * Cancel payment link
    */
-  async cancelPaymentLink(orderCode: number | string, reason?: string): Promise<any> {
-    if (!this.config.clientId || !this.config.apiKey) {
-      throw new BadRequestException('PayOS not configured');
+  async cancelPaymentLink(orderCode: number | string, reason?: string, bank?: BankKey): Promise<any> {
+    const config = this.getConfig(bank);
+
+    if (!config.clientId || !config.apiKey) {
+      throw new BadRequestException(`PayOS [${(bank || 'bidv').toUpperCase()}] not configured`);
     }
 
     try {
-      const response = await fetch(`${this.config.baseUrl}/v2/payment-requests/${orderCode}/cancel`, {
+      const response = await fetch(`${config.baseUrl}/v2/payment-requests/${orderCode}/cancel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-client-id': this.config.clientId,
-          'x-api-key': this.config.apiKey,
+          'x-client-id': config.clientId,
+          'x-api-key': config.apiKey,
         },
         body: JSON.stringify({
           cancellationReason: reason || 'User cancelled',

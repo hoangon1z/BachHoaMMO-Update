@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
+import { MaintenanceNotice } from "@/components/MaintenanceNotice";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://bachhoammo.store";
 
@@ -84,7 +85,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="vi">
+    <html lang="vi" suppressHydrationWarning>
       <head>
         {/* Preconnect to API for faster LCP */}
         <link rel="preconnect" href="https://api.bachhoammo.store" />
@@ -92,18 +93,25 @@ export default function RootLayout({
         {/* Preconnect to fonts */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* Anti-flash: apply dark class BEFORE React hydrates */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('bhmmo_theme');var d=(t==='dark')||(t==='system'&&window.matchMedia('(prefers-color-scheme:dark)').matches);if(d){document.documentElement.classList.add('dark');document.documentElement.style.colorScheme='dark'}}catch(e){}})();`,
+          }}
+        />
       </head>
       <body className={inter.className}>
         {/* Suppress Telegram WebApp console logs */}
-        <Script id="suppress-telegram-logs" strategy="beforeInteractive">
+        <Script id="suppress-telegram-logs" strategy="afterInteractive">
           {`(function(){var o=console.log;console.log=function(){if(arguments[0]&&typeof arguments[0]==='string'&&arguments[0].includes('[Telegram.WebView]'))return;o.apply(console,arguments)};})();`}
         </Script>
         {/* Telegram Mini App SDK */}
         <Script
           src="https://telegram.org/js/telegram-web-app.js"
-          strategy="beforeInteractive"
+          strategy="afterInteractive"
         />
         <Providers>
+          <MaintenanceNotice />
           {children}
         </Providers>
       </body>

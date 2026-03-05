@@ -4,6 +4,7 @@
  */
 
 import axios from 'axios';
+import { headers } from 'next/headers';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 
@@ -16,8 +17,38 @@ const serverApi = axios.create({
 });
 
 /**
+ * Get client IP from request headers (for rate limiting)
+ * This ensures each user is rate-limited individually, not the server as a whole
+ */
+export function getClientIp(): string {
+  try {
+    const headersList = headers();
+    return (
+      headersList.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      headersList.get('x-real-ip') ||
+      headersList.get('cf-connecting-ip') || // Cloudflare
+      'server-internal'
+    );
+  } catch {
+    return 'server-internal';
+  }
+}
+
+/**
+ * Get headers with client IP forwarded for proper rate limiting
+ */
+function getForwardedHeaders(): Record<string, string> {
+  const ip = getClientIp();
+  return {
+    'X-Forwarded-For': ip,
+    'X-Real-IP': ip,
+  };
+}
+
+/**
  * Server-side API functions
  * Direct calls to backend, no encryption needed
+ * All functions forward the real client IP for proper rate limiting
  */
 
 export const serverMarketplaceApi = {
@@ -26,10 +57,36 @@ export const serverMarketplaceApi = {
    */
   async getFeaturedProducts() {
     try {
-      const response = await serverApi.get('/products/featured');
+      const response = await serverApi.get('/products/featured', {
+        headers: getForwardedHeaders(),
+      });
       return response.data;
     } catch (error: any) {
       console.error('[Server API Error] getFeaturedProducts:', error.message);
+      return [];
+    }
+  },
+
+  async getBestSellersWeekly() {
+    try {
+      const response = await serverApi.get('/products/best-sellers-weekly', {
+        headers: getForwardedHeaders(),
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error('[Server API Error] getBestSellersWeekly:', error.message);
+      return [];
+    }
+  },
+
+  async getTrustedShopProducts() {
+    try {
+      const response = await serverApi.get('/products/trusted-shops', {
+        headers: getForwardedHeaders(),
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error('[Server API Error] getTrustedShopProducts:', error.message);
       return [];
     }
   },
@@ -39,7 +96,9 @@ export const serverMarketplaceApi = {
    */
   async getLatestProducts() {
     try {
-      const response = await serverApi.get('/products/latest');
+      const response = await serverApi.get('/products/latest', {
+        headers: getForwardedHeaders(),
+      });
       return response.data;
     } catch (error: any) {
       console.error('[Server API Error] getLatestProducts:', error.message);
@@ -54,7 +113,9 @@ export const serverMarketplaceApi = {
   async getCategories(onlyParent: boolean = false) {
     try {
       const url = onlyParent ? '/categories?parent=true' : '/categories';
-      const response = await serverApi.get(url);
+      const response = await serverApi.get(url, {
+        headers: getForwardedHeaders(),
+      });
       return response.data;
     } catch (error: any) {
       console.error('[Server API Error] getCategories:', error.message);
@@ -75,7 +136,10 @@ export const serverMarketplaceApi = {
     sortBy?: string;
   }) {
     try {
-      const response = await serverApi.get('/products', { params });
+      const response = await serverApi.get('/products', {
+        params,
+        headers: getForwardedHeaders(),
+      });
       return response.data;
     } catch (error: any) {
       console.error('[Server API Error] getProducts:', error.message);
@@ -88,7 +152,9 @@ export const serverMarketplaceApi = {
    */
   async getProduct(id: string) {
     try {
-      const response = await serverApi.get(`/products/${id}`);
+      const response = await serverApi.get(`/products/${id}`, {
+        headers: getForwardedHeaders(),
+      });
       return response.data;
     } catch (error: any) {
       console.error('[Server API Error] getProduct:', error.message);
@@ -101,7 +167,9 @@ export const serverMarketplaceApi = {
    */
   async getCategoryBySlug(slug: string) {
     try {
-      const response = await serverApi.get(`/categories/slug/${slug}`);
+      const response = await serverApi.get(`/categories/slug/${slug}`, {
+        headers: getForwardedHeaders(),
+      });
       return response.data;
     } catch (error: any) {
       console.error('[Server API Error] getCategoryBySlug:', error.message);
@@ -114,7 +182,9 @@ export const serverMarketplaceApi = {
    */
   async getBanners() {
     try {
-      const response = await serverApi.get('/public/banners');
+      const response = await serverApi.get('/public/banners', {
+        headers: getForwardedHeaders(),
+      });
       return response.data;
     } catch (error: any) {
       console.error('[Server API Error] getBanners:', error.message);
@@ -127,7 +197,9 @@ export const serverMarketplaceApi = {
    */
   async getShopProfile(id: string) {
     try {
-      const response = await serverApi.get(`/shop/${id}`);
+      const response = await serverApi.get(`/shop/${id}`, {
+        headers: getForwardedHeaders(),
+      });
       return response.data;
     } catch (error: any) {
       console.error('[Server API Error] getShopProfile:', error.message);
@@ -140,7 +212,10 @@ export const serverMarketplaceApi = {
    */
   async getShopProducts(id: string, params?: { page?: number; limit?: number; sort?: string }) {
     try {
-      const response = await serverApi.get(`/shop/${id}/products`, { params });
+      const response = await serverApi.get(`/shop/${id}/products`, {
+        params,
+        headers: getForwardedHeaders(),
+      });
       return response.data;
     } catch (error: any) {
       console.error('[Server API Error] getShopProducts:', error.message);
@@ -153,10 +228,27 @@ export const serverMarketplaceApi = {
    */
   async getAuctionWinners() {
     try {
-      const response = await serverApi.get('/auction/winners');
+      const response = await serverApi.get('/auction/winners', {
+        headers: getForwardedHeaders(),
+      });
       return response.data.winners || [];
     } catch (error: any) {
       console.error('[Server API Error] getAuctionWinners:', error.message);
+      return [];
+    }
+  },
+
+  /**
+   * Get active category showcases (server-side only)
+   */
+  async getCategoryShowcases() {
+    try {
+      const response = await serverApi.get('/public/category-showcases', {
+        headers: getForwardedHeaders(),
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error('[Server API Error] getCategoryShowcases:', error.message);
       return [];
     }
   },

@@ -3,13 +3,37 @@ import ProductDetailClient from './ProductDetailClient';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 
+// Revalidate every 60 seconds for fresh data while still being crawlable
+export const revalidate = 60;
+
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://bachhoammo.store';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+
+/**
+ * Pre-render all product pages at build time for SEO
+ * Google sẽ nhận được HTML đầy đủ thay vì phải chờ JavaScript render
+ */
+export async function generateStaticParams() {
+  try {
+    const response = await fetch(`${BACKEND_URL}/products?limit=5000&status=active`, {
+      cache: 'no-store',
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    const products = data.products || data || [];
+    return products
+      .filter((p: any) => p.slug || p.id)
+      .map((p: any) => ({ id: p.slug || p.id }));
+  } catch (error) {
+    console.error('generateStaticParams: Error fetching products:', error);
+    return [];
+  }
+}
 
 /** JSON-LD Product structured data for Google Rich Results */
 function ProductStructuredData({ product, productUrl }: { product: any; productUrl: string }) {
   const images = typeof product.images === 'string' ? JSON.parse(product.images) : product.images;
-  const imageUrls = images?.map((img: string) => 
+  const imageUrls = images?.map((img: string) =>
     img.startsWith('http') ? img : `${SITE_URL}${img}`
   ) || [`${SITE_URL}/images/logobachhoa.png`];
 
@@ -41,8 +65,8 @@ function ProductStructuredData({ product, productUrl }: { product: any; productU
       priceCurrency: 'VND',
       price: price,
       priceValidUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      availability: product.stock > 0 
-        ? 'https://schema.org/InStock' 
+      availability: product.stock > 0
+        ? 'https://schema.org/InStock'
         : 'https://schema.org/OutOfStock',
       itemCondition: 'https://schema.org/NewCondition',
       seller: {
@@ -155,7 +179,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   // Tạo title tối ưu SEO với brand name và category
   const categoryName = data.category?.name || 'Sản phẩm số';
   const seoTitle = `Mua ${data.title} Giá Rẻ Uy Tín | ${categoryName} | BachHoaMMO`;
-  
+
   // Description tối ưu với từ khóa và call-to-action
   const cleanDesc = typeof data.description === 'string'
     ? data.description.replace(/<[^>]*>/g, '').trim()
@@ -164,7 +188,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const seoDescription = cleanDesc
     ? `${cleanDesc.slice(0, 120)}. ${priceText}. Giao hàng tự động 24/7. Bảo hành trọn đời. Mua ngay tại BachHoaMMO!`
     : `Mua ${data.title} giá rẻ uy tín tại BachHoaMMO. ${priceText}. Giao hàng tự động 24/7. Bảo hành đổi trả miễn phí.`;
-  
+
   const images = typeof data.images === 'string' ? JSON.parse(data.images) : data.images;
   const imageUrl = images?.[0]
     ? (images[0].startsWith('http') ? images[0] : `${SITE_URL}${images[0]}`)
@@ -196,22 +220,22 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       url: `${SITE_URL}/products/${id}`,
       siteName: 'BachHoaMMO',
       images: [
-        { 
-          url: imageUrl, 
-          width: 1200, 
-          height: 630, 
+        {
+          url: imageUrl,
+          width: 1200,
+          height: 630,
           alt: `${data.title} - BachHoaMMO`,
         }
       ],
     },
-    twitter: { 
-      card: 'summary_large_image', 
+    twitter: {
+      card: 'summary_large_image',
       title: seoTitle,
       description: seoDescription.slice(0, 160),
       images: [imageUrl],
       site: '@bachhoammo',
     },
-    alternates: { 
+    alternates: {
       canonical: `${SITE_URL}/products/${id}`,
     },
     robots: {
@@ -239,11 +263,11 @@ export default async function ProductDetailPage({ params }: PageProps) {
 
   // Transform data
   const images = typeof data.images === 'string' ? JSON.parse(data.images) : data.images;
-  
+
   // Public backend URL for images (accessible from client browser)
   // Use NEXT_PUBLIC_SOCKET_URL which is the public backend URL
   const publicBackendUrl = process.env.NEXT_PUBLIC_SOCKET_URL || process.env.BACKEND_URL || 'http://localhost:3001';
-  
+
   // Helper function to transform image URLs
   const transformImageUrl = (url: string | undefined): string | undefined => {
     if (!url) return undefined;
@@ -251,10 +275,10 @@ export default async function ProductDetailPage({ params }: PageProps) {
     if (url.startsWith('/uploads')) return `${publicBackendUrl}${url}`;
     return `${publicBackendUrl}${url}`;
   };
-  
+
   // Transform seller avatar URL to include full backend path
   const sellerAvatar = transformImageUrl(data.seller?.avatar);
-  
+
   const product = {
     id: data.id,
     title: data.title,
@@ -263,10 +287,10 @@ export default async function ProductDetailPage({ params }: PageProps) {
     originalPrice: data.originalPrice ?? data.salePrice,
     stock: data.stock,
     images: images || [],
-    category: { 
-      id: data.category?.id || '', 
-      name: data.category?.name || '', 
-      slug: data.category?.slug || '' 
+    category: {
+      id: data.category?.id || '',
+      name: data.category?.name || '',
+      slug: data.category?.slug || ''
     },
     seller: {
       id: data.seller?.id || '',
@@ -275,9 +299,13 @@ export default async function ProductDetailPage({ params }: PageProps) {
       avatar: sellerAvatar,
       rating: data.seller?.sellerProfile?.rating || 0,
       totalSales: data.seller?.sellerProfile?.totalSales || 0,
-      joinDate: data.seller?.createdAt 
+      joinDate: data.seller?.createdAt
         ? new Date(data.seller.createdAt).toLocaleDateString('vi-VN')
         : '',
+      isVerified: data.seller?.sellerProfile?.isVerified || false,
+      insuranceLevel: data.seller?.sellerProfile?.insuranceLevel || 0,
+      insuranceTier: data.seller?.sellerProfile?.insuranceTier || null,
+      isProfileComplete: !!(data.seller?.sellerProfile && (data.seller.sellerProfile.contactPhone || data.seller.sellerProfile.contactTelegram) && data.seller.sellerProfile.withdrawalPin),
     },
     rating: data.rating || 0,
     totalReviews: 0,
@@ -299,15 +327,15 @@ export default async function ProductDetailPage({ params }: PageProps) {
     // Product type: STANDARD or UPGRADE
     productType: data.productType || 'STANDARD',
     // Required buyer fields for UPGRADE products (parse JSON if string)
-    requiredBuyerFields: data.requiredBuyerFields 
-      ? (typeof data.requiredBuyerFields === 'string' 
-          ? JSON.parse(data.requiredBuyerFields) 
-          : data.requiredBuyerFields)
+    requiredBuyerFields: data.requiredBuyerFields
+      ? (typeof data.requiredBuyerFields === 'string'
+        ? JSON.parse(data.requiredBuyerFields)
+        : data.requiredBuyerFields)
       : ['email'],
   };
 
   const productUrl = `${SITE_URL}/products/${id}`;
-  
+
   return (
     <>
       <ProductStructuredData product={data} productUrl={productUrl} />

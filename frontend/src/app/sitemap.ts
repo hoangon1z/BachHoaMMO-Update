@@ -10,7 +10,7 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 // Fetch all products for sitemap (SEO critical!)
 async function getAllProducts() {
   try {
-    const response = await fetch(`${BACKEND_URL}/products?limit=1000&status=active`, {
+    const response = await fetch(`${BACKEND_URL}/products?limit=5000&status=active`, {
       cache: 'no-store', // Always fetch fresh data
     });
     if (!response.ok) return [];
@@ -39,12 +39,11 @@ async function getAllCategories() {
 // Fetch all shops for sitemap
 async function getAllShops() {
   try {
-    const response = await fetch(`${BACKEND_URL}/shops?limit=500`, {
+    const response = await fetch(`${BACKEND_URL}/shop/all`, {
       cache: 'no-store',
     });
     if (!response.ok) return [];
-    const data = await response.json();
-    return data.shops || data || [];
+    return await response.json();
   } catch (error) {
     console.error('Sitemap: Error fetching shops:', error);
     return [];
@@ -71,10 +70,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = SITE_URL;
 
   // Fetch dynamic data in parallel
-  const [products, shops, blogPosts] = await Promise.all([
+  const [products, shops, blogPosts, categories] = await Promise.all([
     getAllProducts(),
     getAllShops(),
     getAllBlogPosts(),
+    getAllCategories(),
   ]);
 
   // Static routes (high priority)
@@ -83,12 +83,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${baseUrl}/explore`, lastModified: new Date(), changeFrequency: 'hourly', priority: 0.95 },
     { url: `${baseUrl}/auction`, lastModified: new Date(), changeFrequency: 'hourly', priority: 0.9 },
     { url: `${baseUrl}/blogs`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.85 },
+    { url: `${baseUrl}/become-seller`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.6 },
+    { url: `${baseUrl}/shopping-guide`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
+    { url: `${baseUrl}/seller-guide`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
     { url: `${baseUrl}/payment-guide`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
     { url: `${baseUrl}/refund-policy`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
-    { url: `${baseUrl}/shopping-guide`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
     { url: `${baseUrl}/terms`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.4 },
     { url: `${baseUrl}/privacy`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.4 },
-    { url: `${baseUrl}/become-seller`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.6 },
   ];
 
   // Product pages (HIGH PRIORITY for SEO - these are your money pages!)
@@ -102,18 +103,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.85, // High priority for product pages
     }));
 
-  // Category pages - DISABLED: Query params URLs can cause duplicate content issues
-  // Google prefers clean URLs. Consider creating /explore/[category-slug] pages instead.
-  // const categoryRoutes: MetadataRoute.Sitemap = categories.map((category: any) => ({
-  //   url: `${baseUrl}/explore?category=${category.id}`,
-  //   lastModified: new Date(),
-  //   changeFrequency: 'daily' as const,
-  //   priority: 0.8,
-  // }));
+  // Category pages using clean /explore?category=id URLs
+  const categoryRoutes: MetadataRoute.Sitemap = (Array.isArray(categories) ? categories : [])
+    .filter((cat: any) => cat.id)
+    .map((cat: any) => ({
+      url: `${baseUrl}/explore?category=${cat.id}`,
+      lastModified: new Date(),
+      changeFrequency: 'daily' as const,
+      priority: 0.8,
+    }));
 
   // Shop pages
-  const shopRoutes: MetadataRoute.Sitemap = shops.map((shop: any) => ({
-    url: `${baseUrl}/shop/${shop.id}`,
+  const shopRoutes: MetadataRoute.Sitemap = (Array.isArray(shops) ? shops : []).map((shop: any) => ({
+    url: `${baseUrl}/shop/${shop.userId || shop.id}`,
     lastModified: new Date(shop.updatedAt || Date.now()),
     changeFrequency: 'weekly' as const,
     priority: 0.7,
@@ -132,8 +134,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [
     ...staticRoutes,
     ...productRoutes,
-    // ...categoryRoutes, // Disabled - query params URLs cause duplicate content issues
+    ...categoryRoutes,
     ...shopRoutes,
     ...blogRoutes,
   ];
 }
+

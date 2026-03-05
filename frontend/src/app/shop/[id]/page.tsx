@@ -4,6 +4,9 @@ import ShopPageClient from './ShopPageClient';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 
+// Disable caching so admin-updated stats (totalSales, rating) appear immediately
+export const revalidate = 0;
+
 // Public backend URL for images (accessible from client browser)
 const PUBLIC_BACKEND_URL = process.env.NEXT_PUBLIC_SOCKET_URL || process.env.BACKEND_URL || 'http://localhost:3001';
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://bachhoammo.store';
@@ -22,7 +25,7 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
   const shopData = await serverMarketplaceApi.getShopProfile(id);
-  
+
   if (!shopData || shopData.error) {
     return { title: 'Shop | BachHoaMMO' };
   }
@@ -79,7 +82,7 @@ function ShopStructuredData({ shop, shopUrl }: { shop: any; shopUrl: string }) {
  */
 export default async function ShopPage({ params }: PageProps) {
   const { id } = await params;
-  
+
   // Fetch all shop data on server-side - Client will NOT see these API calls
   const [shopData, productsData] = await Promise.all([
     serverMarketplaceApi.getShopProfile(id),
@@ -92,6 +95,7 @@ export default async function ShopPage({ params }: PageProps) {
 
   const shop = {
     id: shopData.id,
+    sellerId: shopData.id, // User ID of the seller
     name: shopData.name || 'Shop',
     description: shopData.description || '',
     logo: getFullImageUrl(shopData.logo),
@@ -99,6 +103,9 @@ export default async function ShopPage({ params }: PageProps) {
     totalSales: shopData.totalSales || 0,
     totalProducts: shopData.totalProducts || 0,
     isVerified: shopData.isVerified || false,
+    insuranceLevel: shopData.insuranceLevel || 0,
+    insuranceTier: shopData.insuranceTier || null,
+    isProfileComplete: shopData.isProfileComplete || false,
     joinDate: shopData.joinDate || new Date().toISOString(),
   };
 
@@ -109,7 +116,7 @@ export default async function ShopPage({ params }: PageProps) {
   return (
     <>
       <ShopStructuredData shop={shop} shopUrl={shopUrl} />
-      <ShopPageClient 
+      <ShopPageClient
         shop={shop}
         initialProducts={products}
         initialPagination={pagination}

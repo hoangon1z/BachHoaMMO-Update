@@ -6,6 +6,7 @@ import sharp from 'sharp';
 import * as fs from 'fs';
 import { AdminService } from './admin.service';
 import { BlogService } from '../blog/blog.service';
+import { TelegramService } from '../telegram/telegram.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('admin')
@@ -14,6 +15,7 @@ export class AdminController {
   constructor(
     private adminService: AdminService,
     private blogService: BlogService,
+    private telegramService: TelegramService,
   ) { }
 
   /**
@@ -64,6 +66,7 @@ export class AdminController {
     @Query('status') status?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('search') search?: string,
     @Request() req?,
   ) {
     await this.adminService.verifyAdmin(req.user.id);
@@ -72,6 +75,7 @@ export class AdminController {
       status,
       limit: limit ? parseInt(limit) : undefined,
       offset: offset ? parseInt(offset) : undefined,
+      search: search || undefined,
     });
   }
 
@@ -113,6 +117,8 @@ export class AdminController {
     @Query('role') role?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('isSeller') isSeller?: string,
+    @Query('search') search?: string,
     @Request() req?,
   ) {
     await this.adminService.verifyAdmin(req.user.id);
@@ -120,6 +126,8 @@ export class AdminController {
       role,
       limit: limit ? parseInt(limit) : undefined,
       offset: offset ? parseInt(offset) : undefined,
+      isSeller: isSeller !== undefined ? isSeller === 'true' : undefined,
+      search: search || undefined,
     });
   }
 
@@ -206,6 +214,7 @@ export class AdminController {
     @Query('status') status?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('search') search?: string,
     @Request() req?,
   ) {
     await this.adminService.verifyAdmin(req.user.id);
@@ -213,7 +222,22 @@ export class AdminController {
       status,
       limit: limit ? parseInt(limit) : undefined,
       offset: offset ? parseInt(offset) : undefined,
+      search: search || undefined,
     });
+  }
+
+  /**
+   * Refund order (admin only)
+   * POST /admin/orders/:id/refund
+   * Body: { reason?: string }
+   */
+  @Post('orders/:id/refund')
+  async refundOrder(
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+    @Request() req,
+  ) {
+    return this.adminService.refundOrder(id, req.user.id, body.reason);
   }
 
   // ==================== FILE UPLOAD ====================
@@ -327,6 +351,92 @@ export class AdminController {
     return this.adminService.deleteBanner(id);
   }
 
+  // ==================== CATEGORY SHOWCASE MANAGEMENT ====================
+
+  @Get('category-showcases/active')
+  async getActiveCategoryShowcases() {
+    // Public endpoint - no auth required
+    return this.adminService.getActiveCategoryShowcases();
+  }
+
+  @Get('category-showcases')
+  async getCategoryShowcases(@Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getCategoryShowcases();
+  }
+
+  @Post('category-showcases')
+  async createCategoryShowcase(@Body() body: any, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.createCategoryShowcase(body);
+  }
+
+  @Put('category-showcases/:id')
+  async updateCategoryShowcase(@Param('id') id: string, @Body() body: any, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.updateCategoryShowcase(id, body);
+  }
+
+  @Delete('category-showcases/:id')
+  async deleteCategoryShowcase(@Param('id') id: string, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.deleteCategoryShowcase(id);
+  }
+
+  @Post('upload/showcase')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/showcases',
+        filename: (req, file, callback) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname);
+          callback(null, `showcase-${uniqueSuffix}${ext}`);
+        },
+      }),
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (req, file, callback) => {
+        if (!file.mimetype.match(/^image\/(jpeg|jpg|png|gif|webp)$/)) {
+          return callback(new Error('Only image files are allowed!'), false);
+        }
+        callback(null, true);
+      },
+    }),
+  )
+  async uploadShowcaseImage(@UploadedFile() file: any, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    if (!file) {
+      return { success: false, message: 'No file uploaded' };
+    }
+    try {
+      const originalPath = file.path;
+      const fileNameWithoutExt = file.filename.replace(/\.[^.]+$/, '');
+      const outputFileName = `${fileNameWithoutExt}-optimized.webp`;
+      const outputPath = join('./uploads/showcases', outputFileName);
+
+      await sharp(originalPath)
+        .resize(568, 296, { fit: 'cover' })
+        .webp({ quality: 85 })
+        .toFile(outputPath);
+
+      fs.unlinkSync(originalPath);
+
+      return {
+        success: true,
+        url: `/uploads/showcases/${outputFileName}`,
+        filename: outputFileName,
+      };
+    } catch (error) {
+      console.error('Error processing showcase image:', error);
+      return {
+        success: true,
+        url: `/uploads/showcases/${file.filename}`,
+        filename: file.filename,
+        warning: 'Image optimization failed, using original',
+      };
+    }
+  }
+
   // ==================== CATEGORY MANAGEMENT ====================
 
   @Get('categories')
@@ -359,6 +469,7 @@ export class AdminController {
   async getProducts(
     @Query('status') status?: string,
     @Query('categoryId') categoryId?: string,
+    @Query('search') search?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
     @Request() req?,
@@ -367,6 +478,7 @@ export class AdminController {
     return this.adminService.getProducts({
       status,
       categoryId,
+      search,
       limit: limit ? parseInt(limit) : undefined,
       offset: offset ? parseInt(offset) : undefined,
     });
@@ -388,18 +500,34 @@ export class AdminController {
     return this.adminService.deleteProduct(id);
   }
 
+  /**
+   * Update product statistics (sales, rating)
+   * PUT /admin/products/:id/stats
+   */
+  @Put('products/:id/stats')
+  async updateProductStats(
+    @Param('id') id: string,
+    @Body() body: { sales?: number; rating?: number },
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.updateProductStats(id, body);
+  }
+
   // ==================== SELLER MANAGEMENT ====================
 
   @Get('sellers')
   async getSellers(
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('search') search?: string,
     @Request() req?,
   ) {
     await this.adminService.verifyAdmin(req.user.id);
     return this.adminService.getSellers({
       limit: limit ? parseInt(limit) : undefined,
       offset: offset ? parseInt(offset) : undefined,
+      search: search || undefined,
     });
   }
 
@@ -414,7 +542,7 @@ export class AdminController {
   }
 
   /**
-   * Verify/Unverify seller
+   * Verify/Unverify seller (legacy - kept for compatibility)
    * POST /admin/sellers/:id/verify
    */
   @Post('sellers/:id/verify')
@@ -425,6 +553,95 @@ export class AdminController {
   ) {
     await this.adminService.verifyAdmin(req.user.id);
     return this.adminService.verifySeller(id, body.isVerified);
+  }
+
+  /**
+   * Revoke ALL old verify badges (transition to insurance system)
+   * POST /admin/sellers/revoke-all-badges
+   */
+  @Post('sellers/revoke-all-badges')
+  async revokeAllBadges(@Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.revokeAllVerifyBadges();
+  }
+
+  // ==================== INSURANCE MANAGEMENT ====================
+
+  /**
+   * Get all insurance funds with seller details
+   * GET /admin/insurance
+   */
+  @Get('insurance')
+  async getInsuranceFunds(
+    @Query('status') status?: string,
+    @Query('tier') tier?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Query('search') search?: string,
+    @Request() req?,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getInsuranceFunds({
+      status, tier,
+      limit: limit ? parseInt(limit) : undefined,
+      offset: offset ? parseInt(offset) : undefined,
+      search,
+    });
+  }
+
+  /**
+   * Get insurance fund detail for a specific seller
+   * GET /admin/insurance/:sellerId
+   */
+  @Get('insurance/:sellerId')
+  async getSellerInsuranceDetail(
+    @Param('sellerId') sellerId: string,
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.getSellerInsuranceDetail(sellerId);
+  }
+
+  /**
+   * Confiscate/seize insurance fund (for serious violations)
+   * POST /admin/insurance/:fundId/confiscate
+   */
+  @Post('insurance/:fundId/confiscate')
+  async confiscateInsuranceFund(
+    @Param('fundId') fundId: string,
+    @Body() body: { reason: string },
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.confiscateInsuranceFund(fundId, body.reason, req.user.id);
+  }
+
+  /**
+   * Adjust insurance fund balance (dispute deduction or top-up)
+   * POST /admin/insurance/:fundId/adjust
+   */
+  @Post('insurance/:fundId/adjust')
+  async adjustInsuranceFund(
+    @Param('fundId') fundId: string,
+    @Body() body: { amount: number; reason: string; type: 'DEDUCT' | 'TOPUP' },
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.adjustInsuranceFund(fundId, body.amount, body.reason, body.type, req.user.id);
+  }
+
+  /**
+   * Admin set insurance tier for a seller (free, no deposit required)
+   * POST /admin/insurance/set-tier
+   * Body: { sellerId: string, tier: string | null }
+   */
+  @Post('insurance/set-tier')
+  async setSellerInsuranceTier(
+    @Body() body: { sellerId: string; tier: string | null },
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.adminService.setSellerInsuranceTier(body.sellerId, body.tier, req.user.id);
   }
 
   // ==================== WITHDRAWAL MANAGEMENT ====================
@@ -438,6 +655,7 @@ export class AdminController {
     @Query('status') status?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('search') search?: string,
     @Request() req?,
   ) {
     await this.adminService.verifyAdmin(req.user.id);
@@ -445,6 +663,7 @@ export class AdminController {
       status,
       limit: limit ? parseInt(limit) : undefined,
       offset: offset ? parseInt(offset) : undefined,
+      search: search || undefined,
     });
   }
 
@@ -498,12 +717,14 @@ export class AdminController {
     @Query('status') status?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('search') search?: string,
   ) {
     await this.adminService.verifyAdmin(req.user.id);
     return this.adminService.getSellerApplications({
       status,
       limit: limit ? parseInt(limit) : 20,
       offset: offset ? parseInt(offset) : 0,
+      search: search || undefined,
     });
   }
 
@@ -591,4 +812,77 @@ export class AdminController {
     await this.adminService.verifyAdmin(req.user.id);
     return this.blogService.deletePostAdmin(id);
   }
+
+  // ==================== TELEGRAM DEPOSIT NOTIFICATION MANAGEMENT ====================
+
+  /**
+   * Get all Telegram deposit notification recipients
+   * GET /admin/telegram/deposit-recipients
+   */
+  @Get('telegram/deposit-recipients')
+  async getDepositRecipients(@Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    const recipients = await this.telegramService.getDepositRecipients();
+    return {
+      success: true,
+      recipients,
+      maxRecipients: 5,
+      currentCount: recipients.length,
+    };
+  }
+
+  /**
+   * Add a Telegram deposit notification recipient
+   * POST /admin/telegram/deposit-recipients
+   * Body: { telegramId: string, name?: string }
+   */
+  @Post('telegram/deposit-recipients')
+  async addDepositRecipient(
+    @Body() body: { telegramId: string; name?: string },
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+
+    if (!body.telegramId) {
+      return { success: false, message: 'Telegram ID là bắt buộc' };
+    }
+
+    return this.telegramService.addDepositRecipient(body.telegramId, body.name);
+  }
+
+  /**
+   * Update a Telegram deposit notification recipient
+   * PUT /admin/telegram/deposit-recipients/:id
+   * Body: { name?: string, isActive?: boolean }
+   */
+  @Put('telegram/deposit-recipients/:id')
+  async updateDepositRecipient(
+    @Param('id') id: string,
+    @Body() body: { name?: string; isActive?: boolean },
+    @Request() req,
+  ) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.telegramService.updateDepositRecipient(id, body);
+  }
+
+  /**
+   * Remove a Telegram deposit notification recipient
+   * DELETE /admin/telegram/deposit-recipients/:id
+   */
+  @Delete('telegram/deposit-recipients/:id')
+  async removeDepositRecipient(@Param('id') id: string, @Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.telegramService.removeDepositRecipient(id);
+  }
+
+  /**
+   * Test deposit notification (sends test message to channel and all recipients)
+   * POST /admin/telegram/deposit-test
+   */
+  @Post('telegram/deposit-test')
+  async testDepositNotification(@Request() req) {
+    await this.adminService.verifyAdmin(req.user.id);
+    return this.telegramService.testDepositNotification();
+  }
 }
+

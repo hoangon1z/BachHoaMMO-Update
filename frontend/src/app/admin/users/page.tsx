@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { Users, ShoppingBag, User as UserIcon, Mail, Calendar, Wallet, Shield, Ban, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
@@ -20,28 +20,63 @@ interface User {
   createdAt: string;
 }
 
+interface Stats {
+  totalUsers: number;
+  totalAdmins: number;
+  totalSellers: number;
+  totalBuyers: number;
+  totalBanned: number;
+}
+
 export default function UsersManagementPage() {
   const { user } = useAuthStore();
   const [users, setUsers] = useState<User[]>([]);
   const [filterRole, setFilterRole] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [totalItems, setTotalItems] = useState(0);
+  const [stats, setStats] = useState<Stats>({ totalUsers: 0, totalAdmins: 0, totalSellers: 0, totalBuyers: 0, totalBanned: 0 });
+  const itemsPerPage = 20;
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     if (user) {
       fetchUsers();
     }
-  }, [user, filterRole]);
+  }, [user, filterRole, currentPage, debouncedSearch]);
 
   const fetchUsers = async () => {
     setIsLoading(true);
     try {
       const token = localStorage.getItem('token');
       const params = new URLSearchParams();
-      if (filterRole) params.append('role', filterRole);
-      
+
+      // Handle filter role - SELLER is isSeller=true, not role=SELLER
+      if (filterRole === 'SELLER') {
+        params.append('isSeller', 'true');
+      } else if (filterRole === 'BANNED') {
+        // Special filter for banned users
+      } else if (filterRole) {
+        params.append('role', filterRole);
+      }
+
+      params.append('limit', String(itemsPerPage));
+      params.append('offset', String((currentPage - 1) * itemsPerPage));
+
+      if (debouncedSearch) {
+        params.append('search', debouncedSearch);
+      }
+
       const response = await fetch(`/api/admin/users?${params}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -51,6 +86,10 @@ export default function UsersManagementPage() {
       if (response.ok) {
         const data = await response.json();
         setUsers(data.users);
+        setTotalItems(data.total);
+        if (data.stats) {
+          setStats(data.stats);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch users:', error);
@@ -88,16 +127,7 @@ export default function UsersManagementPage() {
     );
   };
 
-  const filteredUsers = users.filter(u => 
-    u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
-  const paginatedUsers = filteredUsers.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
 
   const columns = [
     {
@@ -170,13 +200,6 @@ export default function UsersManagementPage() {
     },
   ];
 
-  const stats = {
-    total: users.length,
-    admins: users.filter(u => u.role === 'ADMIN').length,
-    sellers: users.filter(u => u.isSeller).length,
-    buyers: users.filter(u => !u.isSeller && u.role !== 'ADMIN').length,
-  };
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -187,30 +210,36 @@ export default function UsersManagementPage() {
       />
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatsCard
           title="Tổng người dùng"
-          value={stats.total}
+          value={stats.totalUsers}
           icon={<Users className="w-5 h-5" />}
           color="blue"
         />
         <StatsCard
           title="Admins"
-          value={stats.admins}
+          value={stats.totalAdmins}
           icon={<Shield className="w-5 h-5" />}
           color="amber"
         />
         <StatsCard
           title="Sellers"
-          value={stats.sellers}
+          value={stats.totalSellers}
           icon={<ShoppingBag className="w-5 h-5" />}
           color="green"
         />
         <StatsCard
           title="Buyers"
-          value={stats.buyers}
+          value={stats.totalBuyers}
           icon={<UserIcon className="w-5 h-5" />}
           color="gray"
+        />
+        <StatsCard
+          title="Đã khóa"
+          value={stats.totalBanned}
+          icon={<Ban className="w-5 h-5" />}
+          color="red"
         />
       </div>
 
@@ -219,7 +248,6 @@ export default function UsersManagementPage() {
         searchValue={searchQuery}
         onSearchChange={(value) => {
           setSearchQuery(value);
-          setCurrentPage(1);
         }}
         searchPlaceholder="Tìm kiếm theo tên hoặc email..."
         filters={[
@@ -229,6 +257,7 @@ export default function UsersManagementPage() {
             value: filterRole,
             options: [
               { value: 'ADMIN', label: 'Admin' },
+              { value: 'SELLER', label: 'Seller' },
               { value: 'BUYER', label: 'Buyer' },
             ],
             onChange: (value) => {
@@ -247,7 +276,7 @@ export default function UsersManagementPage() {
 
       {/* Table */}
       <DataTable
-        data={paginatedUsers}
+        data={users}
         columns={columns}
         keyExtractor={(u) => u.id}
         isLoading={isLoading}
@@ -261,11 +290,11 @@ export default function UsersManagementPage() {
       />
 
       {/* Pagination */}
-      {!isLoading && filteredUsers.length > 0 && (
+      {!isLoading && totalItems > 0 && (
         <Pagination
           currentPage={currentPage}
           totalPages={totalPages}
-          totalItems={filteredUsers.length}
+          totalItems={totalItems}
           itemsPerPage={itemsPerPage}
           onPageChange={setCurrentPage}
         />

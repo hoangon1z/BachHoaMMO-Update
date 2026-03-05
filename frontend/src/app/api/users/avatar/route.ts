@@ -39,9 +39,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Return avatar URL with backend base for display
-    const avatarPath = data.avatar || '';
-    const avatarUrl = avatarPath.startsWith('http') ? avatarPath : `${BACKEND_URL}${avatarPath}`;
+    // Return relative path - Next.js rewrites in next.config.js
+    // will proxy /uploads/* requests to the backend automatically
+    const avatarUrl = data.avatar || '';
     return NextResponse.json({
       ...data,
       avatar: avatarUrl,

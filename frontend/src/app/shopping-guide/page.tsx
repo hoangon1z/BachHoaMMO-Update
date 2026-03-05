@@ -132,7 +132,7 @@ export default function ShoppingGuidePage() {
                     <div className="flex items-start gap-3 mb-3">
                       <div className="flex-1">
                         <h3 className="font-semibold text-gray-900 text-lg">Thanh toán</h3>
-                        <p className="text-gray-600 mt-1">Kiểm tra giỏ hàng và nhấn &quot;Thanh toán&quot;. Tiền sẽ được trừ từ số dư ví.</p>
+                        <p className="text-gray-600 mt-1">Kiểm tra giỏ hàng → Nhập mã giảm giá nếu có → hệ thống tự tính giảm → Nhấn &quot;Thanh toán&quot;. Tiền sẽ được trừ từ số dư ví.</p>
                       </div>
                       <ShoppingCart className="w-8 h-8 text-blue-500" />
                     </div>
@@ -148,9 +148,23 @@ export default function ShoppingGuidePage() {
                     <div className="flex items-start gap-3 mb-3">
                       <div className="flex-1">
                         <h3 className="font-semibold text-gray-900 text-lg">Nhận hàng</h3>
-                        <p className="text-gray-600 mt-1">Với sản phẩm tự động giao: nhận ngay sau khi thanh toán. Sản phẩm thủ công: chờ seller giao trong 24h.</p>
+                        <p className="text-gray-600 mt-1">Cách nhận hàng tùy theo loại sản phẩm:</p>
                       </div>
                       <Package className="w-8 h-8 text-blue-500" />
+                    </div>
+                    <div className="mt-3 space-y-2 text-sm">
+                      <div className="p-3 bg-blue-100 rounded-lg">
+                        <p className="font-semibold text-gray-900">📱 Sản phẩm tự động:</p>
+                        <p className="text-gray-700">Nhận ngay sau khi thanh toán (tài khoản, key, dịch vụ ảo, v.v.)</p>
+                      </div>
+                      <div className="p-3 bg-purple-100 rounded-lg">
+                        <p className="font-semibold text-gray-900">📦 Sản phẩm thủ công:</p>
+                        <p className="text-gray-700">Seller sẽ giao trong vòng 24h qua chat hoặc trang đơn hàng</p>
+                      </div>
+                      <div className="p-3 bg-green-100 rounded-lg">
+                        <p className="font-semibold text-gray-900">✨ Dịch vụ buff:</p>
+                        <p className="text-gray-700">Bắt đầu trong 1-24h, hoàn thành trong thời gian cam kết bởi seller</p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -167,6 +181,10 @@ export default function ShoppingGuidePage() {
                         <p className="text-green-700 mt-1">Kiểm tra tài khoản/sản phẩm. Nếu đúng mô tả → Xác nhận nhận hàng. Nếu có vấn đề → Mở khiếu nại.</p>
                       </div>
                       <ThumbsUp className="w-8 h-8 text-green-500" />
+                    </div>
+                    <div className="mt-3 p-3 bg-green-100 rounded-lg">
+                      <p className="text-sm font-semibold text-green-900 mb-2">🔒 Escrow 72 giờ:</p>
+                      <p className="text-sm text-green-800">Nếu bạn không xác nhận trong 72h, hệ thống sẽ tự động xác nhận và giải phóng tiền cho seller. Hãy kiểm tra kỹ trước deadline!</p>
                     </div>
                     <div className="flex gap-3 mt-3">
                       <span className="flex items-center gap-1.5 text-sm text-green-700">
@@ -190,7 +208,11 @@ export default function ShoppingGuidePage() {
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
                   <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-gray-700">Ưu tiên shop có badge xác minh và đánh giá cao</p>
+                  <p className="text-sm text-gray-700">Ưu tiên seller có huy hiệu xác minh (verified badge)</p>
+                </div>
+                <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-gray-700">Kiểm tra thời gian phản hồi trung bình của seller</p>
                 </div>
                 <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
                   <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
@@ -206,11 +228,42 @@ export default function ShoppingGuidePage() {
                 </div>
                 <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
                   <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-gray-700">Sử dụng mã giảm giá từ seller để tiết kiệm thêm</p>
+                </div>
+                <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
                   <p className="text-sm text-gray-700">Đổi mật khẩu ngay sau khi nhận tài khoản</p>
                 </div>
                 <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
                   <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
                   <p className="text-sm text-gray-700">Liên hệ Admin nếu gặp vấn đề</p>
+                </div>
+              </div>
+            </section>
+
+            {/* Discount Code Guide */}
+            <section>
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Hướng dẫn sử dụng mã giảm giá</h2>
+              <div className="space-y-3">
+                <div className="p-4 bg-blue-50 border-l-4 border-blue-600 rounded-r-xl">
+                  <h3 className="font-semibold text-gray-900 mb-1">📍 Nơi nhập mã</h3>
+                  <p className="text-sm text-gray-700">Tại trang thanh toán (Bước 5), có ô nhập mã giảm giá</p>
+                </div>
+                <div className="p-4 bg-green-50 border-l-4 border-green-600 rounded-r-xl">
+                  <h3 className="font-semibold text-gray-900 mb-1">✅ Cách áp dụng</h3>
+                  <p className="text-sm text-gray-700">Nhập mã → Nhấn Áp dụng → Hệ thống tự tính và hiển thị số tiền giảm</p>
+                </div>
+                <div className="p-4 bg-purple-50 border-l-4 border-purple-600 rounded-r-xl">
+                  <h3 className="font-semibold text-gray-900 mb-1">👤 Nguồn mã giảm giá</h3>
+                  <p className="text-sm text-gray-700">Do Seller tạo ra, có thể dùng để: khuyến mãi, bồi thường khách hàng</p>
+                </div>
+                <div className="p-4 bg-amber-50 border-l-4 border-amber-600 rounded-r-xl">
+                  <h3 className="font-semibold text-gray-900 mb-1">⚙️ Điều kiện áp dụng</h3>
+                  <p className="text-sm text-gray-700">Mỗi mã có thể có: giới hạn lượt dùng, thời hạn sử dụng, đơn hàng tối thiểu</p>
+                </div>
+                <div className="p-4 bg-red-50 border-l-4 border-red-600 rounded-r-xl">
+                  <h3 className="font-semibold text-gray-900 mb-1">❌ Nếu mã không hoạt động</h3>
+                  <p className="text-sm text-gray-700">Kiểm tra: hạn dùng, đơn hàng tối thiểu, và seller tương ứng có hoạt động không</p>
                 </div>
               </div>
             </section>
@@ -224,11 +277,17 @@ export default function ShoppingGuidePage() {
                 <div>
                   <h3 className="font-semibold text-blue-800">Cần hỗ trợ?</h3>
                   <p className="text-sm text-blue-700 mt-1">
-                    Đội ngũ Admin luôn sẵn sàng hỗ trợ bạn 24/7. Sử dụng nút chat ở góc phải màn hình hoặc liên hệ qua Telegram.
+                    Đội ngũ Admin luôn sẵn sàng hỗ trợ bạn 24/7. Liên hệ qua Hotline hoặc sử dụng nút chat trong ứng dụng.
                   </p>
-                  <a href="https://t.me/bachhoammobot" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 mt-3 text-sm text-blue-600 hover:underline">
-                    Liên hệ qua Telegram →
-                  </a>
+                  <div className="flex flex-col gap-2 mt-3">
+                    <div className="flex items-center gap-2 text-sm text-blue-700 font-semibold">
+                      <span>📞 Hotline:</span>
+                      <a href="tel:0879062222" className="text-blue-600 hover:underline">0879.06.2222</a>
+                    </div>
+                    <a href="https://t.me/bachhoammobot" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm text-blue-600 hover:underline">
+                      Liên hệ qua Telegram →
+                    </a>
+                  </div>
                 </div>
               </div>
             </div>

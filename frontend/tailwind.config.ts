@@ -7,14 +7,22 @@ const config = {
     './components/**/*.{ts,tsx}',
     './app/**/*.{ts,tsx}',
     './src/**/*.{ts,tsx}',
-	],
+  ],
   prefix: "",
   theme: {
     container: {
       center: true,
-      padding: "2rem",
+      padding: {
+        DEFAULT: "1rem",
+        sm: "1.5rem",
+        lg: "2rem",
+      },
       screens: {
-        "2xl": "1400px",
+        sm: "640px",
+        md: "768px",
+        lg: "1024px",
+        xl: "1280px",
+        "2xl": "1280px",
       },
     },
     screens: {
@@ -34,37 +42,41 @@ const config = {
         foreground: "hsl(var(--foreground))",
         primary: {
           DEFAULT: "#2579f2",
-          foreground: "#000000",
+          foreground: "hsl(var(--primary-foreground))",
         },
         secondary: {
-          DEFAULT: "#F5F5F5",
-          foreground: "#1A1A1A",
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
         },
         destructive: {
           DEFAULT: "#DC2626",
           foreground: "#FFFFFF",
         },
         muted: {
-          DEFAULT: "#F5F5F5",
-          foreground: "#737373",
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
         },
         accent: {
           DEFAULT: "#2579f2",
-          foreground: "#000000",
+          foreground: "hsl(var(--accent-foreground))",
         },
         popover: {
-          DEFAULT: "#FFFFFF",
-          foreground: "#1A1A1A",
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
         },
         card: {
-          DEFAULT: "#FFFFFF",
-          foreground: "#1A1A1A",
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
         },
       },
       borderRadius: {
-        lg: "8px",
-        md: "6px",
-        sm: "4px",
+        '3xl': '12px',
+        '2xl': '10px',
+        xl: '8px',
+        lg: '6px',
+        md: '4px',
+        sm: '2px',
+        DEFAULT: '3px',
       },
       keyframes: {
         "accordion-down": {

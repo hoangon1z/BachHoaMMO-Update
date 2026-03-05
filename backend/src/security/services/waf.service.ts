@@ -7,6 +7,7 @@ import {
   COMMAND_INJECTION_PATTERNS,
   RiskLevel,
 } from '../constants/security.constants';
+import { WafLogEntry, WafStats } from '../interfaces/waf-stats.interface';
 
 interface WafCheckResult {
   blocked: boolean;
@@ -25,6 +26,13 @@ interface ThreatSignature {
 @Injectable()
 export class WafService {
   private readonly logger = new Logger(WafService.name);
+
+  // Structured logging storage (circular buffer, max 1000 entries)
+  private readonly wafLogs: WafLogEntry[] = [];
+  private readonly maxLogEntries = 1000;
+  private totalScanned = 0;
+  private totalBlocked = 0;
+  private totalWarnings = 0;
 
   private readonly threatSignatures: ThreatSignature[] = [
     {
@@ -53,10 +61,41 @@ export class WafService {
     },
   ];
 
-  /** Routes where body may contain command-like text (mô tả, code, tags) - skip COMMAND_INJECTION on body only */
+  /** Routes where body may contain command-like text (mô tả, code, tags, backticks in markdown) */
   private readonly bodyCommandInjectionExemptPaths = [
+    // Seller product management
     { method: 'POST', pathPrefix: '/seller/products' },
     { method: 'PUT', pathPrefix: '/seller/products/' },
+    // Order delivery (may contain code snippets, account credentials)
+    { method: 'POST', pathPrefix: '/seller/orders/' },
+    { method: 'PUT', pathPrefix: '/seller/orders/' },
+    // Chat messages (users may share code, commands, etc.)
+    { method: 'POST', pathPrefix: '/chat' },
+    { method: 'PUT', pathPrefix: '/chat' },
+    // Blogs (authors may include code snippets)
+    { method: 'POST', pathPrefix: '/seller/blogs' },
+    { method: 'PUT', pathPrefix: '/seller/blogs' },
+    { method: 'POST', pathPrefix: '/admin/blogs' },
+    { method: 'PUT', pathPrefix: '/admin/blogs' },
+  ];
+
+  /** Routes where body may contain path-like text (user input, descriptions) */
+  private readonly bodyPathTraversalExemptPaths = [
+    { method: 'POST', pathPrefix: '/users/seller-application' },
+    { method: 'POST', pathPrefix: '/seller/products' },
+    { method: 'PUT', pathPrefix: '/seller/products/' },
+    { method: 'PUT', pathPrefix: '/seller/orders/' },
+    { method: 'POST', pathPrefix: '/seller/orders/' },
+    { method: 'POST', pathPrefix: '/chat' },
+    { method: 'PUT', pathPrefix: '/chat' },
+    { method: 'POST', pathPrefix: '/seller/blogs' },
+    { method: 'PUT', pathPrefix: '/seller/blogs' },
+  ];
+
+  /** Routes exempt from ALL body scanning (very trusted internal operations) */
+  private readonly fullyExemptFromBodyScanPaths = [
+    // Order item delivery - contains actual product data (credentials, codes, etc.)
+    { pathPattern: /^\/seller\/orders\/[^/]+\/items\/[^/]+\/deliver$/ },
   ];
 
   /**
@@ -128,13 +167,13 @@ export class WafService {
       'sec-fetch-site', 'sec-fetch-dest', 'sec-ch-ua', 'sec-ch-ua-mobile',
       'sec-ch-ua-platform', 'dnt', 'upgrade-insecure-requests',
     ];
-    
+
     for (const [key, value] of Object.entries(headers)) {
       // Skip scanning safe/standard headers
       if (safeHeaders.includes(key.toLowerCase())) {
         continue;
       }
-      
+
       if (typeof value === 'string') {
         const headerThreats = this.scanForThreats(value);
         threats.push(...headerThreats.threats.map(t => `HEADER_${key}_${t}`));
@@ -148,13 +187,22 @@ export class WafService {
 
     // 6. Scan body for threats
     const pathOnly = url.split('?')[0];
+
+    // Check if this path is fully exempt from body scanning (trusted internal operations)
+    const isFullyExemptFromBodyScan = this.fullyExemptFromBodyScanPaths.some(
+      (r) => r.pathPattern.test(pathOnly),
+    );
+
     const skipBodyCommandInjection = this.bodyCommandInjectionExemptPaths.some(
       (r) => r.method === method && pathOnly.startsWith(r.pathPrefix),
     );
+    const skipBodyPathTraversal = this.bodyPathTraversalExemptPaths.some(
+      (r) => r.method === method && pathOnly.startsWith(r.pathPrefix),
+    );
 
-    if (body) {
+    if (body && !isFullyExemptFromBodyScan) {
       const bodyString = typeof body === 'string' ? body : JSON.stringify(body);
-      
+
       // Check body size
       if (bodyString.length > SECURITY_CONSTANTS.WAF.MAX_BODY_SIZE) {
         return {
@@ -165,8 +213,11 @@ export class WafService {
         };
       }
 
-      const bodyExclude = skipBodyCommandInjection ? ['COMMAND_INJECTION'] : undefined;
-      const bodyThreats = this.scanForThreats(bodyString, bodyExclude);
+      const bodyExclude: string[] = [];
+      if (skipBodyCommandInjection) bodyExclude.push('COMMAND_INJECTION');
+      if (skipBodyPathTraversal) bodyExclude.push('PATH_TRAVERSAL');
+      const bodyExcludeFinal = bodyExclude.length > 0 ? bodyExclude : undefined;
+      const bodyThreats = this.scanForThreats(bodyString, bodyExcludeFinal);
       threats.push(...bodyThreats.threats.map(t => `BODY_${t}`));
       if (bodyThreats.blocked) {
         blocked = true;
@@ -176,7 +227,7 @@ export class WafService {
 
       // Deep scan object values
       if (typeof body === 'object') {
-        const deepThreats = this.deepScanObject(body, 0, bodyExclude);
+        const deepThreats = this.deepScanObject(body, 0, bodyExcludeFinal);
         threats.push(...deepThreats.threats);
         if (deepThreats.blocked) {
           blocked = true;
@@ -202,6 +253,25 @@ export class WafService {
       });
     }
 
+    // Log the decision
+    const action: 'BLOCK' | 'WARN' | 'PASS' = blocked
+      ? 'BLOCK'
+      : riskLevel === RiskLevel.HIGH || riskLevel === RiskLevel.CRITICAL
+        ? 'WARN'
+        : 'PASS';
+
+    this.logDecision(
+      ip || 'unknown',
+      url.substring(0, 100),
+      method,
+      action,
+      riskLevel,
+      threats,
+      reason,
+      typeof body === 'string' ? body : JSON.stringify(body),
+      headers['user-agent'],
+    );
+
     return { blocked, reason, riskLevel, threats };
   }
 
@@ -222,7 +292,7 @@ export class WafService {
         if (pattern.test(input)) {
           threats.push(signature.name);
           riskLevel = this.getHigherRiskLevel(riskLevel, signature.riskLevel);
-          
+
           if (signature.block) {
             blocked = true;
             reason = `Detected ${signature.name}`;
@@ -323,7 +393,7 @@ export class WafService {
     // Check for oversized headers
     const totalHeaderSize = Object.entries(headers)
       .reduce((sum, [k, v]) => sum + k.length + (typeof v === 'string' ? v.length : 0), 0);
-    
+
     if (totalHeaderSize > SECURITY_CONSTANTS.WAF.MAX_HEADER_SIZE) {
       threats.push('OVERSIZED_HEADERS');
     }
@@ -359,11 +429,70 @@ export class WafService {
   }
 
   /**
+   * Log WAF decision
+   */
+  private logDecision(
+    ip: string,
+    path: string,
+    method: string,
+    action: 'BLOCK' | 'WARN' | 'PASS',
+    riskLevel: RiskLevel,
+    threats: string[],
+    reason?: string,
+    requestSample?: string,
+    userAgent?: string,
+  ): void {
+    const logEntry: WafLogEntry = {
+      timestamp: new Date(),
+      ip,
+      path,
+      method,
+      action,
+      riskLevel,
+      threats,
+      reason,
+      requestSample: requestSample?.substring(0, 200), // Truncate
+      userAgent,
+    };
+
+    // Circular buffer
+    this.wafLogs.push(logEntry);
+    if (this.wafLogs.length > this.maxLogEntries) {
+      this.wafLogs.shift();
+    }
+
+    // Update counters
+    this.totalScanned++;
+    if (action === 'BLOCK') this.totalBlocked++;
+    if (action === 'WARN') this.totalWarnings++;
+
+    // Log to console
+    const logMsg = `[WAF ${action}] ${ip} ${method} ${path} - ${reason || threats.join(', ')}`;
+    if (action === 'BLOCK') {
+      this.logger.warn(logMsg);
+    } else if (action === 'WARN') {
+      this.logger.warn(logMsg);
+    } else {
+      this.logger.debug(logMsg);
+    }
+  }
+
+  /**
    * Get WAF stats
    */
-  getStats(): { signaturesLoaded: number } {
+  getStats(): WafStats {
     return {
       signaturesLoaded: this.threatSignatures.length,
+      totalScanned: this.totalScanned,
+      totalBlocked: this.totalBlocked,
+      totalWarnings: this.totalWarnings,
     };
+  }
+
+  /**
+   * Get recent WAF logs
+   */
+  getRecentLogs(limit = 100): WafLogEntry[] {
+    return this.wafLogs.slice(-limit).reverse();
   }
 }

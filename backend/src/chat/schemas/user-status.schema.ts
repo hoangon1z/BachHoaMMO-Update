@@ -39,7 +39,6 @@ export class UserStatus {
 
 export const UserStatusSchema = SchemaFactory.createForClass(UserStatus);
 
-// Indexes
-UserStatusSchema.index({ userId: 1 });
+// Indexes (userId already has unique index from @Prop({ unique: true }), do not duplicate)
 UserStatusSchema.index({ isOnline: 1 });
 UserStatusSchema.index({ socketId: 1 });

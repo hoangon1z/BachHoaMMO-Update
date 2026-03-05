@@ -45,7 +45,7 @@ export default function CartPage() {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <Header user={user} onLogout={handleLogout} onSearch={handleSearch} />
-        
+
         <div className="flex-1 flex items-center justify-center py-16 px-4">
           <div className="text-center max-w-md">
             <div className="w-32 h-32 mx-auto mb-8 rounded-full bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center">
@@ -85,7 +85,7 @@ export default function CartPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header user={user} onLogout={handleLogout} onSearch={handleSearch} />
-      
+
       <div className="flex-1 container mx-auto px-4 py-6 lg:py-8">
         {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-sm mb-6">
@@ -106,7 +106,7 @@ export default function CartPage() {
                   </div>
                   <span className="font-semibold text-gray-900">{group.sellerName}</span>
                 </div>
-                
+
                 {/* Items */}
                 <div className="divide-y divide-gray-100">
                   {group.items.map((item) => (
@@ -136,7 +136,7 @@ export default function CartPage() {
                               {item.title}
                             </h3>
                           </Link>
-                          
+
                           <div className="flex items-center gap-3 mb-3">
                             {item.originalPrice && item.originalPrice > item.price ? (
                               <>
@@ -159,23 +159,32 @@ export default function CartPage() {
                                 Upgrade
                               </span>
                             )}
+                            {item.productType === 'SERVICE' && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-medium rounded-full">
+                                Dịch vụ
+                              </span>
+                            )}
                           </div>
 
-                          {/* Buyer provided data for UPGRADE products */}
-                          {item.productType === 'UPGRADE' && item.buyerProvidedData && (
-                            <div className="mb-3 p-2.5 bg-purple-50 rounded-lg border border-purple-100">
-                              <div className="flex items-center gap-1.5 text-xs text-purple-600 mb-1">
+                          {/* Buyer provided data for UPGRADE / SERVICE products */}
+                          {(item.productType === 'UPGRADE' || item.productType === 'SERVICE') && item.buyerProvidedData && (
+                            <div className={`mb-3 p-2.5 rounded-lg border ${item.productType === 'SERVICE' ? 'bg-emerald-50 border-emerald-100' : 'bg-purple-50 border-purple-100'}`}>
+                              <div className={`flex items-center gap-1.5 text-xs mb-1 ${item.productType === 'SERVICE' ? 'text-emerald-600' : 'text-purple-600'}`}>
                                 <Mail className="w-3.5 h-3.5" />
-                                <span className="font-medium">Tài khoản cần nâng cấp:</span>
+                                <span className="font-medium">
+                                  {item.productType === 'SERVICE' ? 'Thông tin dịch vụ:' : 'Tài khoản cần nâng cấp:'}
+                                </span>
                               </div>
-                              <div className="text-sm text-purple-800">
-                                {Object.entries(item.buyerProvidedData).map(([key, value]) => (
-                                  <div key={key}>
-                                    {key === 'email' && <span>{value}</span>}
-                                    {key === 'username' && <span>@{value}</span>}
-                                    {key === 'password' && <span>••••••••</span>}
-                                  </div>
-                                ))}
+                              <div className="text-sm text-gray-800">
+                                {Object.entries(item.buyerProvidedData).map(([key, value]) => {
+                                  const labels: Record<string, string> = { link: 'Link', username: 'Username', email: 'Email', password: '••••••••', quantity: 'SL', note: 'Ghi chú' };
+                                  return (
+                                    <div key={key} className="flex items-center gap-1.5">
+                                      <span className="text-xs text-gray-500">{labels[key] || key}:</span>
+                                      <span>{key === 'password' ? '••••••••' : String(value)}</span>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           )}
@@ -201,7 +210,7 @@ export default function CartPage() {
                                 <Plus className="w-4 h-4 text-gray-600" />
                               </button>
                             </div>
-                            
+
                             <button
                               onClick={() => removeItem(item.id)}
                               className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
@@ -222,7 +231,7 @@ export default function CartPage() {
           <div className="lg:col-span-1">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sticky top-24">
               <h2 className="text-lg font-bold text-gray-900 mb-6">Tóm tắt đơn hàng</h2>
-              
+
               <div className="space-y-4 mb-6">
                 <div className="flex justify-between text-gray-600">
                   <span>Tạm tính ({getTotalItems()} sản phẩm)</span>
@@ -240,7 +249,7 @@ export default function CartPage() {
                 </div>
               </div>
 
-              <Button 
+              <Button
                 onClick={handleCheckout}
                 className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-600/25 mb-4"
               >

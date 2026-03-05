@@ -2,16 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { 
-  Package, 
-  Plus, 
-  Search, 
+import {
+  Package,
+  Plus,
+  Search,
   Filter,
   Edit,
   Trash2,
   Eye,
+  EyeOff,
   MoreVertical,
-  AlertCircle
+  AlertCircle,
+  AlertTriangle,
+  ExternalLink,
+  Check,
+  XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,9 +52,27 @@ export default function SellerProductsPage() {
   const [errorDialog, setErrorDialog] = useState<{ isOpen: boolean; message: string }>({ isOpen: false, message: '' });
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Profile completion
+  const [profileCompletion, setProfileCompletion] = useState<any>(null);
+
   useEffect(() => {
     fetchProducts();
+    fetchProfileCompletion();
   }, [pagination.page, statusFilter]);
+
+  const fetchProfileCompletion = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/seller/profile-completion', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setProfileCompletion(await res.json());
+      }
+    } catch (error) {
+      console.error('Failed to fetch profile completion:', error);
+    }
+  };
 
   const fetchProducts = async () => {
     try {
@@ -80,15 +103,16 @@ export default function SellerProductsPage() {
   };
 
   const handleToggleStatus = async (productId: string, currentStatus: string) => {
+    if (currentStatus === 'HIDDEN_BY_ADMIN') return; // Can't toggle admin-hidden
     const newStatus = currentStatus === 'INACTIVE' ? 'ACTIVE' : 'INACTIVE';
-    
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || '/api'}/seller/products/${productId}`,
         {
           method: 'PUT',
-          headers: { 
+          headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
@@ -98,7 +122,7 @@ export default function SellerProductsPage() {
 
       if (response.ok) {
         // Update product in local state without refetching
-        setProducts(prev => prev.map(p => 
+        setProducts(prev => prev.map(p =>
           p.id === productId ? { ...p, status: newStatus } : p
         ));
       } else {
@@ -155,7 +179,7 @@ export default function SellerProductsPage() {
         `${process.env.NEXT_PUBLIC_API_URL || '/api'}/seller/products/${productId}/stock`,
         {
           method: 'PUT',
-          headers: { 
+          headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
@@ -176,12 +200,14 @@ export default function SellerProductsPage() {
         return <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-full">Ngừng bán</span>;
       case 'OUT_OF_STOCK':
         return <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full">Hết hàng</span>;
+      case 'HIDDEN_BY_ADMIN':
+        return <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs font-medium rounded-full">Admin ẩn</span>;
       default:
         return <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-full">{status}</span>;
     }
   };
 
-  const filteredProducts = products.filter(p => 
+  const filteredProducts = products.filter(p =>
     p.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -200,6 +226,45 @@ export default function SellerProductsPage() {
           </Button>
         </Link>
       </div>
+
+      {/* Profile Completion Warning */}
+      {profileCompletion && !profileCompletion.isComplete && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-amber-800 mb-1">Hoàn thiện thông tin cửa hàng</h3>
+              <p className="text-sm text-amber-700 mb-3">
+                Bạn cần cập nhật đầy đủ thông tin cửa hàng trước khi có thể upload kho hàng cho sản phẩm.
+                Tiến độ: <strong>{profileCompletion.completedCount}/{profileCompletion.totalCount}</strong>
+              </p>
+              <div className="space-y-2 mb-4">
+                {profileCompletion.requirements.map((req: any) => (
+                  <div key={req.id} className="flex items-center gap-2">
+                    {req.completed ? (
+                      <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
+                    ) : (
+                      <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                    )}
+                    <span className={`text-sm ${req.completed ? 'text-green-700 line-through' : 'text-amber-800 font-medium'}`}>
+                      {req.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <a
+                href="/seller/settings"
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Đi tới Cài đặt cửa hàng
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -222,6 +287,7 @@ export default function SellerProductsPage() {
             <option value="ACTIVE">Đang bán</option>
             <option value="INACTIVE">Ngừng bán</option>
             <option value="OUT_OF_STOCK">Hết hàng</option>
+            <option value="HIDDEN_BY_ADMIN">Admin ẩn</option>
           </select>
         </div>
       </div>
@@ -261,8 +327,8 @@ export default function SellerProductsPage() {
                     let images: string[] = [];
                     try {
                       images = JSON.parse(product.images);
-                    } catch {}
-                    
+                    } catch { }
+
                     return (
                       <tr key={product.id} className="hover:bg-gray-50">
                         <td className="px-4 py-4">
@@ -324,8 +390,18 @@ export default function SellerProductsPage() {
                                 <Edit className="w-4 h-4" />
                               </Button>
                             </Link>
-                            <Button 
-                              variant="ghost" 
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleToggleStatus(product.id, product.status)}
+                              title={product.status === 'INACTIVE' ? 'Mở bán lại' : 'Ẩn sản phẩm'}
+                              className={product.status === 'INACTIVE' ? 'text-green-600 hover:text-green-700 hover:bg-green-50' : 'text-amber-600 hover:text-amber-700 hover:bg-amber-50'}
+                              disabled={product.status === 'HIDDEN_BY_ADMIN'}
+                            >
+                              {product.status === 'INACTIVE' ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                            </Button>
+                            <Button
+                              variant="ghost"
                               size="sm"
                               onClick={() => handleDeleteClick(product.id, product.title)}
                               className="text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -348,7 +424,7 @@ export default function SellerProductsPage() {
                 let images: string[] = [];
                 try {
                   images = JSON.parse(product.images);
-                } catch {}
+                } catch { }
 
                 return (
                   <div key={product.id} className="p-4">
@@ -375,18 +451,25 @@ export default function SellerProductsPage() {
                         </div>
                       </div>
                       <div className="relative">
-                        <button 
+                        <button
                           onClick={() => setOpenMenu(openMenu === product.id ? null : product.id)}
                           className="p-2 hover:bg-gray-100 rounded-lg"
                         >
                           <MoreVertical className="w-5 h-5 text-gray-500" />
                         </button>
                         {openMenu === product.id && (
-                          <div className="absolute right-0 top-10 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                          <div className="absolute right-0 top-10 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
                             <Link href={`/seller/products/${product.id}/edit`} className="block px-4 py-2 text-sm hover:bg-gray-50">
                               Chỉnh sửa
                             </Link>
-                            <button 
+                            <button
+                              onClick={() => { handleToggleStatus(product.id, product.status); setOpenMenu(null); }}
+                              className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-50 ${product.status === 'INACTIVE' ? 'text-green-600' : 'text-amber-600'}`}
+                              disabled={product.status === 'HIDDEN_BY_ADMIN'}
+                            >
+                              {product.status === 'INACTIVE' ? '👁 Mở bán lại' : '🙈 Ẩn sản phẩm'}
+                            </button>
+                            <button
                               onClick={() => handleDeleteClick(product.id, product.title)}
                               className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                             >

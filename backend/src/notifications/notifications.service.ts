@@ -16,7 +16,7 @@ interface CreateNotificationDto {
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   /**
    * Create a notification for a user
@@ -193,13 +193,13 @@ export class NotificationsService {
    */
   async sendComplaintNotification(userId: string, complaintId: string, status: string, message?: string) {
     const content = message || `Khiếu nại của bạn đã được cập nhật: ${status}`;
-    
+
     return this.create({
       userId,
       type: 'COMPLAINT',
       title: 'Cập nhật khiếu nại',
       message: content,
-      link: `/complaints/${complaintId}`,
+      link: `/orders`,
       icon: 'MessageSquare',
     });
   }
@@ -220,12 +220,17 @@ export class NotificationsService {
   /**
    * Send deposit notification
    */
-  async sendDepositNotification(userId: string, amount: number) {
+  async sendDepositNotification(userId: string, amount: number, bank?: string) {
+    const bankNames: Record<string, string> = {
+      bidv: 'BIDV',
+      mbbank: 'MB Bank',
+    };
+    const bankLabel = bank ? ` qua ${bankNames[bank] || bank.toUpperCase()}` : '';
     return this.create({
       userId,
       type: 'DEPOSIT',
       title: 'Nạp tiền thành công!',
-      message: `Bạn đã nạp thành công ${amount.toLocaleString('vi-VN')}đ vào ví.`,
+      message: `Bạn đã nạp thành công ${amount.toLocaleString('vi-VN')}đ vào ví${bankLabel}.`,
       link: '/wallet',
       icon: 'Wallet',
     });
@@ -240,7 +245,7 @@ export class NotificationsService {
       type: 'ORDER',
       title: 'Đơn hàng mới!',
       message: `Bạn có đơn hàng mới từ ${buyerName}. Tổng: ${total.toLocaleString('vi-VN')}đ`,
-      link: `/seller/orders/${orderId}`,
+      link: `/seller/orders`,
       icon: 'ShoppingBag',
     });
   }

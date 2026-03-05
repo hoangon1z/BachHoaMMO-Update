@@ -77,14 +77,26 @@ export class SecurityExceptionFilter implements ExceptionFilter {
       ).catch(err => this.logger.error('Failed to log exception', err));
     }
 
-    // Log internal errors for debugging
+    // Log internal errors for debugging (skip ENOENT errors for static files - normal behavior)
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
-      this.logger.error(`Internal error: ${message}`, {
-        exception: exception instanceof Error ? exception.stack : exception,
-        path: request.path,
-        method: request.method,
-        requestId,
-      });
+      // Skip logging ENOENT errors for /uploads/* - these are normal 404s
+      const isUploadsPath = request.path.startsWith('/uploads/');
+      const isEnoentError = message.includes('ENOENT') || message.includes('no such file or directory');
+      
+      if (!(isUploadsPath && isEnoentError)) {
+        // Only log if it's not a normal 404 for uploads
+        this.logger.error(`Internal error: ${message}`, {
+          exception: exception instanceof Error ? exception.stack : exception,
+          path: request.path,
+          method: request.method,
+          requestId,
+        });
+      } else {
+        // For uploads 404, return 404 status instead of 500
+        status = HttpStatus.NOT_FOUND;
+        message = 'Not Found';
+        error = 'Not Found';
+      }
     }
 
     // Build response - don't leak internal details in production

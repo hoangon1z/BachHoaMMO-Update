@@ -13,6 +13,8 @@ export interface Position {
     sellerId: string;
     shopName: string;
     shopLogo?: string;
+    insuranceLevel?: number;
+    insuranceTier?: string | null;
     createdAt: string;
   } | null;
   bidCount: number;
@@ -24,7 +26,8 @@ export interface Auction {
   year: number;
   startTime: string;
   endTime: string;
-  status: string;
+  lastBidAt?: string;
+  status: string; // PENDING, ACTIVE, ENDED, CANCELLED
   positions: Position[];
   totalBids: number;
 }
@@ -35,14 +38,25 @@ export interface BidHistoryItem {
   amount: number;
   status: string;
   shopName: string;
+  insuranceLevel?: number;
+  insuranceTier?: string | null;
   createdAt: string;
 }
 
 export interface AuctionSettings {
   startPrice: number;
   minIncrement: number;
-  endDay: number;
+  startHour: number;
+  startMinute: number;
   endHour: number;
+  endMinute: number;
+  cooldownMinutes: number;
+  autoCreate: boolean;
+  // Insurance discount fields (only available for logged-in sellers)
+  insuranceDiscount?: number;
+  insuranceLevel?: number;
+  insuranceTier?: string | null;
+  discountedStartPrice?: number;
 }
 
 interface UseAuctionReturn {
@@ -91,11 +105,22 @@ export function useAuction(): UseAuctionReturn {
   // Fetch initial data
   const refreshAuction = useCallback(async () => {
     try {
-      const [auctionRes, historyRes, settingsRes] = await Promise.all([
+      const fetchPromises: Promise<Response>[] = [
         fetch('/api/auction/current'),
         fetch('/api/auction/history?limit=20'),
-        fetch('/api/admin/settings/auction'),
-      ]);
+      ];
+
+      if (token) {
+        fetchPromises.push(
+          fetch('/api/auction/settings', {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        );
+      } else {
+        fetchPromises.push(fetch('/api/admin/settings/auction'));
+      }
+
+      const [auctionRes, historyRes, settingsRes] = await Promise.all(fetchPromises);
 
       const auctionData = await auctionRes.json();
       const historyData = await historyRes.json();
@@ -161,7 +186,7 @@ export function useAuction(): UseAuctionReturn {
     socket.on('auction:update', ({ auction: updatedAuction }) => {
       console.log('[Auction] Update received');
       setAuction(updatedAuction);
-      refreshAuction(); // Also refresh history
+      refreshAuction();
     });
 
     // Handle outbid notification
@@ -173,6 +198,7 @@ export function useAuction(): UseAuctionReturn {
         bidderName: data.newBidderName,
       });
       notifyAuctionOutbid(data.position, data.newAmount, data.newBidderName);
+      refreshAuction();
     });
 
     // Handle winner notification
@@ -210,6 +236,7 @@ export function useAuction(): UseAuctionReturn {
     }
 
     try {
+      setError(null);
       const res = await fetch('/api/auction/bid', {
         method: 'POST',
         headers: {

@@ -1,8 +1,8 @@
 import { serverMarketplaceApi } from '@/lib/server-api';
 import HomePageClient from './HomePageClient';
 
-// Force dynamic rendering - always fetch fresh data
-export const dynamic = 'force-dynamic';
+// ISR: Revalidate every 60 seconds (instead of force-dynamic which fetches on EVERY request)
+export const revalidate = 60;
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://bachhoammo.store';
 
@@ -75,12 +75,15 @@ function HomePageStructuredData() {
  */
 export default async function HomePage() {
   // Fetch ALL data on server-side - Client will NOT see these API calls
-  const [featuredProducts, latestProducts, categories, banners, auctionWinners] = await Promise.all([
+  const [featuredProducts, latestProducts, categories, banners, auctionWinners, categoryShowcases, bestSellersWeekly, trustedShopProducts] = await Promise.all([
     serverMarketplaceApi.getFeaturedProducts(),
     serverMarketplaceApi.getLatestProducts(),
     serverMarketplaceApi.getCategories(true), // Only parent categories for homepage
     serverMarketplaceApi.getBanners(),
     serverMarketplaceApi.getAuctionWinners(),
+    serverMarketplaceApi.getCategoryShowcases(),
+    serverMarketplaceApi.getBestSellersWeekly(),
+    serverMarketplaceApi.getTrustedShopProducts(),
   ]);
 
   // Pass all data to client component
@@ -93,6 +96,9 @@ export default async function HomePage() {
         initialCategories={categories}
         initialBanners={banners}
         initialAuctionWinners={auctionWinners}
+        initialCategoryShowcases={categoryShowcases}
+        initialBestSellersWeekly={bestSellersWeekly}
+        initialTrustedShopProducts={trustedShopProducts}
       />
     </>
   );

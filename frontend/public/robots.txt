@@ -1,24 +1,112 @@
+# =============================================================================
+# BachHoaMMO - Robots.txt (Optimized for SEO)
+# Cập nhật: 2026-02-10
+# =============================================================================
+
+# ✅ Cho phép tất cả bot crawl trang công khai
 User-agent: *
 Allow: /
+
+# ✅ Cho phép crawl các trang SEO quan trọng (ưu tiên)
+Allow: /products/
+Allow: /blogs/
+Allow: /shop/
+Allow: /explore
+Allow: /auction
+Allow: /payment-guide
+Allow: /refund-policy
+Allow: /shopping-guide
+Allow: /seller-guide
+Allow: /become-seller
+Allow: /terms
+Allow: /privacy
+
+# ❌ Chặn các trang riêng tư / không cần SEO
+# Admin & Dashboard
 Disallow: /admin/
-Disallow: /api/
-Disallow: /seller/
 Disallow: /dashboard/
-Disallow: /checkout/
-Disallow: /cart/
-Disallow: /messages/
-Disallow: /orders/
+Disallow: /seller/
+
+# User-specific pages
 Disallow: /profile/
 Disallow: /settings/
+Disallow: /messages/
+Disallow: /orders/
 Disallow: /wallet/
+Disallow: /notifications/
+
+# Transaction pages
+Disallow: /checkout/
+Disallow: /cart/
+
+# Auth pages (không cần SEO)
 Disallow: /login
 Disallow: /register
 Disallow: /forgot-password
 
-# Chặn các bot AI nếu bạn muốn tiết kiệm tài nguyên host
+# API endpoints
+Disallow: /api/
+
+# Demo pages
+Disallow: /demo/
+
+# Search results duplicates (tránh duplicate content)
+Disallow: /*?*sort=
+Disallow: /*?*filter=
+
+# =============================================================================
+# Bot-specific rules
+# =============================================================================
+
+# Chặn AI bots (tiết kiệm bandwidth)
 User-agent: GPTBot
 Disallow: /
+
 User-agent: CCBot
 Disallow: /
 
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: Claude-Web
+Disallow: /
+
+# Cho phép Googlebot crawl mọi thứ được phép
+User-agent: Googlebot
+Allow: /
+Allow: /products/
+Allow: /blogs/
+Allow: /shop/
+Allow: /explore
+Allow: /auction
+Disallow: /admin/
+Disallow: /api/
+Disallow: /seller/
+Disallow: /checkout/
+Disallow: /cart/
+Disallow: /dashboard/
+Disallow: /profile/
+Disallow: /messages/
+Disallow: /orders/
+Disallow: /wallet/
+Crawl-delay: 0
+
+# Bingbot
+User-agent: Bingbot
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+Crawl-delay: 1
+
+# =============================================================================
+# Sitemap location (QUAN TRỌNG!)
+# =============================================================================
 Sitemap: https://bachhoammo.store/sitemap.xml
+
+# =============================================================================
+# Additional Information
+# =============================================================================
+# Host: https://bachhoammo.store (yêu cầu canonical domain)

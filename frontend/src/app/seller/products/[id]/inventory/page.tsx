@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
+import InventoryUploadModal from '@/components/seller/InventoryUploadModal';
 import {
   ArrowLeft,
   Upload,
@@ -24,6 +25,10 @@ import {
   Search,
   Filter,
   Layers,
+  AlertTriangle,
+  ExternalLink,
+  Check,
+  Download,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -67,6 +72,18 @@ interface Product {
   hasVariants?: boolean;
 }
 
+interface ProfileCompletion {
+  isComplete: boolean;
+  completedCount: number;
+  totalCount: number;
+  requirements: Array<{
+    id: string;
+    label: string;
+    completed: boolean;
+    link: string;
+  }>;
+}
+
 export default function InventoryPage() {
   const params = useParams();
   const router = useRouter();
@@ -97,6 +114,10 @@ export default function InventoryPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<any>(null);
 
+  // Profile completion
+  const [profileCompletion, setProfileCompletion] = useState<ProfileCompletion | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+
   // Add single modal
   const [showAddModal, setShowAddModal] = useState(false);
   const [singleAccountData, setSingleAccountData] = useState('');
@@ -115,15 +136,59 @@ export default function InventoryPage() {
   // Delete confirmation dialogs
   const [deleteDialog, setDeleteDialog] = useState<{
     isOpen: boolean;
-    type: 'single' | 'bulk' | null;
+    type: 'single' | 'bulk' | 'deleteAll' | null;
     inventoryId: string | null;
   }>({ isOpen: false, type: null, inventoryId: null });
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+
+  const handleDownload = async (downloadStatus?: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      let url = `/api/seller/products/${productId}/inventory/download`;
+      const params: string[] = [];
+      if (downloadStatus) params.push(`status=${downloadStatus}`);
+      if (variantFilter) params.push(`variantId=${variantFilter}`);
+      if (params.length > 0) url += `?${params.join('&')}`;
+
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        toast.error('Lỗi', 'Không thể tải xuống');
+        return;
+      }
+
+      const text = await res.text();
+      if (!text.trim()) {
+        toast.warning('Trống', 'Không có dữ liệu để tải xuống');
+        return;
+      }
+
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      const label = downloadStatus ? downloadStatus.toLowerCase() : 'all';
+      link.download = `inventory_${label}_${productId.substring(0, 8)}.txt`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+
+      const lines = text.split('\n').filter(Boolean).length;
+      toast.success('Đã tải xuống', `${lines} tài khoản`);
+    } catch (error) {
+      console.error('Download failed:', error);
+      toast.error('Lỗi', 'Không thể tải xuống');
+    } finally {
+      setShowDownloadMenu(false);
+    }
+  };
 
   useEffect(() => {
     if (user) {
       fetchProduct();
       fetchInventory();
+      fetchProfileCompletion();
     }
   }, [user, productId, statusFilter, variantFilter]);
 
@@ -169,6 +234,23 @@ export default function InventoryPage() {
     }
   };
 
+  const fetchProfileCompletion = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/seller/profile-completion', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setProfileCompletion(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch profile completion:', error);
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  };
+
   const handleUpload = async () => {
     if (!uploadText.trim()) return;
 
@@ -188,7 +270,7 @@ export default function InventoryPage() {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           accountData: uploadText,
           variantId: uploadVariantId || undefined,
         }),
@@ -228,7 +310,7 @@ export default function InventoryPage() {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           accountData: singleAccountData,
           variantId: singleVariantId || undefined,
         }),
@@ -293,6 +375,11 @@ export default function InventoryPage() {
     setDeleteDialog({ isOpen: true, type: 'bulk', inventoryId: null });
   };
 
+  const handleDeleteAllClick = () => {
+    if (!statusFilter || (statusFilter !== 'AVAILABLE' && statusFilter !== 'DISABLED')) return;
+    setDeleteDialog({ isOpen: true, type: 'deleteAll', inventoryId: null });
+  };
+
   const handleDeleteConfirm = async () => {
     setIsDeleting(true);
     try {
@@ -330,6 +417,24 @@ export default function InventoryPage() {
           setDeleteDialog({ isOpen: false, type: null, inventoryId: null });
         } else {
           toast.error('Lỗi', 'Không thể xóa các tài khoản đã chọn');
+        }
+      } else if (deleteDialog.type === 'deleteAll') {
+        let url = `/api/seller/products/${productId}/inventory/all?status=${statusFilter}`;
+        if (variantFilter) url += `&variantId=${variantFilter}`;
+        const res = await fetch(url, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          toast.success('Đã xóa', `Đã xóa ${data.deleted} tài khoản khỏi kho`);
+          setSelectedItems(new Set());
+          fetchInventory();
+          setDeleteDialog({ isOpen: false, type: null, inventoryId: null });
+        } else {
+          const data = await res.json().catch(() => ({}));
+          toast.error('Lỗi', data.message || 'Không thể xóa tài khoản');
         }
       }
     } catch (error) {
@@ -427,16 +532,111 @@ export default function InventoryPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowAddModal(true)}>
+          {/* Download dropdown */}
+          <div className="relative">
+            <Button
+              variant="outline"
+              onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+              title="Tải xuống dữ liệu kho hàng"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Tải xuống
+            </Button>
+            {showDownloadMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowDownloadMenu(false)} />
+                <div className="absolute right-0 mt-1 w-56 bg-white rounded-lg shadow-lg border z-50 py-1">
+                  <button
+                    onClick={() => handleDownload()}
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <Package className="w-4 h-4 text-gray-500" />
+                    Tất cả ({total})
+                  </button>
+                  <button
+                    onClick={() => handleDownload('AVAILABLE')}
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <CheckCircle className="w-4 h-4 text-green-500" />
+                    Sẵn sàng ({stats.AVAILABLE})
+                  </button>
+                  <button
+                    onClick={() => handleDownload('SOLD')}
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <Package className="w-4 h-4 text-blue-500" />
+                    Đã bán ({stats.SOLD})
+                  </button>
+                  <button
+                    onClick={() => handleDownload('DISABLED')}
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <XCircle className="w-4 h-4 text-red-500" />
+                    Vô hiệu ({stats.DISABLED})
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => setShowAddModal(true)}
+            disabled={!profileCompletion?.isComplete}
+            title={!profileCompletion?.isComplete ? 'Hoàn thiện thông tin cửa hàng trước' : ''}
+          >
             <Plus className="w-4 h-4 mr-2" />
             Thêm 1
           </Button>
-          <Button onClick={() => setShowUploadModal(true)} className="bg-blue-600 hover:bg-blue-700">
+          <Button
+            onClick={() => setShowUploadModal(true)}
+            className="bg-blue-600 hover:bg-blue-700"
+            disabled={!profileCompletion?.isComplete}
+            title={!profileCompletion?.isComplete ? 'Hoàn thiện thông tin cửa hàng trước' : ''}
+          >
             <Upload className="w-4 h-4 mr-2" />
             Upload hàng loạt
           </Button>
         </div>
       </div>
+
+      {/* Profile Completion Warning */}
+      {!isLoadingProfile && profileCompletion && !profileCompletion.isComplete && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-amber-800 mb-1">Hoàn thiện thông tin cửa hàng</h3>
+              <p className="text-sm text-amber-700 mb-3">
+                Bạn cần cập nhật đầy đủ thông tin cửa hàng trước khi upload kho hàng.
+                Tiến độ: <strong>{profileCompletion.completedCount}/{profileCompletion.totalCount}</strong>
+              </p>
+              <div className="space-y-2 mb-4">
+                {profileCompletion.requirements.map((req) => (
+                  <div key={req.id} className="flex items-center gap-2">
+                    {req.completed ? (
+                      <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
+                    ) : (
+                      <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                    )}
+                    <span className={`text-sm ${req.completed ? 'text-green-700 line-through' : 'text-amber-800 font-medium'}`}>
+                      {req.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <a
+                href="/seller/settings"
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Đi tới Cài đặt cửa hàng
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -470,11 +670,20 @@ export default function InventoryPage() {
         <div className="bg-white rounded-lg shadow p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Vô hiệu</p>
+              <p className="text-sm text-gray-500">Vô hiệu / Lỗi</p>
               <p className="text-2xl font-bold text-red-600">{stats.DISABLED}</p>
             </div>
             <XCircle className="w-8 h-8 text-red-200" />
           </div>
+          {stats.DISABLED > 0 && (
+            <button
+              onClick={() => handleDownload('DISABLED')}
+              className="mt-2 w-full flex items-center justify-center gap-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg py-1.5 px-3 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Tải xuống hàng lỗi
+            </button>
+          )}
         </div>
       </div>
 
@@ -487,13 +696,12 @@ export default function InventoryPage() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {variantStats.map((vs) => (
-              <div 
-                key={vs.variantId} 
-                className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
-                  variantFilter === vs.variantId 
-                    ? 'border-indigo-500 bg-indigo-50' 
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+              <div
+                key={vs.variantId}
+                className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${variantFilter === vs.variantId
+                  ? 'border-indigo-500 bg-indigo-50'
+                  : 'border-gray-200 hover:border-gray-300'
+                  }`}
                 onClick={() => setVariantFilter(variantFilter === vs.variantId ? '' : vs.variantId)}
               >
                 <p className="text-sm font-medium text-gray-900 truncate">{vs.variantName}</p>
@@ -549,9 +757,20 @@ export default function InventoryPage() {
               <span className="text-sm text-gray-500">Đã chọn {selectedItems.size}</span>
               <Button variant="destructive" size="sm" onClick={handleBulkDeleteClick}>
                 <Trash2 className="w-4 h-4 mr-1" />
-                Xóa
+                Xóa đã chọn
               </Button>
             </div>
+          )}
+          {(statusFilter === 'AVAILABLE' || statusFilter === 'DISABLED') && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDeleteAllClick}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Xóa tất cả {statusFilter === 'AVAILABLE' ? 'Sẵn sàng' : 'Vô hiệu'} ({statusFilter === 'AVAILABLE' ? stats.AVAILABLE : stats.DISABLED})
+            </Button>
           )}
         </div>
       </div>
@@ -670,88 +889,22 @@ export default function InventoryPage() {
         )}
       </div>
 
-      {/* Upload Modal */}
-      {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
-            <div className="p-6 border-b">
-              <h2 className="text-xl font-bold">Upload kho hàng</h2>
-              <p className="text-sm text-gray-500 mt-1">Mỗi dòng là một tài khoản. Định dạng: username|password|... </p>
-            </div>
-            <div className="p-6 space-y-4">
-              {/* Variant Selection for products with variants */}
-              {hasVariants && variants.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Chọn phân loại sản phẩm <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={uploadVariantId}
-                    onChange={(e) => setUploadVariantId(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg"
-                  >
-                    <option value="">-- Chọn phân loại --</option>
-                    {variants.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.name} (Kho: {variantStats.find(vs => vs.variantId === v.id)?.availableCount || 0})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <textarea
-                value={uploadText}
-                onChange={(e) => setUploadText(e.target.value)}
-                placeholder={`Ví dụ:\nuser1@gmail.com|password123\nuser2@gmail.com|password456\n...`}
-                className="w-full h-56 px-3 py-2 border rounded-lg font-mono text-sm resize-none"
-              />
-              <p className="text-sm text-gray-500">
-                {uploadText.split('\n').filter(l => l.trim()).length} dòng
-              </p>
-
-              {uploadResult && (
-                <div className={`p-4 rounded-lg ${uploadResult.error ? 'bg-red-50' : 'bg-green-50'}`}>
-                  {uploadResult.error ? (
-                    <p className="text-red-600">{uploadResult.error}</p>
-                  ) : (
-                    <div className="space-y-2">
-                      <p className="font-medium text-green-800">
-                        Kết quả: {uploadResult.success} thành công / {uploadResult.totalLines} dòng
-                      </p>
-                      {uploadResult.duplicates > 0 && (
-                        <p className="text-yellow-700">⚠️ {uploadResult.duplicates} trùng lặp</p>
-                      )}
-                      {uploadResult.blacklisted > 0 && (
-                        <p className="text-red-700">🚫 {uploadResult.blacklisted} trong blacklist</p>
-                      )}
-                      {uploadResult.errors > 0 && (
-                        <p className="text-red-700">❌ {uploadResult.errors} lỗi</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
-              <Button variant="outline" onClick={() => {
-                setShowUploadModal(false);
-                setUploadText('');
-                setUploadVariantId('');
-                setUploadResult(null);
-              }}>
-                Đóng
-              </Button>
-              <Button 
-                onClick={handleUpload} 
-                disabled={isUploading || !uploadText.trim() || (hasVariants && variants.length > 0 && !uploadVariantId)}
-              >
-                {isUploading ? 'Đang upload...' : 'Upload'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Upload Modal - New Custom Format */}
+      <InventoryUploadModal
+        isOpen={showUploadModal}
+        onClose={() => {
+          setShowUploadModal(false);
+          setUploadResult(null);
+        }}
+        productId={productId}
+        hasVariants={hasVariants}
+        variants={variants}
+        variantStats={variantStats}
+        onUploadSuccess={() => {
+          fetchInventory();
+          toast.success('Thành công', 'Đã upload kho hàng');
+        }}
+      />
 
       {/* Add Single Modal */}
       {showAddModal && (
@@ -781,7 +934,7 @@ export default function InventoryPage() {
                   </select>
                 </div>
               )}
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Dữ liệu tài khoản
@@ -802,8 +955,8 @@ export default function InventoryPage() {
               }}>
                 Hủy
               </Button>
-              <Button 
-                onClick={handleAddSingle} 
+              <Button
+                onClick={handleAddSingle}
                 disabled={!singleAccountData.trim() || (hasVariants && variants.length > 0 && !singleVariantId)}
               >
                 Thêm
@@ -845,11 +998,17 @@ export default function InventoryPage() {
         isOpen={deleteDialog.isOpen}
         onClose={() => setDeleteDialog({ isOpen: false, type: null, inventoryId: null })}
         onConfirm={handleDeleteConfirm}
-        title={deleteDialog.type === 'bulk' ? 'Xóa nhiều tài khoản' : 'Xóa tài khoản'}
+        title={
+          deleteDialog.type === 'deleteAll' ? `Xóa tất cả tài khoản ${statusFilter === 'AVAILABLE' ? 'Sẵn sàng' : 'Vô hiệu'}`
+            : deleteDialog.type === 'bulk' ? 'Xóa nhiều tài khoản'
+              : 'Xóa tài khoản'
+        }
         description={
-          deleteDialog.type === 'bulk'
-            ? `Bạn có chắc muốn xóa ${selectedItems.size} tài khoản đã chọn? Hành động này không thể hoàn tác.`
-            : 'Bạn có chắc muốn xóa tài khoản này? Hành động này không thể hoàn tác.'
+          deleteDialog.type === 'deleteAll'
+            ? `Bạn có chắc muốn xóa TẤT CẢ ${statusFilter === 'AVAILABLE' ? stats.AVAILABLE : stats.DISABLED} tài khoản ${statusFilter === 'AVAILABLE' ? 'Sẵn sàng' : 'Vô hiệu'}${variantFilter ? ' (theo phân loại đã chọn)' : ''}? Hành động này KHÔNG THỂ hoàn tác!`
+            : deleteDialog.type === 'bulk'
+              ? `Bạn có chắc muốn xóa ${selectedItems.size} tài khoản đã chọn? Hành động này không thể hoàn tác.`
+              : 'Bạn có chắc muốn xóa tài khoản này? Hành động này không thể hoàn tác.'
         }
         confirmText="Xóa"
         cancelText="Hủy"

@@ -39,9 +39,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Return shop logo URL with backend base for display
-    const logoPath = data.shopLogo || '';
-    const shopLogo = logoPath.startsWith('http') ? logoPath : `${BACKEND_URL}${logoPath}`;
+    // Return relative path - Next.js rewrites in next.config.js
+    // will proxy /uploads/* requests to the backend automatically
+    const shopLogo = data.shopLogo || '';
     return NextResponse.json({
       ...data,
       shopLogo,

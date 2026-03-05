@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/authStore';
-import { 
-  Wallet, 
-  CheckCircle, 
-  XCircle, 
-  Clock, 
-  Building2, 
-  User, 
+import {
+  Wallet,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Building2,
+  User,
   Calendar,
   Search,
   Filter,
@@ -58,21 +58,31 @@ export default function AdminWithdrawalsPage() {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [pagination, setPagination] = useState({ total: 0, limit: 20, offset: 0 });
-  
+
   // Modal states
   const [approveModal, setApproveModal] = useState<{ isOpen: boolean; withdrawal: Withdrawal | null }>({ isOpen: false, withdrawal: null });
   const [rejectModal, setRejectModal] = useState<{ isOpen: boolean; withdrawal: Withdrawal | null; reason: string }>({ isOpen: false, withdrawal: null, reason: '' });
-  
+
   // Stats
   const [stats, setStats] = useState({ pending: 0, completed: 0, rejected: 0, totalPending: 0 });
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPagination(prev => ({ ...prev, offset: 0 }));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     if (user) {
       fetchWithdrawals();
       fetchStats();
     }
-  }, [user, statusFilter, pagination.offset]);
+  }, [user, statusFilter, pagination.offset, debouncedSearch]);
 
   const fetchWithdrawals = async () => {
     setIsLoading(true);
@@ -82,6 +92,7 @@ export default function AdminWithdrawalsPage() {
       if (statusFilter) params.append('status', statusFilter);
       params.append('limit', pagination.limit.toString());
       params.append('offset', pagination.offset.toString());
+      if (debouncedSearch.trim()) params.append('search', debouncedSearch.trim());
 
       const response = await fetch(`/api/admin/withdrawals?${params}`, {
         headers: { 'Authorization': `Bearer ${token}` },
@@ -102,16 +113,16 @@ export default function AdminWithdrawalsPage() {
   const fetchStats = async () => {
     try {
       const token = localStorage.getItem('token');
-      
+
       // Fetch pending count
       const pendingRes = await fetch('/api/admin/withdrawals?status=PENDING&limit=1000', {
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      
+
       const completedRes = await fetch('/api/admin/withdrawals?status=COMPLETED&limit=1', {
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      
+
       const rejectedRes = await fetch('/api/admin/withdrawals?status=REJECTED&limit=1', {
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -120,9 +131,9 @@ export default function AdminWithdrawalsPage() {
         const pendingData = await pendingRes.json();
         const completedData = await completedRes.json();
         const rejectedData = await rejectedRes.json();
-        
+
         const totalPending = pendingData.withdrawals.reduce((sum: number, w: Withdrawal) => sum + w.netAmount, 0);
-        
+
         setStats({
           pending: pendingData.total,
           completed: completedData.total,
@@ -138,18 +149,18 @@ export default function AdminWithdrawalsPage() {
   const handleApprove = async () => {
     if (!approveModal.withdrawal) return;
     setProcessingId(approveModal.withdrawal.id);
-    
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`/api/admin/withdrawals/${approveModal.withdrawal.id}/approve`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({}),
       });
-      
+
       if (response.ok) {
         toast.success('Đã duyệt yêu cầu rút tiền!');
         fetchWithdrawals();
@@ -171,20 +182,20 @@ export default function AdminWithdrawalsPage() {
       toast.error('Vui lòng nhập lý do từ chối');
       return;
     }
-    
+
     setProcessingId(rejectModal.withdrawal.id);
-    
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`/api/admin/withdrawals/${rejectModal.withdrawal.id}/reject`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ reason: rejectModal.reason }),
       });
-      
+
       if (response.ok) {
         toast.success('Đã từ chối yêu cầu rút tiền!');
         fetchWithdrawals();
@@ -220,17 +231,7 @@ export default function AdminWithdrawalsPage() {
     return new Intl.NumberFormat('vi-VN').format(price) + 'đ';
   };
 
-  const filteredWithdrawals = withdrawals.filter(w => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      w.seller.name?.toLowerCase().includes(query) ||
-      w.seller.email?.toLowerCase().includes(query) ||
-      w.bankAccount?.toLowerCase().includes(query) ||
-      w.bankHolder?.toLowerCase().includes(query) ||
-      w.seller.sellerProfile?.shopName?.toLowerCase().includes(query)
-    );
-  });
+
 
   const totalPages = Math.ceil(pagination.total / pagination.limit);
   const currentPage = Math.floor(pagination.offset / pagination.limit) + 1;
@@ -262,7 +263,7 @@ export default function AdminWithdrawalsPage() {
             </div>
           </div>
         </div>
-        
+
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -274,7 +275,7 @@ export default function AdminWithdrawalsPage() {
             </div>
           </div>
         </div>
-        
+
         <div className="bg-green-50 border border-green-200 rounded-xl p-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
@@ -286,7 +287,7 @@ export default function AdminWithdrawalsPage() {
             </div>
           </div>
         </div>
-        
+
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
@@ -335,7 +336,7 @@ export default function AdminWithdrawalsPage() {
             <Loader2 className="w-12 h-12 text-blue-600 mx-auto animate-spin" />
             <p className="text-gray-500 mt-4">Đang tải...</p>
           </div>
-        ) : filteredWithdrawals.length === 0 ? (
+        ) : withdrawals.length === 0 ? (
           <div className="p-12 text-center">
             <ArrowDownCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Không có yêu cầu rút tiền</h3>
@@ -355,7 +356,7 @@ export default function AdminWithdrawalsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredWithdrawals.map((withdrawal) => (
+                {withdrawals.map((withdrawal) => (
                   <tr key={withdrawal.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-4">
                       <div>
@@ -474,7 +475,7 @@ export default function AdminWithdrawalsPage() {
             <div className="p-5 border-b border-gray-200">
               <h2 className="text-lg font-bold text-gray-900">Xác nhận duyệt rút tiền</h2>
             </div>
-            
+
             <div className="p-5 space-y-4">
               <div className="p-4 bg-gray-50 rounded-xl">
                 <div className="flex items-center gap-3 mb-3">
@@ -486,7 +487,7 @@ export default function AdminWithdrawalsPage() {
                     <p className="text-sm text-gray-500">{approveModal.withdrawal.seller.email}</p>
                   </div>
                 </div>
-                
+
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-500">Ngân hàng:</span>
@@ -506,7 +507,7 @@ export default function AdminWithdrawalsPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-2">
                 <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0" />
                 <p className="text-sm text-yellow-700">
@@ -514,7 +515,7 @@ export default function AdminWithdrawalsPage() {
                 </p>
               </div>
             </div>
-            
+
             <div className="p-5 border-t border-gray-200 flex gap-3">
               <Button
                 variant="outline"
@@ -555,14 +556,14 @@ export default function AdminWithdrawalsPage() {
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
-            
+
             <div className="p-5 space-y-4">
               <div className="p-4 bg-gray-50 rounded-xl">
                 <p className="text-sm text-gray-500 mb-1">Yêu cầu từ</p>
                 <p className="font-medium text-gray-900">{rejectModal.withdrawal.seller.name}</p>
                 <p className="text-lg font-bold text-gray-900 mt-2">{formatPrice(rejectModal.withdrawal.amount)}</p>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Lý do từ chối <span className="text-red-500">*</span>
@@ -575,7 +576,7 @@ export default function AdminWithdrawalsPage() {
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
                 />
               </div>
-              
+
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
                 <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
                 <p className="text-sm text-red-700">
@@ -583,7 +584,7 @@ export default function AdminWithdrawalsPage() {
                 </p>
               </div>
             </div>
-            
+
             <div className="p-5 border-t border-gray-200 flex gap-3">
               <Button
                 variant="outline"

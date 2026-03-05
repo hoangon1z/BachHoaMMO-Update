@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import {
-  Store, Clock, CheckCircle, XCircle, User, Mail, Phone, 
+  Store, Clock, CheckCircle, XCircle, User, Mail, Phone,
   FileText, Calendar, Loader2, Search, Filter, Eye, Check, X,
   AlertCircle
 } from 'lucide-react';
@@ -35,13 +35,14 @@ interface SellerApplication {
 export default function AdminSellerApplicationsPage() {
   const router = useRouter();
   const { user } = useAuthStore();
-  
+
   const [applications, setApplications] = useState<SellerApplication[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [pagination, setPagination] = useState({ total: 0, limit: 20, offset: 0 });
-  
+
   // Modal states
   const [selectedApp, setSelectedApp] = useState<SellerApplication | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -50,16 +51,25 @@ export default function AdminSellerApplicationsPage() {
   const [approveNote, setApproveNote] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  
+
   // Stats
   const [stats, setStats] = useState({ pending: 0, approved: 0, rejected: 0 });
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPagination(prev => ({ ...prev, offset: 0 }));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     if (user?.role === 'ADMIN') {
       fetchApplications();
       fetchStats();
     }
-  }, [user, statusFilter, pagination.offset]);
+  }, [user, statusFilter, pagination.offset, debouncedSearch]);
 
   const fetchApplications = async () => {
     setIsLoading(true);
@@ -67,7 +77,8 @@ export default function AdminSellerApplicationsPage() {
       const token = localStorage.getItem('token');
       let url = `/api/admin/seller-applications?limit=${pagination.limit}&offset=${pagination.offset}`;
       if (statusFilter) url += `&status=${statusFilter}`;
-      
+      if (debouncedSearch.trim()) url += `&search=${encodeURIComponent(debouncedSearch.trim())}`;
+
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -94,10 +105,10 @@ export default function AdminSellerApplicationsPage() {
           headers: { Authorization: `Bearer ${token}` },
         }).then(r => r.json()),
       ]);
-      
+
       const approved = all.applications?.filter((a: SellerApplication) => a.status === 'APPROVED').length || 0;
       const rejected = all.applications?.filter((a: SellerApplication) => a.status === 'REJECTED').length || 0;
-      
+
       setStats({
         pending: pending.count || 0,
         approved,
@@ -111,7 +122,7 @@ export default function AdminSellerApplicationsPage() {
   const handleApprove = async () => {
     if (!selectedApp) return;
     setIsProcessing(true);
-    
+
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`/api/admin/seller-applications/${selectedApp.id}/approve`, {
@@ -140,7 +151,7 @@ export default function AdminSellerApplicationsPage() {
   const handleReject = async () => {
     if (!selectedApp || !rejectReason.trim()) return;
     setIsProcessing(true);
-    
+
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`/api/admin/seller-applications/${selectedApp.id}/reject`, {
@@ -194,11 +205,7 @@ export default function AdminSellerApplicationsPage() {
     }
   };
 
-  const filteredApplications = applications.filter(app => 
-    app.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    app.shopName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    app.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+
 
   if (user?.role !== 'ADMIN') {
     return (
@@ -276,9 +283,9 @@ export default function AdminSellerApplicationsPage() {
           <div className="p-8 text-center">
             <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" />
           </div>
-        ) : filteredApplications.length === 0 ? (
+        ) : applications.length === 0 ? (
           <div className="p-8 text-center text-gray-500">
-            Không có đơn đăng ký nào
+            {debouncedSearch ? `Không tìm thấy đơn đăng ký với từ khóa "${debouncedSearch}"` : 'Không có đơn đăng ký nào'}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -294,7 +301,7 @@ export default function AdminSellerApplicationsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredApplications.map((app) => (
+                {applications.map((app) => (
                   <tr key={app.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -374,7 +381,7 @@ export default function AdminSellerApplicationsPage() {
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              
+
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
                   {getStatusBadge(selectedApp.status)}
@@ -382,7 +389,7 @@ export default function AdminSellerApplicationsPage() {
                     Gửi lúc: {new Date(selectedApp.createdAt).toLocaleString('vi-VN')}
                   </span>
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-gray-500">Họ và tên</p>
@@ -401,14 +408,14 @@ export default function AdminSellerApplicationsPage() {
                     <p className="font-medium">{selectedApp.phone || 'Không có'}</p>
                   </div>
                 </div>
-                
+
                 {selectedApp.description && (
                   <div>
                     <p className="text-sm text-gray-500 mb-1">Mô tả</p>
                     <p className="text-gray-700 bg-gray-50 p-3 rounded-lg">{selectedApp.description}</p>
                   </div>
                 )}
-                
+
                 {selectedApp.adminNote && (
                   <div>
                     <p className="text-sm text-gray-500 mb-1">Ghi chú Admin</p>
@@ -416,7 +423,7 @@ export default function AdminSellerApplicationsPage() {
                   </div>
                 )}
               </div>
-              
+
               {selectedApp.status === 'PENDING' && (
                 <div className="flex gap-3 mt-6">
                   <Button
@@ -460,7 +467,7 @@ export default function AdminSellerApplicationsPage() {
               <p className="text-gray-600 text-center mb-4">
                 Bạn sắp duyệt đơn đăng ký của <strong>{selectedApp.fullName}</strong> với shop <strong>{selectedApp.shopName}</strong>
               </p>
-              
+
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Ghi chú (tùy chọn)</label>
                 <textarea
@@ -471,13 +478,13 @@ export default function AdminSellerApplicationsPage() {
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
-              
+
               <div className="flex gap-3">
                 <Button variant="outline" className="flex-1" onClick={() => setShowApproveModal(false)}>
                   Hủy
                 </Button>
-                <Button 
-                  className="flex-1 bg-green-600 hover:bg-green-700" 
+                <Button
+                  className="flex-1 bg-green-600 hover:bg-green-700"
                   onClick={handleApprove}
                   disabled={isProcessing}
                 >
@@ -502,7 +509,7 @@ export default function AdminSellerApplicationsPage() {
               <p className="text-gray-600 text-center mb-4">
                 Bạn sắp từ chối đơn đăng ký của <strong>{selectedApp.fullName}</strong>
               </p>
-              
+
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Lý do từ chối <span className="text-red-500">*</span></label>
                 <textarea
@@ -513,13 +520,13 @@ export default function AdminSellerApplicationsPage() {
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
                 />
               </div>
-              
+
               <div className="flex gap-3">
                 <Button variant="outline" className="flex-1" onClick={() => setShowRejectModal(false)}>
                   Hủy
                 </Button>
-                <Button 
-                  className="flex-1 bg-red-600 hover:bg-red-700" 
+                <Button
+                  className="flex-1 bg-red-600 hover:bg-red-700"
                   onClick={handleReject}
                   disabled={isProcessing || !rejectReason.trim()}
                 >

@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import Link from 'next/link';
-import { 
-  Wallet, 
+import {
+  Wallet,
   Plus,
   Clock,
   CheckCircle,
@@ -13,7 +13,9 @@ import {
   AlertCircle,
   Lock,
   MessageCircle,
-  Info
+  Info,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,7 +52,7 @@ const BANKS = [
   { code: 'BIDV', name: 'BIDV - Ngân hàng TMCP Đầu tư và Phát triển Việt Nam' },
   { code: 'CTG', name: 'VietinBank - Ngân hàng TMCP Công thương Việt Nam' },
   { code: 'AGR', name: 'Agribank - Ngân hàng Nông nghiệp và Phát triển Nông thôn' },
-  
+
   // Ngân hàng thương mại cổ phần tư nhân lớn
   { code: 'TCB', name: 'Techcombank - Ngân hàng TMCP Kỹ thương Việt Nam' },
   { code: 'MBB', name: 'MB Bank - Ngân hàng TMCP Quân đội' },
@@ -83,7 +85,7 @@ const BANKS = [
   { code: 'CAKE', name: 'CAKE by VPBank - Ngân hàng số CAKE' },
   { code: 'Ubank', name: 'Ubank by VPBank - Ngân hàng số Ubank' },
   { code: 'TIMO', name: 'Timo by Bản Việt - Ngân hàng số Timo' },
-  
+
   // Ví điện tử (hỗ trợ rút tiền)
   { code: 'MOMO', name: 'MoMo - Ví điện tử MoMo' },
   { code: 'ZALOPAY', name: 'ZaloPay - Ví điện tử ZaloPay' },
@@ -105,7 +107,7 @@ export default function SellerWithdrawalsPage() {
     withdrawalId: null,
   });
   const [isCanceling, setIsCanceling] = useState(false);
-  
+
   // Bank info state
   const [bankInfo, setBankInfo] = useState<BankInfo | null>(null);
   const [bankFormData, setBankFormData] = useState({
@@ -116,7 +118,7 @@ export default function SellerWithdrawalsPage() {
   });
   const [bankError, setBankError] = useState('');
   const [isAddingBank, setIsAddingBank] = useState(false);
-  
+
   // Fee preview state
   const [feePreview, setFeePreview] = useState<{
     feeRate: number;
@@ -127,10 +129,16 @@ export default function SellerWithdrawalsPage() {
   } | null>(null);
   const [isLoadingFee, setIsLoadingFee] = useState(false);
 
+  // PIN state for withdrawal
+  const [withdrawPin, setWithdrawPin] = useState('');
+  const [showWithdrawPin, setShowWithdrawPin] = useState(false);
+  const [hasPinSet, setHasPinSet] = useState(false);
+
   useEffect(() => {
     fetchWithdrawals();
     fetchBankInfo();
     fetchFeePreview(0); // Get initial fee info
+    fetchPinStatus();
   }, [pagination.page]);
 
   const fetchWithdrawals = async () => {
@@ -191,6 +199,21 @@ export default function SellerWithdrawalsPage() {
       console.error('Error fetching fee preview:', error);
     } finally {
       setIsLoadingFee(false);
+    }
+  };
+
+  const fetchPinStatus = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/seller/withdrawal-pin/status', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setHasPinSet(data.hasPin);
+      }
+    } catch (error) {
+      console.error('Error fetching PIN status:', error);
     }
   };
 
@@ -257,6 +280,11 @@ export default function SellerWithdrawalsPage() {
       return;
     }
 
+    if (!withdrawPin || withdrawPin.length !== 6) {
+      setError('Vui lòng nhập mã PIN 6 chữ số');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const token = localStorage.getItem('token');
@@ -266,12 +294,13 @@ export default function SellerWithdrawalsPage() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ amount }),
+        body: JSON.stringify({ amount, pin: withdrawPin }),
       });
 
       if (response.ok) {
         setShowModal(false);
         setWithdrawAmount('');
+        setWithdrawPin('');
         fetchWithdrawals();
         // Refresh user balance
         window.location.reload();
@@ -339,7 +368,11 @@ export default function SellerWithdrawalsPage() {
       const userName = user?.name ? removeAccents(user.name).toUpperCase() : '';
       setBankFormData(prev => ({ ...prev, bankHolder: userName }));
       setShowBankModal(true);
+    } else if (!hasPinSet) {
+      setError('Bạn cần tạo mã PIN rút tiền trước. Vui lòng vào phần Cài đặt cửa hàng.');
     } else {
+      setWithdrawPin('');
+      setShowWithdrawPin(false);
       setShowModal(true);
     }
   };
@@ -356,6 +389,31 @@ export default function SellerWithdrawalsPage() {
           Tạo yêu cầu rút tiền
         </Button>
       </div>
+
+      {/* Error banner (for errors set outside of modals) */}
+      {error && !showModal && (
+        <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <p className="text-sm font-medium">{error}</p>
+          <button onClick={() => setError('')} className="ml-auto text-red-400 hover:text-red-600">
+            <XCircle className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* PIN not set warning */}
+      {!hasPinSet && bankInfo?.hasBankInfo && (
+        <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <Lock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Chưa tạo mã PIN rút tiền</p>
+            <p className="text-sm text-amber-700 mt-1">
+              Bạn cần tạo mã PIN 6 chữ số trước khi rút tiền.{' '}
+              <a href="/seller/settings" className="text-blue-600 hover:underline font-medium">Vào cài đặt cửa hàng →</a>
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Balance Card */}
       <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-6 text-white">
@@ -394,9 +452,9 @@ export default function SellerWithdrawalsPage() {
             Thông tin ngân hàng
           </h2>
           {!bankInfo?.hasBankInfo && (
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => {
                 const removeAccents = (str: string) => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
                 const userName = user?.name ? removeAccents(user.name).toUpperCase() : '';
@@ -690,6 +748,31 @@ export default function SellerWithdrawalsPage() {
                   </div>
                 </div>
               )}
+
+              {/* PIN Input */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-purple-500" />
+                  Mã PIN rút tiền
+                </Label>
+                <div className="relative">
+                  <Input
+                    type={showWithdrawPin ? 'text' : 'password'}
+                    placeholder="Nhập mã PIN 6 chữ số"
+                    value={withdrawPin}
+                    onChange={(e) => setWithdrawPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    maxLength={6}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowWithdrawPin(!showWithdrawPin)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showWithdrawPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
 
               <div className="flex gap-3 pt-4">
                 <Button type="button" variant="outline" className="flex-1" onClick={() => setShowModal(false)}>

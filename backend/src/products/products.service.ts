@@ -1,10 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { generateSlug, createUniqueSlug } from '../common/utils/slug.util';
+import { SeoService } from '../seo/seo.service';
 
 @Injectable()
 export class ProductsService {
-  constructor(private prisma: PrismaService) { }
+  private readonly logger = new Logger(ProductsService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    @Inject(forwardRef(() => SeoService))
+    private seoService: SeoService,
+  ) { }
 
   /**
    * Check if a product slug already exists
@@ -45,6 +52,7 @@ export class ProductsService {
 
     const where: any = {
       status: 'ACTIVE',
+      seller: { isBanned: false },
     };
 
     if (categoryId) {
@@ -82,8 +90,12 @@ export class ProductsService {
       orderBy.price = 'asc';
     } else if (sortBy === 'price_desc') {
       orderBy.price = 'desc';
-    } else if (sortBy === 'popular') {
+    } else if (sortBy === 'popular' || sortBy === 'best_selling') {
       orderBy.sales = 'desc';
+    } else if (sortBy === 'rating') {
+      orderBy.rating = 'desc';
+    } else if (sortBy === 'newest') {
+      orderBy.createdAt = 'desc';
     } else {
       orderBy.createdAt = 'desc';
     }
@@ -105,13 +117,54 @@ export class ProductsService {
         },
         orderBy,
         skip,
-        take,
+        take: take + 10, // Fetch extra for boost reordering
       }),
       this.prisma.product.count({ where }),
     ]);
 
+    // === AUCTION WINNER SEARCH BOOST (4 days) ===
+    // Only boost on first page and default/popular sort
+    if (skip === 0 && (sortBy === 'createdAt' || sortBy === 'popular')) {
+      try {
+        const fourDaysAgo = new Date(Date.now() - 4 * 86400000);
+        const recentWinners = await this.prisma.auctionBid.findMany({
+          where: {
+            status: 'WON',
+            createdAt: { gte: fourDaysAgo },
+          },
+          select: { sellerId: true, position: true },
+        });
+
+        // Build map: sellerId → best position (1 = highest priority)
+        const winnerPositions = new Map<string, number>();
+        for (const w of recentWinners) {
+          const existing = winnerPositions.get(w.sellerId) || 99;
+          if (w.position < existing) winnerPositions.set(w.sellerId, w.position);
+        }
+
+        if (winnerPositions.size > 0) {
+          // Separate winner products and regular products
+          const winnerProducts = products
+            .filter(p => winnerPositions.has(p.sellerId))
+            .sort((a, b) => (winnerPositions.get(a.sellerId) || 99) - (winnerPositions.get(b.sellerId) || 99));
+          const regularProducts = products.filter(p => !winnerPositions.has(p.sellerId));
+
+          // Winner products go first (sorted by position), then regular
+          const boosted = [...winnerProducts, ...regularProducts].slice(0, take);
+          return {
+            products: boosted,
+            total,
+            page: Math.floor(skip / take) + 1,
+            totalPages: Math.ceil(total / take),
+          };
+        }
+      } catch {
+        // Silently fail boost — return normal results
+      }
+    }
+
     return {
-      products,
+      products: products.slice(0, take),
       total,
       page: Math.floor(skip / take) + 1,
       totalPages: Math.ceil(total / take),
@@ -168,6 +221,16 @@ export class ProductsService {
       throw new NotFoundException('Sản phẩm không tồn tại');
     }
 
+    // Hide products from banned sellers
+    if (product.seller?.isBanned) {
+      throw new NotFoundException('Sản phẩm không tồn tại');
+    }
+
+    // Hide INACTIVE products from public view
+    if (product.status === 'INACTIVE') {
+      throw new NotFoundException('Sản phẩm đang tạm ngừng bán');
+    }
+
     // Increment views (fire-and-forget, don't block response)
     this.prisma.product
       .update({
@@ -201,6 +264,16 @@ export class ProductsService {
 
     if (!product) {
       throw new NotFoundException('Sản phẩm không tồn tại');
+    }
+
+    // Hide products from banned sellers
+    if (product.seller?.isBanned) {
+      throw new NotFoundException('Sản phẩm không tồn tại');
+    }
+
+    // Hide INACTIVE products from public view
+    if (product.status === 'INACTIVE') {
+      throw new NotFoundException('Sản phẩm đang tạm ngừng bán');
     }
 
     // Increment views (fire-and-forget, don't block response)
@@ -238,9 +311,11 @@ export class ProductsService {
     // Generate SEO-friendly slug from title
     const slug = await this.generateProductSlug(data.title);
 
+    let product;
+
     // Nếu có variants, tạo product với variants
     if (hasVariants && variants && variants.length > 0) {
-      return this.prisma.product.create({
+      product = await this.prisma.product.create({
         data: {
           ...productData,
           slug,
@@ -267,28 +342,38 @@ export class ProductsService {
           },
         },
       });
+    } else {
+      // Không có variants
+      product = await this.prisma.product.create({
+        data: {
+          ...productData,
+          slug,
+        },
+        include: {
+          seller: {
+            include: {
+              sellerProfile: true,
+            },
+          },
+          category: true,
+          variants: true,
+        },
+      });
     }
 
-    // Không có variants
-    return this.prisma.product.create({
-      data: {
-        ...productData,
-        slug,
-      },
-      include: {
-        seller: {
-          include: {
-            sellerProfile: true,
-          },
-        },
-        category: true,
-        variants: true,
-      },
+    // 🚀 AUTO-NOTIFY GOOGLE: Sản phẩm mới được tạo
+    this.logger.log(`🔔 Notifying Google about new product: ${product.slug}`);
+    this.seoService.notifyProductCreated(product.id, product.slug).catch((err) => {
+      this.logger.error(`Failed to notify Google for product ${product.slug}:`, err);
     });
+
+    return product;
   }
 
   async update(id: string, data: any) {
     const { variants, ...productData } = data;
+
+    let slugChanged = false;
 
     // If title is being updated, regenerate slug
     if (productData.title) {
@@ -299,6 +384,7 @@ export class ProductsService {
       // Only regenerate slug if title actually changed
       if (existingProduct && existingProduct.title !== productData.title) {
         productData.slug = await this.generateProductSlug(productData.title, id);
+        slugChanged = true;
       }
     }
 
@@ -326,7 +412,7 @@ export class ProductsService {
       }
     }
 
-    return this.prisma.product.update({
+    const updatedProduct = await this.prisma.product.update({
       where: { id },
       data: productData,
       include: {
@@ -341,6 +427,16 @@ export class ProductsService {
         },
       },
     });
+
+    // 🚀 AUTO-NOTIFY GOOGLE: Sản phẩm được cập nhật (chỉ khi slug thay đổi/nội dung quan trọng)
+    if (slugChanged || data.description || data.price) {
+      this.logger.log(`🔔 Notifying Google about updated product: ${updatedProduct.slug}`);
+      this.seoService.notifyProductCreated(updatedProduct.id, updatedProduct.slug).catch((err) => {
+        this.logger.error(`Failed to notify Google:`, err);
+      });
+    }
+
+    return updatedProduct;
   }
 
   async delete(id: string) {
@@ -405,10 +501,53 @@ export class ProductsService {
     return variant;
   }
 
+  /**
+   * Simple seeded random number generator (deterministic per seed)
+   * Returns a function that generates numbers between 0 and 1
+   */
+  private seededRandom(seed: number) {
+    let s = seed;
+    return () => {
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      return s / 0x7fffffff;
+    };
+  }
+
+  /**
+   * Get daily seed - same value for the whole day (Vietnam timezone)
+   * Changes at midnight VN time → products rotate daily
+   */
+  private getDailySeed(): number {
+    const now = new Date();
+    // Vietnam is UTC+7
+    const vnDay = new Date(now.getTime() + 7 * 3600000);
+    const dayStr = vnDay.toISOString().split('T')[0]; // "2026-03-02"
+    let hash = 0;
+    for (let i = 0; i < dayStr.length; i++) {
+      hash = ((hash << 5) - hash) + dayStr.charCodeAt(i);
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash);
+  }
+
+  /**
+   * Sản phẩm nổi bật - Thuật toán ƯU TIÊN UY TÍN + CHUYỂN ĐỔI
+   * 
+   * 1. Mỗi seller tối đa 2 sản phẩm
+   * 2. Score = sales(×5) + rating(×20) + insurance + completionRate + views(×0.3) + freshness + auction
+   * 3. Random chỉ chiếm ~5-10% tổng score (0-5 điểm)
+   * 4. Auction winners: TOP1 +200, TOP2 +150, TOP3 +100
+   */
   async getFeatured() {
-    return this.prisma.product.findMany({
+    const MAX_PER_SELLER = 2;
+    const CANDIDATE_POOL = 80;
+    const RESULT_COUNT = 12;
+
+    const candidates = await this.prisma.product.findMany({
       where: {
         status: 'ACTIVE',
+        stock: { gt: 0 },
+        seller: { isBanned: false },
       },
       include: {
         seller: {
@@ -426,14 +565,262 @@ export class ProductsService {
         { sales: 'desc' },
         { views: 'desc' },
       ],
-      take: 12,
+      take: CANDIDATE_POOL,
     });
+
+    const now = Date.now();
+    const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
+    const ONE_MONTH = 30 * 24 * 60 * 60 * 1000;
+
+    // Daily seeded random - same result all day, changes at midnight VN
+    const dailyRng = this.seededRandom(this.getDailySeed());
+
+    // Fetch recent auction winners (last 4 days) with position info
+    const winnerBoosts = new Map<string, number>();
+    try {
+      const fourDaysAgo = new Date(Date.now() - 4 * 86400000);
+      const recentWinners = await this.prisma.auctionBid.findMany({
+        where: { status: 'WON', createdAt: { gte: fourDaysAgo } },
+        select: { sellerId: true, position: true },
+      });
+      for (const w of recentWinners) {
+        const boost = w.position === 1 ? 200 : w.position === 2 ? 150 : 100;
+        const existing = winnerBoosts.get(w.sellerId) || 0;
+        if (boost > existing) winnerBoosts.set(w.sellerId, boost);
+      }
+    } catch { }
+
+    const scored = candidates.map((product) => {
+      const ageMs = now - new Date(product.createdAt).getTime();
+      const updateAgeMs = now - new Date(product.updatedAt).getTime();
+
+      // Freshness bonus (giảm dần theo tuổi)
+      const freshnessBonus = ageMs < ONE_WEEK ? 10
+        : ageMs < ONE_MONTH ? 5
+          : 1;
+      const updateBonus = updateAgeMs < ONE_WEEK ? 3 : 0;
+
+      // Insurance tier bonus (shop uy tín)
+      const insuranceLevel = product.seller?.sellerProfile?.insuranceLevel || 0;
+      const insuranceBonus = insuranceLevel >= 3 ? 30
+        : insuranceLevel >= 2 ? 20
+          : insuranceLevel >= 1 ? 10
+            : 0;
+
+      // Seller verification bonus
+      const isVerified = product.seller?.sellerProfile?.isVerified || false;
+      const verifiedBonus = isVerified ? 15 : 0;
+
+      // Seller rating bonus (tỷ lệ đánh giá shop)
+      const sellerRating = product.seller?.sellerProfile?.rating || 0;
+      const sellerRatingBonus = sellerRating * 5; // Max ~25đ cho rating 5.0
+
+      // Auction winner boost
+      const auctionBoost = winnerBoosts.get(product.sellerId) || 0;
+
+      // Daily random: CHỈ 0-5 điểm (~5-10% tổng score)
+      const dailyJitter = dailyRng() * 5;
+
+      const score = (product.sales * 5)           // Doanh số (trọng số cao nhất)
+        + (product.rating * 20)                     // Đánh giá sản phẩm
+        + (product.views * 0.3)                     // Lượt xem (trọng số thấp)
+        + freshnessBonus                            // Sản phẩm mới
+        + updateBonus                               // Mới cập nhật
+        + insuranceBonus                            // Gói bảo hiểm shop
+        + verifiedBonus                             // Shop đã xác minh
+        + sellerRatingBonus                         // Rating shop
+        + dailyJitter                               // Random nhỏ (~5%)
+        + auctionBoost;                             // Đấu giá
+
+      return { ...product, _score: score };
+    });
+
+    scored.sort((a, b) => b._score - a._score);
+
+    // Giới hạn mỗi seller tối đa MAX_PER_SELLER sản phẩm
+    const sellerCount: Record<string, number> = {};
+    const result: typeof scored = [];
+
+    for (const product of scored) {
+      if (result.length >= RESULT_COUNT) break;
+
+      const sellerId = product.sellerId;
+      const currentCount = sellerCount[sellerId] || 0;
+
+      if (currentCount < MAX_PER_SELLER) {
+        sellerCount[sellerId] = currentCount + 1;
+        result.push(product);
+      }
+    }
+
+    return result.map(({ _score, ...product }) => product);
   }
 
-  async getLatest() {
-    return this.prisma.product.findMany({
+  /**
+   * Bán chạy nhất tuần - Sản phẩm có nhiều đơn hoàn tất trong 7 ngày qua
+   * 
+   * 1. Lọc OrderItem COMPLETED trong 7 ngày
+   * 2. Tổng quantity mỗi product → xếp hạng
+   * 3. Mỗi seller tối đa 2 sản phẩm
+   */
+  async getBestSellersWeekly() {
+    const MAX_PER_SELLER = 2;
+    const RESULT_COUNT = 12;
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    // Lấy top products theo đơn hàng hoàn tất trong tuần
+    const topProducts = await this.prisma.orderItem.groupBy({
+      by: ['productId'],
+      where: {
+        order: {
+          status: { in: ['COMPLETED', 'PROCESSING'] },
+          createdAt: { gte: sevenDaysAgo },
+        },
+      },
+      _sum: { quantity: true },
+      orderBy: { _sum: { quantity: 'desc' } },
+      take: 40,
+    });
+
+    if (topProducts.length === 0) {
+      // Fallback: trả về sản phẩm có sales cao nhất
+      return this.prisma.product.findMany({
+        where: {
+          status: 'ACTIVE',
+          stock: { gt: 0 },
+          seller: { isBanned: false },
+          sales: { gt: 0 },
+        },
+        include: {
+          seller: { include: { sellerProfile: true } },
+          category: true,
+          variants: { where: { isActive: true }, orderBy: { position: 'asc' } },
+        },
+        orderBy: { sales: 'desc' },
+        take: RESULT_COUNT,
+      });
+    }
+
+    const productIds = topProducts.map(p => p.productId);
+    const salesMap = new Map(topProducts.map(p => [p.productId, p._sum.quantity || 0]));
+
+    const products = await this.prisma.product.findMany({
+      where: {
+        id: { in: productIds },
+        status: 'ACTIVE',
+        stock: { gt: 0 },
+        seller: { isBanned: false },
+      },
+      include: {
+        seller: { include: { sellerProfile: true } },
+        category: true,
+        variants: { where: { isActive: true }, orderBy: { position: 'asc' } },
+      },
+    });
+
+    // Sort by weekly sales
+    products.sort((a, b) => (salesMap.get(b.id) || 0) - (salesMap.get(a.id) || 0));
+
+    // Giới hạn mỗi seller tối đa MAX_PER_SELLER
+    const sellerCount: Record<string, number> = {};
+    const result: typeof products = [];
+
+    for (const product of products) {
+      if (result.length >= RESULT_COUNT) break;
+      const currentCount = sellerCount[product.sellerId] || 0;
+      if (currentCount < MAX_PER_SELLER) {
+        sellerCount[product.sellerId] = currentCount + 1;
+        result.push(product);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Shop uy tín - Sản phẩm từ sellers có bảo hiểm + rating cao
+   * 
+   * 1. Seller phải có insuranceLevel >= 1 HOẶC isVerified
+   * 2. Ưu tiên theo insuranceLevel → rating → sales
+   * 3. Mỗi seller tối đa 2 sản phẩm
+   */
+  async getTrustedShopProducts() {
+    const MAX_PER_SELLER = 2;
+    const RESULT_COUNT = 12;
+
+    const candidates = await this.prisma.product.findMany({
       where: {
         status: 'ACTIVE',
+        stock: { gt: 0 },
+        seller: {
+          isBanned: false,
+          sellerProfile: {
+            OR: [
+              { insuranceLevel: { gte: 1 } },
+              { isVerified: true },
+            ],
+          },
+        },
+      },
+      include: {
+        seller: { include: { sellerProfile: true } },
+        category: true,
+        variants: { where: { isActive: true }, orderBy: { position: 'asc' } },
+      },
+      take: 60,
+    });
+
+    // Daily seeded random for variety
+    const dailyRng = this.seededRandom(this.getDailySeed() + 7777);
+
+    const scored = candidates.map(product => {
+      const insuranceLevel = product.seller?.sellerProfile?.insuranceLevel || 0;
+      const sellerRating = product.seller?.sellerProfile?.rating || 0;
+      const isVerified = product.seller?.sellerProfile?.isVerified ? 1 : 0;
+
+      const score = (insuranceLevel * 50)       // Bảo hiểm cao = uy tín cao
+        + (sellerRating * 15)                    // Rating shop
+        + (isVerified * 20)                      // Đã xác minh
+        + (product.sales * 2)                    // Doanh số
+        + (product.rating * 10)                  // Rating sản phẩm
+        + (dailyRng() * 5);                      // Random nhỏ
+
+      return { ...product, _score: score };
+    });
+
+    scored.sort((a, b) => b._score - a._score);
+
+    const sellerCount: Record<string, number> = {};
+    const result: typeof scored = [];
+
+    for (const product of scored) {
+      if (result.length >= RESULT_COUNT) break;
+      const currentCount = sellerCount[product.sellerId] || 0;
+      if (currentCount < MAX_PER_SELLER) {
+        sellerCount[product.sellerId] = currentCount + 1;
+        result.push(product);
+      }
+    }
+
+    return result.map(({ _score, ...product }) => product);
+  }
+
+  /**
+   * Sản phẩm mới nhất - Thuật toán CÔNG BẰNG + XOAY VÒNG HÀNG NGÀY
+   * 
+   * 1. Mỗi seller tối đa 2 sản phẩm
+   * 2. Ưu tiên sản phẩm mới nhất
+   * 3. Daily seed random: cùng ngày = cùng thứ tự, ngày mới = thứ tự mới
+   */
+  async getLatest() {
+    const MAX_PER_SELLER = 2;
+    const CANDIDATE_POOL = 40;
+    const RESULT_COUNT = 12;
+
+    const candidates = await this.prisma.product.findMany({
+      where: {
+        status: 'ACTIVE',
+        seller: { isBanned: false },
       },
       include: {
         seller: {
@@ -450,8 +837,35 @@ export class ProductsService {
       orderBy: {
         createdAt: 'desc',
       },
-      take: 12,
+      take: CANDIDATE_POOL,
     });
+
+    // Daily seeded jitter: same all day, shuffles at midnight VN
+    const dailyRng = this.seededRandom(this.getDailySeed() + 9999); // Different seed from featured
+
+    const withJitter = candidates.map(product => ({
+      ...product,
+      _sortKey: new Date(product.createdAt).getTime() + (dailyRng() * 3600000), // ±1 giờ jitter (seeded)
+    }));
+    withJitter.sort((a, b) => b._sortKey - a._sortKey);
+
+    // Giới hạn mỗi seller tối đa MAX_PER_SELLER
+    const sellerCount: Record<string, number> = {};
+    const result: typeof withJitter = [];
+
+    for (const product of withJitter) {
+      if (result.length >= RESULT_COUNT) break;
+
+      const sellerId = product.sellerId;
+      const currentCount = sellerCount[sellerId] || 0;
+
+      if (currentCount < MAX_PER_SELLER) {
+        sellerCount[sellerId] = currentCount + 1;
+        result.push(product);
+      }
+    }
+
+    return result.map(({ _sortKey, ...product }) => product);
   }
 
   /**

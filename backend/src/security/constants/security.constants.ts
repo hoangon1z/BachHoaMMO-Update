@@ -129,7 +129,7 @@ export const XSS_PATTERNS = [
 // Path Traversal Patterns
 export const PATH_TRAVERSAL_PATTERNS = [
   /\.\.\//g,
-  /\.\.\\/, 
+  /\.\.\\/,
   /%2e%2e%2f/gi,
   /%2e%2e\//gi,
   /\.%2e\//gi,
@@ -139,17 +139,18 @@ export const PATH_TRAVERSAL_PATTERNS = [
 ];
 
 // Command Injection Patterns - More targeted to reduce false positives
+// IMPORTANT: Backticks (`code`) are commonly used in markdown for code blocks
+// We don't block them to avoid false positives with user-generated content
 export const COMMAND_INJECTION_PATTERNS = [
-  // Shell command substitution
-  /\$\([^)]+\)/g,
-  /`[^`]+`/g,
-  // Pipe/redirect with commands
-  /\|\s*(cat|ls|rm|wget|curl|bash|sh|nc|netcat)\b/gi,
-  /;\s*(cat|ls|rm|wget|curl|bash|sh|nc|netcat|id|whoami|uname)\b/gi,
+  // Shell command substitution with actual commands inside
+  /\$\(\s*(cat|ls|rm|wget|curl|bash|sh|nc|netcat|chmod|chown|kill|pkill)\b/gi,
+  // Pipe/redirect with dangerous commands
+  /\|\s*(cat|ls|rm|wget|curl|bash|sh|nc|netcat)(\s|$)/gi,
+  /;\s*(cat|ls|rm|wget|curl|bash|sh|nc|netcat|id|whoami|uname)(\s|$)/gi,
   // Redirect to sensitive locations
   />\s*\/etc\//gi,
   />\s*\/dev\/null/gi,
-  // Dangerous functions in specific contexts
+  // Dangerous functions in code contexts (eval, exec, system with parentheses)
   /\beval\s*\(/gi,
   /\bexec\s*\(/gi,
   /\bsystem\s*\(/gi,

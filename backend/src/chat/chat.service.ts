@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException, BadRequestException 
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Conversation, ConversationDocument, ConversationType, ConversationStatus } from './schemas/conversation.schema';
-import { Message, MessageDocument, MessageType, Attachment, ProductEmbed } from './schemas/message.schema';
+import { Message, MessageDocument, MessageType, SystemMessageAction, Attachment, ProductEmbed, ReplyTo } from './schemas/message.schema';
 import { UserStatus, UserStatusDocument } from './schemas/user-status.schema';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -24,6 +24,7 @@ export interface SendMessageDto {
   type?: MessageType;
   attachments?: Attachment[];
   productEmbed?: ProductEmbed;
+  replyTo?: ReplyTo;
 }
 
 export interface ConversationWithDetails {
@@ -46,7 +47,7 @@ export class ChatService {
     @InjectModel(UserStatus.name) private userStatusModel: Model<UserStatusDocument>,
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
-  ) {}
+  ) { }
 
   // ============================================
   // CONVERSATION METHODS
@@ -56,44 +57,78 @@ export class ChatService {
    * Create or get existing conversation
    */
   async createOrGetConversation(dto: CreateConversationDto, userId: string, userRole: string): Promise<ConversationDocument> {
+    const isBuyer = userRole === 'BUYER' || userRole === 'USER';
+    const isSeller = userRole === 'SELLER';
+
+    // Resolve actual buyerId and sellerId
+    const resolvedBuyerId = dto.buyerId || (isBuyer ? userId : undefined);
+    const resolvedSellerId = dto.sellerId || (isSeller ? userId : undefined);
+
     // Check if conversation already exists between these participants
+    // Match by participant pair only (not by productId/orderId) so the same
+    // buyer-seller pair always reuses the same conversation.
     const existingQuery: any = { type: dto.type, status: { $ne: ConversationStatus.ARCHIVED } };
 
     if (dto.type === ConversationType.BUYER_SELLER) {
-      existingQuery.buyerId = dto.buyerId || userId;
-      existingQuery.sellerId = dto.sellerId;
-      if (dto.productId) existingQuery.productId = dto.productId;
+      existingQuery.buyerId = resolvedBuyerId;
+      existingQuery.sellerId = resolvedSellerId;
     } else if (dto.type === ConversationType.BUYER_ADMIN) {
-      existingQuery.buyerId = dto.buyerId || userId;
+      existingQuery.buyerId = resolvedBuyerId;
     } else if (dto.type === ConversationType.SELLER_ADMIN) {
-      existingQuery.sellerId = dto.sellerId || userId;
+      existingQuery.sellerId = resolvedSellerId;
     }
 
     let conversation = await this.conversationModel.findOne(existingQuery);
+    let isNewConversation = false;
 
     if (!conversation) {
-      // Create new conversation
-      // Note: User roles are BUYER, SELLER, ADMIN (not USER)
-      const isBuyer = userRole === 'BUYER' || userRole === 'USER';
-      const isSeller = userRole === 'SELLER';
-      
+      isNewConversation = true;
+
       // Use provided status (e.g., DISPUTED for complaints) or default to ACTIVE
-      const conversationStatus = dto.status === 'DISPUTED' 
-        ? ConversationStatus.DISPUTED 
+      const conversationStatus = dto.status === 'DISPUTED'
+        ? ConversationStatus.DISPUTED
         : ConversationStatus.ACTIVE;
-      
+
+      // Build default subject based on participant names
+      let defaultSubject = 'Cuộc trò chuyện mới';
+      try {
+        if (resolvedBuyerId && resolvedSellerId) {
+          const users = await this.prisma.user.findMany({
+            where: { id: { in: [resolvedBuyerId, resolvedSellerId] } },
+            select: { id: true, name: true, email: true }
+          });
+          const bUser = users.find(u => u.id === resolvedBuyerId);
+          const sUser = users.find(u => u.id === resolvedSellerId);
+          const bName = bUser?.name || bUser?.email?.split('@')[0] || 'Khách';
+          const sName = sUser?.name || sUser?.email?.split('@')[0] || 'Shop';
+          defaultSubject = `${bName} & ${sName}`;
+        } else if (resolvedBuyerId) {
+          // BUYER_ADMIN
+          const user = await this.prisma.user.findUnique({ where: { id: resolvedBuyerId }, select: { name: true, email: true } });
+          const name = user?.name || user?.email?.split('@')[0] || 'Khách';
+          defaultSubject = `${name} & Admin`;
+        } else if (resolvedSellerId) {
+          // SELLER_ADMIN
+          const user = await this.prisma.user.findUnique({ where: { id: resolvedSellerId }, select: { name: true, email: true } });
+          const name = user?.name || user?.email?.split('@')[0] || 'Shop';
+          defaultSubject = `Shop ${name} & Admin`;
+        }
+      } catch (e) {
+        console.error('Failed to generate default subject:', e);
+      }
+
       conversation = new this.conversationModel({
         type: dto.type,
-        buyerId: dto.buyerId || (isBuyer ? userId : undefined),
-        sellerId: dto.sellerId || (isSeller ? userId : undefined),
+        buyerId: resolvedBuyerId,
+        sellerId: resolvedSellerId,
         productId: dto.productId,
         orderId: dto.orderId,
-        subject: dto.subject || 'New Conversation',
+        subject: dto.subject || defaultSubject,
         status: conversationStatus,
       });
       await conversation.save();
 
-      // Send initial message if provided
+      // Send initial message only for NEW conversations
       if (dto.initialMessage) {
         await this.sendMessage({
           conversationId: conversation._id.toString(),
@@ -103,14 +138,15 @@ export class ChatService {
       }
     } else {
       // Conversation already exists
-      // If this is a complaint, update status to DISPUTED and send the message
+      // If this is a complaint, update status to DISPUTED
       if (dto.status === 'DISPUTED') {
         conversation.status = ConversationStatus.DISPUTED;
         await conversation.save();
       }
-      
-      // Send the message even if conversation exists
-      if (dto.initialMessage) {
+
+      // For existing conversations, only send message if it's a complaint
+      // (not regular "start chat" clicks which would spam the same greeting)
+      if (dto.initialMessage && dto.status === 'DISPUTED') {
         await this.sendMessage({
           conversationId: conversation._id.toString(),
           content: dto.initialMessage,
@@ -127,18 +163,18 @@ export class ChatService {
    */
   async getConversation(conversationId: string, userId: string, userRole: string): Promise<ConversationWithDetails> {
     const conversation = await this.conversationModel.findById(conversationId);
-    
+
     if (!conversation) {
       throw new NotFoundException('Conversation not found');
     }
 
     // Check permission
     if (userRole !== 'ADMIN') {
-      const isParticipant = 
-        conversation.buyerId === userId || 
+      const isParticipant =
+        conversation.buyerId === userId ||
         conversation.sellerId === userId ||
         conversation.adminId === userId;
-      
+
       if (!isParticipant) {
         throw new ForbiddenException('Not authorized to view this conversation');
       }
@@ -199,24 +235,25 @@ export class ChatService {
    * Get user's conversations
    */
   async getUserConversations(
-    userId: string, 
+    userId: string,
     userRole: string,
     options: { status?: ConversationStatus; type?: ConversationType; page?: number; limit?: number } = {}
   ): Promise<{ conversations: any[]; total: number; page: number; totalPages: number }> {
     const { status, type, page = 1, limit = 20 } = options;
-    
+
     const query: any = {};
-    
-    // Filter by role
+
+    // Filter by role — for non-admin users, find ALL conversations where they participate
+    // (as buyer OR seller). This prevents the "2 inboxes" issue where a seller who
+    // also buys only sees one side of their conversations.
     if (userRole === 'ADMIN') {
       // Admin can see all or filter by assigned
       if (options.status === ConversationStatus.DISPUTED) {
         query.$or = [{ adminId: userId }, { adminId: { $exists: false } }];
       }
-    } else if (userRole === 'SELLER') {
-      query.sellerId = userId;
     } else {
-      query.buyerId = userId;
+      // Find conversations where user is ANY participant
+      query.$or = [{ buyerId: userId }, { sellerId: userId }];
     }
 
     if (status) query.status = status;
@@ -235,13 +272,18 @@ export class ChatService {
     // Enrich with participant details
     const enrichedConversations = await Promise.all(
       conversations.map(async (conv) => {
+        // Determine the user's actual role in THIS specific conversation
+        // (a seller account might be the buyer in a conversation with another shop)
+        const isUserBuyer = conv.buyerId === userId;
+        const isUserSeller = conv.sellerId === userId;
+
         let otherParticipantId: string;
-        
-        if (userRole === 'SELLER') {
-          otherParticipantId = conv.buyerId;
-        } else if (userRole === 'BUYER' || userRole === 'USER') {
+        if (isUserBuyer) {
           otherParticipantId = conv.sellerId || conv.adminId;
+        } else if (isUserSeller) {
+          otherParticipantId = conv.buyerId || conv.adminId;
         } else {
+          // Admin or edge case
           otherParticipantId = conv.buyerId || conv.sellerId;
         }
 
@@ -250,10 +292,10 @@ export class ChatService {
           select: { id: true, name: true, avatar: true },
         }) : null;
 
-        // Get unread count for current user
+        // Get unread count based on user's actual role in THIS conversation
         let unreadCount = 0;
-        if (userRole === 'SELLER') unreadCount = conv.sellerUnreadCount;
-        else if (userRole === 'BUYER' || userRole === 'USER') unreadCount = conv.buyerUnreadCount;
+        if (isUserBuyer) unreadCount = conv.buyerUnreadCount;
+        else if (isUserSeller) unreadCount = conv.sellerUnreadCount;
         else unreadCount = conv.adminUnreadCount;
 
         return {
@@ -281,14 +323,14 @@ export class ChatService {
    */
   async sendMessage(dto: SendMessageDto, userId: string, userRole: string): Promise<MessageDocument> {
     const conversation = await this.conversationModel.findById(dto.conversationId);
-    
+
     if (!conversation) {
       throw new NotFoundException('Conversation not found');
     }
 
     // Check permission
-    const isParticipant = 
-      conversation.buyerId === userId || 
+    const isParticipant =
+      conversation.buyerId === userId ||
       conversation.sellerId === userId ||
       conversation.adminId === userId ||
       userRole === 'ADMIN';
@@ -314,6 +356,7 @@ export class ChatService {
       type: dto.type || MessageType.TEXT,
       attachments: dto.attachments || [],
       productEmbed: dto.productEmbed,
+      replyTo: dto.replyTo,
     });
 
     await message.save();
@@ -355,10 +398,10 @@ export class ChatService {
     messageContent: string,
   ) {
     const conversationId = conversation._id.toString();
-    
+
     // Notify other participants
     const recipientIds: string[] = [];
-    
+
     if (conversation.buyerId && conversation.buyerId !== senderId) {
       recipientIds.push(conversation.buyerId);
     }
@@ -401,8 +444,8 @@ export class ChatService {
       throw new NotFoundException('Conversation not found');
     }
 
-    const isParticipant = 
-      conversation.buyerId === userId || 
+    const isParticipant =
+      conversation.buyerId === userId ||
       conversation.sellerId === userId ||
       conversation.adminId === userId ||
       userRole === 'ADMIN';
@@ -411,7 +454,7 @@ export class ChatService {
       throw new ForbiddenException('Not authorized to view messages');
     }
 
-    const query: any = { 
+    const query: any = {
       conversationId: new Types.ObjectId(conversationId),
       isDeleted: false,
     };
@@ -430,6 +473,19 @@ export class ChatService {
       .sort({ createdAt: -1 })
       .limit(limit + 1) // Get one extra to check if there's more
       .lean();
+
+    // For non-admin users, strip recalled message content (they only see "Tin nhắn đã bị thu hồi")
+    if (userRole !== 'ADMIN') {
+      for (const msg of messages) {
+        if ((msg as any).isRecalled) {
+          (msg as any).content = '';
+          (msg as any).attachments = [];
+          // Don't expose recalledContent/recalledAttachments to non-admin
+          delete (msg as any).recalledContent;
+          delete (msg as any).recalledAttachments;
+        }
+      }
+    }
 
     const hasMore = messages.length > limit;
     if (hasMore) messages.pop();
@@ -460,17 +516,19 @@ export class ChatService {
 
     await this.conversationModel.findByIdAndUpdate(conversationId, updateData);
 
-    // Add read receipts to messages
-    await this.messageModel.updateMany(
-      {
-        conversationId: new Types.ObjectId(conversationId),
-        senderId: { $ne: userId },
-        'readBy.userId': { $ne: userId },
-      },
-      {
-        $push: { readBy: { userId, readAt: new Date() } },
-      }
-    );
+    // Add read receipts to messages — skip for ADMIN so their viewing is invisible
+    if (userRole !== 'ADMIN') {
+      await this.messageModel.updateMany(
+        {
+          conversationId: new Types.ObjectId(conversationId),
+          senderId: { $ne: userId },
+          'readBy.userId': { $ne: userId },
+        },
+        {
+          $push: { readBy: { userId, readAt: new Date() } },
+        }
+      );
+    }
   }
 
   // ============================================
@@ -498,7 +556,8 @@ export class ChatService {
     // Send system message
     await this.sendSystemMessage(
       conversationId,
-      `🚨 Tranh chấp đã được mở. Lý do: ${reason}. Admin sẽ tham gia để giải quyết.`
+      `🚨 Tranh chấp đã được mở. Lý do: ${reason}. Admin sẽ tham gia để giải quyết.`,
+      SystemMessageAction.DISPUTE_OPENED,
     );
 
     return conversation;
@@ -525,7 +584,8 @@ export class ChatService {
     // Send system message
     await this.sendSystemMessage(
       conversationId,
-      `👤 Admin ${admin?.name || ''} đã tham gia để hỗ trợ giải quyết tranh chấp.`
+      `👤 Admin ${admin?.name || ''} đã tham gia để hỗ trợ giải quyết tranh chấp.`,
+      SystemMessageAction.DISPUTE_JOINED,
     );
 
     return conversation;
@@ -548,7 +608,8 @@ export class ChatService {
     // Send system message
     await this.sendSystemMessage(
       conversationId,
-      `✅ Tranh chấp đã được giải quyết. Kết quả: ${resolution}`
+      `✅ Tranh chấp đã được giải quyết. Kết quả: ${resolution}`,
+      SystemMessageAction.DISPUTE_RESOLVED,
     );
 
     return conversation;
@@ -592,18 +653,19 @@ export class ChatService {
     if (conversation.buyerCompleted && conversation.sellerCompleted) {
       conversation.status = ConversationStatus.ARCHIVED;
       conversation.completedAt = new Date();
-      
-      // Send system message
+
       await this.sendSystemMessage(
         conversationId,
-        `🎉 Cả hai bên đã xác nhận hoàn tất. Cuộc hội thoại đã được đóng.`
+        `🎉 Cả hai bên đã xác nhận hoàn tất. Cuộc hội thoại đã được đóng.`,
+        SystemMessageAction.CONVERSATION_COMPLETED,
       );
     } else {
       // Send system message about partial completion
       const completedBy = isBuyer ? 'Người mua' : 'Người bán';
       await this.sendSystemMessage(
         conversationId,
-        `✅ ${completedBy} đã đánh dấu cuộc hội thoại là hoàn tất.`
+        `✅ ${completedBy} đã đánh dấu cuộc hội thoại là hoàn tất.`,
+        SystemMessageAction.CONVERSATION_COMPLETED,
       );
     }
 
@@ -659,7 +721,7 @@ export class ChatService {
     options: { status?: ConversationStatus; type?: ConversationType; search?: string; page?: number; limit?: number } = {}
   ): Promise<{ conversations: any[]; total: number; page: number; totalPages: number }> {
     const { status, type, search, page = 1, limit = 20 } = options;
-    
+
     const query: any = {};
     if (status) query.status = status;
     if (type) query.type = type;
@@ -770,7 +832,7 @@ export class ChatService {
   /**
    * Send a system message
    */
-  private async sendSystemMessage(conversationId: string, content: string): Promise<MessageDocument> {
+  async sendSystemMessage(conversationId: string, content: string, action?: SystemMessageAction): Promise<MessageDocument> {
     const message = new this.messageModel({
       conversationId: new Types.ObjectId(conversationId),
       senderId: 'SYSTEM',
@@ -778,6 +840,7 @@ export class ChatService {
       senderName: 'System',
       content,
       type: MessageType.SYSTEM,
+      systemAction: action || SystemMessageAction.GENERAL,
     });
 
     await message.save();
@@ -795,7 +858,7 @@ export class ChatService {
    */
   async getTotalUnreadCount(userId: string, userRole: string): Promise<number> {
     const query: any = { status: { $ne: ConversationStatus.ARCHIVED } };
-    
+
     if (userRole === 'SELLER') {
       query.sellerId = userId;
       query.sellerUnreadCount = { $gt: 0 };
@@ -808,7 +871,7 @@ export class ChatService {
     }
 
     const conversations = await this.conversationModel.find(query).lean();
-    
+
     let total = 0;
     for (const conv of conversations) {
       if (userRole === 'SELLER') total += conv.sellerUnreadCount;
@@ -817,5 +880,229 @@ export class ChatService {
     }
 
     return total;
+  }
+
+  // ============================================
+  // MESSAGE RECALL (Thu hồi tin nhắn)
+  // ============================================
+
+  /**
+   * Recall a message - sender can unsend, but admin can still view original
+   */
+  async recallMessage(messageId: string, userId: string, userRole: string): Promise<MessageDocument> {
+    const message = await this.messageModel.findById(messageId);
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    // Only sender can recall their own message (within 24 hours)
+    if (message.senderId !== userId && userRole !== 'ADMIN') {
+      throw new ForbiddenException('Bạn chỉ có thể thu hồi tin nhắn của mình');
+    }
+
+    // Check time limit (24 hours for regular users, no limit for admin)
+    if (userRole !== 'ADMIN') {
+      const messageAge = Date.now() - new Date(message['createdAt']).getTime();
+      const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+      if (messageAge > maxAge) {
+        throw new BadRequestException('Chỉ có thể thu hồi tin nhắn trong vòng 24 giờ');
+      }
+    }
+
+    if (message.isRecalled) {
+      throw new BadRequestException('Tin nhắn đã được thu hồi trước đó');
+    }
+
+    // Save original content for admin viewing
+    message.recalledContent = message.content;
+    message.recalledAttachments = message.attachments;
+    message.isRecalled = true;
+    message.recalledAt = new Date();
+    // Clear visible content
+    message.content = '';
+    message.attachments = [];
+
+    await message.save();
+    return message;
+  }
+
+  // ============================================
+  // MESSAGE EDIT
+  // ============================================
+
+  /**
+   * Edit a message - only sender within 15 minutes
+   */
+  async editMessage(messageId: string, userId: string, newContent: string): Promise<MessageDocument> {
+    const message = await this.messageModel.findById(messageId);
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (message.senderId !== userId) {
+      throw new ForbiddenException('Bạn chỉ có thể sửa tin nhắn của mình');
+    }
+
+    if (message.type !== MessageType.TEXT) {
+      throw new BadRequestException('Chỉ có thể sửa tin nhắn văn bản');
+    }
+
+    if (message.isRecalled || message.isDeleted) {
+      throw new BadRequestException('Không thể sửa tin nhắn đã thu hồi hoặc đã xóa');
+    }
+
+    // Check time limit (15 minutes)
+    const messageAge = Date.now() - new Date(message['createdAt']).getTime();
+    const maxAge = 15 * 60 * 1000; // 15 minutes
+    if (messageAge > maxAge) {
+      throw new BadRequestException('Chỉ có thể sửa tin nhắn trong vòng 15 phút');
+    }
+
+    // Save original content if first edit
+    if (!message.originalContent) {
+      message.originalContent = message.content;
+    }
+    message.content = newContent;
+    message.isEdited = true;
+    message.editedAt = new Date();
+
+    await message.save();
+    return message;
+  }
+
+  // ============================================
+  // EMOJI REACTIONS
+  // ============================================
+
+  /**
+   * Toggle emoji reaction on a message
+   */
+  async toggleReaction(messageId: string, userId: string, userName: string, emoji: string): Promise<MessageDocument> {
+    const message = await this.messageModel.findById(messageId);
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    const allowedEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👏', '🎉'];
+    if (!allowedEmojis.includes(emoji)) {
+      throw new BadRequestException('Emoji không hợp lệ');
+    }
+
+    // Check if user already reacted with this emoji
+    const existingIndex = message.reactions.findIndex(
+      r => r.userId === userId && r.emoji === emoji
+    );
+
+    if (existingIndex >= 0) {
+      // Remove reaction (toggle off)
+      message.reactions.splice(existingIndex, 1);
+    } else {
+      // Add reaction
+      message.reactions.push({
+        emoji,
+        userId,
+        userName,
+        createdAt: new Date(),
+      });
+    }
+
+    await message.save();
+    return message;
+  }
+
+  // ============================================
+  // PIN MESSAGE
+  // ============================================
+
+  /**
+   * Pin/unpin a message in a conversation
+   */
+  async togglePinMessage(messageId: string, userId: string): Promise<MessageDocument> {
+    const message = await this.messageModel.findById(messageId);
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (message.isPinned) {
+      message.isPinned = false;
+      message.pinnedBy = undefined;
+      message.pinnedAt = undefined;
+    } else {
+      // Unpin any existing pinned message in this conversation
+      await this.messageModel.updateMany(
+        { conversationId: message.conversationId, isPinned: true },
+        { isPinned: false, pinnedBy: undefined, pinnedAt: undefined }
+      );
+
+      message.isPinned = true;
+      message.pinnedBy = userId;
+      message.pinnedAt = new Date();
+    }
+
+    await message.save();
+    return message;
+  }
+
+  /**
+   * Get pinned message in a conversation
+   */
+  async getPinnedMessage(conversationId: string): Promise<MessageDocument | null> {
+    return this.messageModel.findOne({
+      conversationId: new Types.ObjectId(conversationId),
+      isPinned: true,
+      isDeleted: false,
+    }).lean() as Promise<MessageDocument | null>;
+  }
+
+  // ============================================
+  // CONVERSATION STATS
+  // ============================================
+
+  /**
+   * Get conversation stats for a user (efficient endpoint instead of fetching all conversations)
+   */
+  async getConversationStats(userId: string, userRole: string): Promise<{
+    total: number;
+    active: number;
+    disputed: number;
+    resolved: number;
+  }> {
+    const baseQuery: any = {};
+
+    if (userRole === 'SELLER') {
+      baseQuery.sellerId = userId;
+    } else if (userRole === 'BUYER' || userRole === 'USER') {
+      baseQuery.buyerId = userId;
+    }
+    // Admin sees all
+
+    const [total, active, disputed, resolved] = await Promise.all([
+      this.conversationModel.countDocuments(baseQuery),
+      this.conversationModel.countDocuments({ ...baseQuery, status: ConversationStatus.ACTIVE }),
+      this.conversationModel.countDocuments({ ...baseQuery, status: ConversationStatus.DISPUTED }),
+      this.conversationModel.countDocuments({ ...baseQuery, status: ConversationStatus.RESOLVED }),
+    ]);
+
+    return { total, active, disputed, resolved };
+  }
+
+  /**
+   * Delete a message (soft delete by sender)
+   */
+  async deleteMessage(messageId: string, userId: string, userRole: string): Promise<MessageDocument> {
+    const message = await this.messageModel.findById(messageId);
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    // Sender can delete own messages, admin can delete any
+    if (message.senderId !== userId && userRole !== 'ADMIN') {
+      throw new ForbiddenException('Bạn chỉ có thể xóa tin nhắn của mình');
+    }
+
+    message.isDeleted = true;
+    message.deletedAt = new Date();
+    await message.save();
+    return message;
   }
 }

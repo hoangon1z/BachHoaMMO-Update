@@ -6,3 +6,4 @@ export { FilterBar } from './FilterBar';
 export { StatusBadge } from './StatusBadge';
 export { Pagination } from './Pagination';
 export { ConfirmDialog } from './ConfirmDialog';
+export { EditStatsModal } from './EditStatsModal';

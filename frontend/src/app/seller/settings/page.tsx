@@ -2,13 +2,12 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Store, Camera, Save, Upload, Loader2, ImageIcon, Star, ShoppingBag, Clock, AlertTriangle, Bell, Send, CheckCircle, Link2, Unlink, ExternalLink, Key, Copy, Eye, EyeOff, Trash2, RefreshCw, Code, MessageSquare } from 'lucide-react';
+import { Store, Camera, Save, Upload, Loader2, ImageIcon, Star, ShoppingBag, Clock, AlertTriangle, Globe, MonitorUp, Phone, Send, Lock, Eye, EyeOff, CheckCircle, AlertCircle, Wifi, WifiOff, Coffee, MessageSquare, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuthStore } from '@/store/authStore';
 import { VerifyBadge } from '@/components/VerifyBadge';
-import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
 
@@ -28,6 +27,11 @@ interface StoreData {
   reviewCount?: number;
   isVerified?: boolean;
   createdAt?: string;
+  contactPhone?: string;
+  contactTelegram?: string;
+  storeStatus?: string;
+  statusMessage?: string;
+  hasWithdrawalPin?: boolean;
 }
 
 export default function SellerSettingsPage() {
@@ -39,137 +43,47 @@ export default function SellerSettingsPage() {
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [hasStore, setHasStore] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [logoMode, setLogoMode] = useState<'url' | 'upload'>('url');
+  const [logoUrl, setLogoUrl] = useState('');
+  const [isSavingLogoUrl, setIsSavingLogoUrl] = useState(false);
   const [formData, setFormData] = useState<StoreData>({
     shopName: '',
     shopDescription: '',
     shopLogo: '',
   });
 
-  // API Key states
-  const [apiKeys, setApiKeys] = useState<any[]>([]);
-  const [isLoadingApiKeys, setIsLoadingApiKeys] = useState(false);
-  const [newApiKeyName, setNewApiKeyName] = useState('');
-  const [isGeneratingKey, setIsGeneratingKey] = useState(false);
-  const [newlyCreatedKey, setNewlyCreatedKey] = useState<{ apiKey: string; secret: string } | null>(null);
-  const [showSecret, setShowSecret] = useState(false);
-  const [apiKeyMessage, setApiKeyMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  // Contact info state
+  const [contactPhone, setContactPhone] = useState('');
+  const [contactTelegram, setContactTelegram] = useState('');
+  const [isSavingContact, setIsSavingContact] = useState(false);
+  const [contactMessage, setContactMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Telegram states - Support 2 bots (separate connection status)
-  const [orderBotConnected, setOrderBotConnected] = useState(false);
-  const [orderBotLinkedAt, setOrderBotLinkedAt] = useState<string | null>(null);
-  const [chatBotConnected, setChatBotConnected] = useState(false);
-  const [chatBotLinkedAt, setChatBotLinkedAt] = useState<string | null>(null);
-  const [telegramOrderBotLink, setTelegramOrderBotLink] = useState<string | null>(null);
-  const [telegramChatBotLink, setTelegramChatBotLink] = useState<string | null>(null);
-  const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
-  const [isSendingTest, setIsSendingTest] = useState(false);
-  const [telegramMessage, setTelegramMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [showUnlinkDialog, setShowUnlinkDialog] = useState(false);
-  const [unlinkBotType, setUnlinkBotType] = useState<'order' | 'chat'>('order');
+  // Store status state
+  const [storeStatus, setStoreStatus] = useState('ONLINE');
+  const [statusMessage, setStatusMessage] = useState('');
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
+  const [statusSaveMessage, setStatusSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // PIN state
+  const [hasPin, setHasPin] = useState(false);
+  const [pinMode, setPinMode] = useState<'set' | 'change' | null>(null);
+  const [pinData, setPinData] = useState({ pin: '', confirmPin: '', oldPin: '', newPin: '', confirmNewPin: '' });
+  const [showPin, setShowPin] = useState(false);
+  const [isSavingPin, setIsSavingPin] = useState(false);
+  const [pinMessage, setPinMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Auto-reply state
+  const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
+  const [autoReplyMessage, setAutoReplyMessage] = useState('');
+  const [autoReplyStartHour, setAutoReplyStartHour] = useState(22);
+  const [autoReplyEndHour, setAutoReplyEndHour] = useState(8);
+  const [autoReplyCooldown, setAutoReplyCooldown] = useState(30);
+  const [isSavingAutoReply, setIsSavingAutoReply] = useState(false);
+  const [autoReplyMsg, setAutoReplyMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     fetchStore();
-    fetchTelegramStatus();
-    fetchApiKeys();
   }, []);
-
-  // Fetch API keys
-  const fetchApiKeys = async () => {
-    try {
-      setIsLoadingApiKeys(true);
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/seller/api-keys', {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setApiKeys(data);
-      }
-    } catch (error) {
-      console.error('Error fetching API keys:', error);
-    } finally {
-      setIsLoadingApiKeys(false);
-    }
-  };
-
-  // Generate new API key
-  const generateApiKey = async () => {
-    try {
-      setIsGeneratingKey(true);
-      setApiKeyMessage(null);
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/seller/api-keys', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name: newApiKeyName || 'Default API Key' }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setNewlyCreatedKey({ apiKey: data.apiKey, secret: data.secret });
-        setNewApiKeyName('');
-        fetchApiKeys();
-        setApiKeyMessage({ type: 'success', text: 'Tạo API key thành công! Lưu secret ngay vì nó chỉ hiển thị một lần.' });
-      } else {
-        const error = await response.json();
-        setApiKeyMessage({ type: 'error', text: error.message || 'Có lỗi xảy ra' });
-      }
-    } catch (error) {
-      console.error('Error generating API key:', error);
-      setApiKeyMessage({ type: 'error', text: 'Có lỗi xảy ra' });
-    } finally {
-      setIsGeneratingKey(false);
-    }
-  };
-
-  // Revoke API key
-  const revokeApiKey = async (keyId: string) => {
-    if (!confirm('Bạn có chắc muốn xóa API key này?')) return;
-
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/seller/api-keys/${keyId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-
-      if (response.ok) {
-        fetchApiKeys();
-        setApiKeyMessage({ type: 'success', text: 'Đã xóa API key' });
-      } else {
-        setApiKeyMessage({ type: 'error', text: 'Không thể xóa API key' });
-      }
-    } catch (error) {
-      console.error('Error revoking API key:', error);
-    }
-  };
-
-  // Toggle API key status
-  const toggleApiKeyStatus = async (keyId: string) => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/seller/api-keys/${keyId}/toggle`, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-
-      if (response.ok) {
-        fetchApiKeys();
-      }
-    } catch (error) {
-      console.error('Error toggling API key:', error);
-    }
-  };
-
-  // Copy to clipboard
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    setApiKeyMessage({ type: 'success', text: `Đã copy ${label}` });
-    setTimeout(() => setApiKeyMessage(null), 2000);
-  };
 
   const fetchStore = async () => {
     try {
@@ -190,7 +104,23 @@ export default function SellerSettingsPage() {
           reviewCount: data.reviewCount,
           isVerified: data.isVerified,
           createdAt: data.createdAt,
+          contactPhone: data.contactPhone || '',
+          contactTelegram: data.contactTelegram || '',
+          storeStatus: data.storeStatus || 'ONLINE',
+          statusMessage: data.statusMessage || '',
+          hasWithdrawalPin: data.hasWithdrawalPin,
         });
+        setContactPhone(data.contactPhone || '');
+        setContactTelegram(data.contactTelegram || '');
+        setStoreStatus(data.storeStatus || 'ONLINE');
+        setStatusMessage(data.statusMessage || '');
+        setHasPin(data.hasWithdrawalPin || false);
+        // Auto-reply settings
+        setAutoReplyEnabled(data.autoReplyEnabled || false);
+        setAutoReplyMessage(data.autoReplyMessage || '');
+        setAutoReplyStartHour(data.autoReplyStartHour ?? 22);
+        setAutoReplyEndHour(data.autoReplyEndHour ?? 8);
+        setAutoReplyCooldown(data.autoReplyCooldown ?? 30);
         setHasStore(true);
       } else if (response.status === 404) {
         setHasStore(false);
@@ -199,129 +129,6 @@ export default function SellerSettingsPage() {
       console.error('Error fetching store:', error);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // Fetch Telegram connection status for both bots
-  const fetchTelegramStatus = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/telegram/status', {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Order Bot status
-        setOrderBotConnected(data.orderBotConnected || data.connected);
-        setOrderBotLinkedAt(data.orderBotLinkedAt || data.linkedAt);
-        // Chat Bot status
-        setChatBotConnected(data.chatBotConnected || false);
-        setChatBotLinkedAt(data.chatBotLinkedAt || null);
-      }
-    } catch (error) {
-      console.error('Error fetching Telegram status:', error);
-    }
-  };
-
-  // Get Telegram links for both bots
-  const getTelegramLinks = async () => {
-    setIsLoadingTelegram(true);
-    setTelegramMessage(null);
-
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/telegram/links', {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setTelegramOrderBotLink(data.orderBot);
-        setTelegramChatBotLink(data.chatBot);
-      } else {
-        // Fallback to old endpoint
-        const fallbackResponse = await fetch('/api/telegram/link', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-        if (fallbackResponse.ok) {
-          const data = await fallbackResponse.json();
-          setTelegramOrderBotLink(data.link);
-        } else {
-          setTelegramMessage({ type: 'error', text: 'Không thể lấy link kết nối' });
-        }
-      }
-    } catch (error) {
-      console.error('Error getting Telegram links:', error);
-      setTelegramMessage({ type: 'error', text: 'Có lỗi xảy ra' });
-    } finally {
-      setIsLoadingTelegram(false);
-    }
-  };
-
-  // Unlink Telegram - show dialog with bot type
-  const unlinkTelegramClick = (botType: 'order' | 'chat') => {
-    setUnlinkBotType(botType);
-    setShowUnlinkDialog(true);
-  };
-
-  const unlinkTelegramConfirm = async () => {
-    setIsLoadingTelegram(true);
-    setTelegramMessage(null);
-
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/telegram/unlink?botType=${unlinkBotType}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-
-      if (response.ok) {
-        if (unlinkBotType === 'order') {
-          setOrderBotConnected(false);
-          setOrderBotLinkedAt(null);
-          setTelegramOrderBotLink(null);
-        } else {
-          setChatBotConnected(false);
-          setChatBotLinkedAt(null);
-          setTelegramChatBotLink(null);
-        }
-        setTelegramMessage({ type: 'success', text: `Đã hủy kết nối ${unlinkBotType === 'order' ? 'Bot Đơn hàng' : 'Bot Tin nhắn'}` });
-        setShowUnlinkDialog(false);
-      } else {
-        setTelegramMessage({ type: 'error', text: 'Không thể hủy kết nối' });
-      }
-    } catch (error) {
-      console.error('Error unlinking Telegram:', error);
-      setTelegramMessage({ type: 'error', text: 'Có lỗi xảy ra' });
-    } finally {
-      setIsLoadingTelegram(false);
-    }
-  };
-
-  // Send test notification
-  const sendTestNotification = async () => {
-    setIsSendingTest(true);
-    setTelegramMessage(null);
-
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/telegram/test', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        setTelegramMessage({ type: 'success', text: 'Đã gửi thông báo test! Kiểm tra Telegram của bạn.' });
-      } else {
-        setTelegramMessage({ type: 'error', text: data.message || 'Không thể gửi thông báo' });
-      }
-    } catch (error) {
-      console.error('Error sending test:', error);
-      setTelegramMessage({ type: 'error', text: 'Có lỗi xảy ra' });
-    } finally {
-      setIsSendingTest(false);
     }
   };
 
@@ -357,7 +164,7 @@ export default function SellerSettingsPage() {
         const data = await response.json();
         setFormData(prev => ({ ...prev, ...data }));
         setHasStore(true);
-        setMessage({ type: 'success', text: hasStore ? 'Cap nhat cua hang thanh cong!' : 'Tao cua hang thanh cong!' });
+        setMessage({ type: 'success', text: hasStore ? 'Cập nhật cửa hàng thành công!' : 'Tạo cửa hàng thành công!' });
 
         if (!hasStore) {
           setTimeout(() => {
@@ -366,13 +173,205 @@ export default function SellerSettingsPage() {
         }
       } else {
         const error = await response.json();
-        setMessage({ type: 'error', text: error.message || 'Co loi xay ra' });
+        setMessage({ type: 'error', text: error.message || 'Có lỗi xảy ra' });
       }
     } catch (error) {
       console.error('Error saving store:', error);
-      setMessage({ type: 'error', text: 'Co loi xay ra, vui long thu lai' });
+      setMessage({ type: 'error', text: 'Có lỗi xảy ra, vui lòng thử lại' });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSaveContact = async () => {
+    setIsSavingContact(true);
+    setContactMessage(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/seller/store', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contactPhone: contactPhone.trim(),
+          contactTelegram: contactTelegram.trim(),
+        }),
+      });
+
+      if (response.ok) {
+        setFormData(prev => ({ ...prev, contactPhone: contactPhone.trim(), contactTelegram: contactTelegram.trim() }));
+        setContactMessage({ type: 'success', text: 'Cập nhật thông tin liên lạc thành công!' });
+        setTimeout(() => setContactMessage(null), 3000);
+      } else {
+        const error = await response.json();
+        setContactMessage({ type: 'error', text: error.message || 'Có lỗi xảy ra' });
+      }
+    } catch (error) {
+      console.error('Error saving contact:', error);
+      setContactMessage({ type: 'error', text: 'Có lỗi xảy ra, vui lòng thử lại' });
+    } finally {
+      setIsSavingContact(false);
+    }
+  };
+
+  const handleSaveStatus = async () => {
+    setIsSavingStatus(true);
+    setStatusSaveMessage(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/seller/store', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          storeStatus,
+          statusMessage: statusMessage.trim(),
+        }),
+      });
+
+      if (response.ok) {
+        setFormData(prev => ({ ...prev, storeStatus, statusMessage: statusMessage.trim() }));
+        setStatusSaveMessage({ type: 'success', text: 'Cập nhật trạng thái cửa hàng thành công!' });
+        setTimeout(() => setStatusSaveMessage(null), 3000);
+      } else {
+        const error = await response.json();
+        setStatusSaveMessage({ type: 'error', text: error.message || 'Có lỗi xảy ra' });
+      }
+    } catch (error) {
+      console.error('Error saving status:', error);
+      setStatusSaveMessage({ type: 'error', text: 'Có lỗi xảy ra, vui lòng thử lại' });
+    } finally {
+      setIsSavingStatus(false);
+    }
+  };
+
+  const handleSaveAutoReply = async () => {
+    if (autoReplyEnabled && !autoReplyMessage.trim()) {
+      setAutoReplyMsg({ type: 'error', text: 'Vui lòng nhập nội dung tin nhắn tự động' });
+      return;
+    }
+
+    setIsSavingAutoReply(true);
+    setAutoReplyMsg(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/seller/store', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          autoReplyEnabled,
+          autoReplyMessage: autoReplyMessage.trim(),
+          autoReplyStartHour,
+          autoReplyEndHour,
+          autoReplyCooldown,
+        }),
+      });
+
+      if (response.ok) {
+        setAutoReplyMsg({ type: 'success', text: 'Cập nhật tin nhắn tự động thành công!' });
+        setTimeout(() => setAutoReplyMsg(null), 3000);
+      } else {
+        const error = await response.json();
+        setAutoReplyMsg({ type: 'error', text: error.message || 'Có lỗi xảy ra' });
+      }
+    } catch (error) {
+      console.error('Error saving auto-reply:', error);
+      setAutoReplyMsg({ type: 'error', text: 'Có lỗi xảy ra, vui lòng thử lại' });
+    } finally {
+      setIsSavingAutoReply(false);
+    }
+  };
+
+  const handleSetPin = async () => {
+    if (pinData.pin.length !== 6 || !/^\d{6}$/.test(pinData.pin)) {
+      setPinMessage({ type: 'error', text: 'Mã PIN phải gồm 6 chữ số' });
+      return;
+    }
+    if (pinData.pin !== pinData.confirmPin) {
+      setPinMessage({ type: 'error', text: 'Mã PIN xác nhận không khớp' });
+      return;
+    }
+
+    setIsSavingPin(true);
+    setPinMessage(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/seller/withdrawal-pin', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pin: pinData.pin }),
+      });
+
+      if (response.ok) {
+        setHasPin(true);
+        setPinMode(null);
+        setPinData({ pin: '', confirmPin: '', oldPin: '', newPin: '', confirmNewPin: '' });
+        setPinMessage({ type: 'success', text: 'Tạo mã PIN rút tiền thành công!' });
+        setTimeout(() => setPinMessage(null), 3000);
+      } else {
+        const error = await response.json();
+        setPinMessage({ type: 'error', text: error.message || 'Có lỗi xảy ra' });
+      }
+    } catch (error) {
+      console.error('Error setting PIN:', error);
+      setPinMessage({ type: 'error', text: 'Có lỗi xảy ra, vui lòng thử lại' });
+    } finally {
+      setIsSavingPin(false);
+    }
+  };
+
+  const handleChangePin = async () => {
+    if (pinData.newPin.length !== 6 || !/^\d{6}$/.test(pinData.newPin)) {
+      setPinMessage({ type: 'error', text: 'Mã PIN mới phải gồm 6 chữ số' });
+      return;
+    }
+    if (pinData.newPin !== pinData.confirmNewPin) {
+      setPinMessage({ type: 'error', text: 'Mã PIN mới xác nhận không khớp' });
+      return;
+    }
+
+    setIsSavingPin(true);
+    setPinMessage(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/seller/withdrawal-pin', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ oldPin: pinData.oldPin, newPin: pinData.newPin }),
+      });
+
+      if (response.ok) {
+        setPinMode(null);
+        setPinData({ pin: '', confirmPin: '', oldPin: '', newPin: '', confirmNewPin: '' });
+        setPinMessage({ type: 'success', text: 'Đổi mã PIN thành công!' });
+        setTimeout(() => setPinMessage(null), 3000);
+      } else {
+        const error = await response.json();
+        setPinMessage({ type: 'error', text: error.message || 'Có lỗi xảy ra' });
+      }
+    } catch (error) {
+      console.error('Error changing PIN:', error);
+      setPinMessage({ type: 'error', text: 'Có lỗi xảy ra, vui lòng thử lại' });
+    } finally {
+      setIsSavingPin(false);
     }
   };
 
@@ -386,8 +385,7 @@ export default function SellerSettingsPage() {
       return;
     }
 
-    // Validate file size (5MB max - backend/server limit)
-    const maxSize = 5 * 1024 * 1024; // 5MB for all file types
+    const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
       const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
       setMessage({
@@ -414,20 +412,71 @@ export default function SellerSettingsPage() {
       if (response.ok) {
         const data = await response.json();
         setFormData(prev => ({ ...prev, shopLogo: data.shopLogo }));
-        setMessage({ type: 'success', text: 'Cap nhat logo thanh cong!' });
+        setMessage({ type: 'success', text: 'Cập nhật logo thành công!' });
         setTimeout(() => setMessage(null), 3000);
       } else {
-        const error = await response.json().catch(() => ({ message: 'Co loi xay ra khi tai anh len' }));
-        setMessage({ type: 'error', text: error.message || 'Co loi xay ra khi tai anh len' });
+        const error = await response.json().catch(() => ({ message: 'Có lỗi xảy ra khi tải ảnh lên' }));
+        setMessage({ type: 'error', text: error.message || 'Có lỗi xảy ra khi tải ảnh lên' });
       }
     } catch (error) {
       console.error('Error uploading logo:', error);
-      setMessage({ type: 'error', text: 'Co loi xay ra, vui long thu lai' });
+      setMessage({ type: 'error', text: 'Có lỗi xảy ra, vui lòng thử lại' });
     } finally {
       setIsUploadingLogo(false);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+    }
+  };
+
+  const handleLogoUrl = async () => {
+    const url = logoUrl.trim();
+    if (!url) {
+      setMessage({ type: 'error', text: 'Vui lòng nhập URL hình ảnh' });
+      return;
+    }
+
+    try {
+      new URL(url);
+    } catch {
+      setMessage({ type: 'error', text: 'URL không hợp lệ. Vui lòng nhập đúng định dạng (https://...)' });
+      return;
+    }
+
+    setIsSavingLogoUrl(true);
+    setMessage(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const method = hasStore ? 'PUT' : 'POST';
+      const response = await fetch('/api/seller/store', {
+        method,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          shopName: formData.shopName || 'My Store',
+          shopDescription: formData.shopDescription,
+          shopLogo: url,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setFormData(prev => ({ ...prev, ...data, shopLogo: url }));
+        setHasStore(true);
+        setMessage({ type: 'success', text: 'Cập nhật logo thành công!' });
+        setTimeout(() => setMessage(null), 3000);
+      } else {
+        const error = await response.json().catch(() => ({ message: 'Có lỗi xảy ra' }));
+        setMessage({ type: 'error', text: error.message || 'Có lỗi xảy ra khi cập nhật logo' });
+      }
+    } catch (error) {
+      console.error('Error saving logo URL:', error);
+      setMessage({ type: 'error', text: 'Có lỗi xảy ra, vui lòng thử lại' });
+    } finally {
+      setIsSavingLogoUrl(false);
     }
   };
 
@@ -438,6 +487,19 @@ export default function SellerSettingsPage() {
       month: 'long',
       day: 'numeric'
     });
+  };
+
+  const getStatusConfig = (status: string) => {
+    switch (status) {
+      case 'ONLINE':
+        return { icon: Wifi, color: 'text-green-600', bgColor: 'bg-green-50 border-green-200', dotColor: 'bg-green-500', label: 'Đang hoạt động' };
+      case 'OFFLINE':
+        return { icon: WifiOff, color: 'text-red-600', bgColor: 'bg-red-50 border-red-200', dotColor: 'bg-red-500', label: 'Tạm đóng' };
+      case 'AWAY':
+        return { icon: Coffee, color: 'text-amber-600', bgColor: 'bg-amber-50 border-amber-200', dotColor: 'bg-amber-500', label: 'Đang vắng' };
+      default:
+        return { icon: Wifi, color: 'text-green-600', bgColor: 'bg-green-50 border-green-200', dotColor: 'bg-green-500', label: 'Đang hoạt động' };
+    }
   };
 
   if (isLoading) {
@@ -480,6 +542,32 @@ export default function SellerSettingsPage() {
           </div>
         )}
 
+        {/* Warning: Missing Contact Info */}
+        {hasStore && (!formData.contactPhone && !formData.contactTelegram) && (
+          <div className="flex items-start gap-3 p-4 rounded-lg border border-amber-200 bg-amber-50">
+            <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-amber-800">Thiếu thông tin liên lạc!</p>
+              <p className="text-sm text-amber-700 mt-1">
+                Vui lòng thêm số điện thoại hoặc Telegram để admin có thể liên hệ khi cần thiết (ví dụ: xử lý đơn hàng, khiếu nại, v.v.).
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Warning: Missing PIN */}
+        {hasStore && !hasPin && (
+          <div className="flex items-start gap-3 p-4 rounded-lg border border-blue-200 bg-blue-50">
+            <Lock className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-blue-800">Chưa tạo mã PIN rút tiền</p>
+              <p className="text-sm text-blue-700 mt-1">
+                Bạn cần tạo mã PIN 6 chữ số để bảo mật khi rút tiền. Cuộn xuống phần &quot;Mã PIN rút tiền&quot; để thiết lập.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Store Overview Card */}
         {hasStore && (
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -501,8 +589,10 @@ export default function SellerSettingsPage() {
                   <div className="flex items-center gap-2 mb-1">
                     <h2 className="text-xl font-semibold text-gray-900 truncate">{formData.shopName}</h2>
                     {formData.isVerified && (
-                      <VerifyBadge size={20} />
+                      <VerifyBadge size={20} isVerified={formData.isVerified} />
                     )}
+                    {/* Status dot */}
+                    <span className={`w-2.5 h-2.5 rounded-full ${getStatusConfig(formData.storeStatus || 'ONLINE').dotColor}`} />
                   </div>
                   <p className="text-sm text-gray-500 mb-3">ID: {formData.id?.slice(0, 8)}...</p>
 
@@ -543,6 +633,459 @@ export default function SellerSettingsPage() {
           </div>
         )}
 
+        {/* Contact Information Section */}
+        {hasStore && (
+          <div className="bg-white rounded-lg border border-gray-200">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <Phone className="w-5 h-5 text-blue-500" />
+                <h3 className="text-base font-semibold text-gray-900">Thông tin liên lạc</h3>
+              </div>
+              <p className="text-sm text-gray-500 mt-0.5">Để admin có thể liên hệ khi cần xử lý đơn hàng, khiếu nại</p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {contactMessage && (
+                <div className={`flex items-center gap-2 p-3 rounded-lg border text-sm ${contactMessage.type === 'success' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
+                  }`}>
+                  {contactMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                  {contactMessage.text}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">Số điện thoại</Label>
+                  <Input
+                    placeholder="VD: 0912345678"
+                    value={contactPhone}
+                    onChange={(e) => setContactPhone(e.target.value)}
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">Telegram</Label>
+                  <Input
+                    placeholder="VD: @username hoặc link t.me/..."
+                    value={contactTelegram}
+                    onChange={(e) => setContactTelegram(e.target.value)}
+                    className="h-10"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleSaveContact}
+                  disabled={isSavingContact}
+                  className="bg-blue-600 hover:bg-blue-700 h-10"
+                >
+                  {isSavingContact ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Đang lưu...</>
+                  ) : (
+                    <><Save className="w-4 h-4 mr-2" /> Lưu thông tin liên lạc</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Store Status Section */}
+        {hasStore && (
+          <div className="bg-white rounded-lg border border-gray-200">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <Wifi className="w-5 h-5 text-green-500" />
+                <h3 className="text-base font-semibold text-gray-900">Trạng thái cửa hàng</h3>
+              </div>
+              <p className="text-sm text-gray-500 mt-0.5">Cho khách hàng biết tình trạng hoạt động của bạn</p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {statusSaveMessage && (
+                <div className={`flex items-center gap-2 p-3 rounded-lg border text-sm ${statusSaveMessage.type === 'success' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
+                  }`}>
+                  {statusSaveMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                  {statusSaveMessage.text}
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { value: 'ONLINE', label: 'Đang hoạt động', desc: 'Sẵn sàng xử lý đơn', icon: Wifi, color: 'green' },
+                  { value: 'AWAY', label: 'Đang vắng', desc: 'Phản hồi chậm hơn', icon: Coffee, color: 'amber' },
+                  { value: 'OFFLINE', label: 'Tạm đóng', desc: 'Không nhận đơn mới', icon: WifiOff, color: 'red' },
+                ].map((option) => {
+                  const isSelected = storeStatus === option.value;
+                  const colorMap: Record<string, string> = {
+                    green: isSelected ? 'border-green-500 bg-green-50 ring-1 ring-green-500' : 'border-gray-200 hover:border-green-300',
+                    amber: isSelected ? 'border-amber-500 bg-amber-50 ring-1 ring-amber-500' : 'border-gray-200 hover:border-amber-300',
+                    red: isSelected ? 'border-red-500 bg-red-50 ring-1 ring-red-500' : 'border-gray-200 hover:border-red-300',
+                  };
+                  const dotMap: Record<string, string> = { green: 'bg-green-500', amber: 'bg-amber-500', red: 'bg-red-500' };
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setStoreStatus(option.value)}
+                      className={`p-4 rounded-lg border-2 text-left transition-all ${colorMap[option.color]}`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`w-2.5 h-2.5 rounded-full ${dotMap[option.color]}`} />
+                        <span className="text-sm font-semibold text-gray-900">{option.label}</span>
+                      </div>
+                      <p className="text-xs text-gray-500">{option.desc}</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {storeStatus !== 'ONLINE' && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">Tin nhắn trạng thái (tùy chọn)</Label>
+                  <Input
+                    placeholder={storeStatus === 'AWAY' ? 'VD: Đang bận, sẽ trả lời trong 2-3 giờ' : 'VD: Nghỉ Tết, hoạt động lại ngày 10/2'}
+                    value={statusMessage}
+                    onChange={(e) => setStatusMessage(e.target.value)}
+                    className="h-10"
+                  />
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleSaveStatus}
+                  disabled={isSavingStatus}
+                  className="bg-blue-600 hover:bg-blue-700 h-10"
+                >
+                  {isSavingStatus ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Đang lưu...</>
+                  ) : (
+                    <><Save className="w-4 h-4 mr-2" /> Lưu trạng thái</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Auto-Reply Settings Section */}
+        {hasStore && (
+          <div className="bg-white rounded-lg border border-gray-200">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <Bot className="w-5 h-5 text-indigo-500" />
+                <h3 className="text-base font-semibold text-gray-900">Tin nhắn tự động</h3>
+              </div>
+              <p className="text-sm text-gray-500 mt-0.5">Tự động trả lời khi có khách nhắn tin trong giờ bạn không online</p>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {autoReplyMsg && (
+                <div className={`flex items-center gap-2 p-3 rounded-lg border text-sm ${autoReplyMsg.type === 'success' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
+                  }`}>
+                  {autoReplyMsg.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                  {autoReplyMsg.text}
+                </div>
+              )}
+
+              {/* Enable/Disable Toggle */}
+              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${autoReplyEnabled ? 'bg-indigo-100' : 'bg-gray-200'}`}>
+                    <Bot className={`w-5 h-5 ${autoReplyEnabled ? 'text-indigo-600' : 'text-gray-400'}`} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {autoReplyEnabled ? 'Tin nhắn tự động đang bật' : 'Tin nhắn tự động đang tắt'}
+                    </p>
+                    <p className="text-xs text-gray-500">Tự động gửi tin nhắn khi bạn offline và có khách nhắn tin</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAutoReplyEnabled(!autoReplyEnabled)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${autoReplyEnabled ? 'bg-indigo-600' : 'bg-gray-300'
+                    }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoReplyEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                  />
+                </button>
+              </div>
+
+              {autoReplyEnabled && (
+                <>
+                  {/* Message Content */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-gray-700">Nội dung tin nhắn tự động <span className="text-red-500">*</span></Label>
+                    <textarea
+                      placeholder="VD: Xin chào! Hiện tại mình đang offline. Mình sẽ phản hồi sớm nhất khi online trở lại. Cảm ơn bạn đã liên hệ! 🙏"
+                      value={autoReplyMessage}
+                      onChange={(e) => setAutoReplyMessage(e.target.value.slice(0, 500))}
+                      rows={3}
+                      className="w-full px-3 py-2.5 text-sm bg-white text-gray-900 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder:text-gray-400"
+                    />
+                    <p className="text-xs text-gray-400">{autoReplyMessage.length}/500 ký tự</p>
+                  </div>
+
+                  {/* Schedule */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium text-gray-700">Lịch trình gửi tự động</Label>
+                    <p className="text-xs text-gray-500 -mt-1">Chọn khung giờ mà tin nhắn tự động sẽ hoạt động. Ngoài khung giờ này, tin nhắn tự động sẽ không được gửi.</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-gray-500">Từ giờ</label>
+                        <select
+                          value={autoReplyStartHour}
+                          onChange={(e) => setAutoReplyStartHour(parseInt(e.target.value))}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                          {Array.from({ length: 24 }).map((_, h) => (
+                            <option key={h} value={h}>{h.toString().padStart(2, '0')}:00</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-gray-500">Đến giờ</label>
+                        <select
+                          value={autoReplyEndHour}
+                          onChange={(e) => setAutoReplyEndHour(parseInt(e.target.value))}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                          {Array.from({ length: 24 }).map((_, h) => (
+                            <option key={h} value={h}>{h.toString().padStart(2, '0')}:00</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                      <Clock className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-indigo-700">
+                        {autoReplyStartHour > autoReplyEndHour
+                          ? `Tin nhắn tự động sẽ hoạt động từ ${autoReplyStartHour.toString().padStart(2, '0')}:00 tối đến ${autoReplyEndHour.toString().padStart(2, '0')}:00 sáng hôm sau (qua đêm)`
+                          : autoReplyStartHour === autoReplyEndHour
+                            ? 'Tin nhắn tự động sẽ hoạt động 24/7 (cùng giờ bắt đầu và kết thúc)'
+                            : `Tin nhắn tự động sẽ hoạt động từ ${autoReplyStartHour.toString().padStart(2, '0')}:00 đến ${autoReplyEndHour.toString().padStart(2, '0')}:00`
+                        }
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Cooldown */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-gray-700">Thời gian chờ giữa 2 lần gửi</Label>
+                    <p className="text-xs text-gray-500 -mt-1">Tránh gửi tin nhắn tự động liên tục cho cùng một khách hàng</p>
+                    <select
+                      value={autoReplyCooldown}
+                      onChange={(e) => setAutoReplyCooldown(parseInt(e.target.value))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value={5}>5 phút</option>
+                      <option value={15}>15 phút</option>
+                      <option value={30}>30 phút</option>
+                      <option value={60}>1 giờ</option>
+                      <option value={120}>2 giờ</option>
+                      <option value={360}>6 giờ</option>
+                      <option value={720}>12 giờ</option>
+                      <option value={1440}>24 giờ</option>
+                    </select>
+                  </div>
+                </>
+              )}
+
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleSaveAutoReply}
+                  disabled={isSavingAutoReply}
+                  className="bg-indigo-600 hover:bg-indigo-700 h-10"
+                >
+                  {isSavingAutoReply ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Đang lưu...</>
+                  ) : (
+                    <><Save className="w-4 h-4 mr-2" /> Lưu cài đặt</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Withdrawal PIN Section */}
+        {hasStore && (
+          <div className="bg-white rounded-lg border border-gray-200">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <Lock className="w-5 h-5 text-purple-500" />
+                <h3 className="text-base font-semibold text-gray-900">Mã PIN rút tiền</h3>
+              </div>
+              <p className="text-sm text-gray-500 mt-0.5">Mã PIN 6 chữ số để xác nhận khi rút tiền</p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {pinMessage && (
+                <div className={`flex items-center gap-2 p-3 rounded-lg border text-sm ${pinMessage.type === 'success' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
+                  }`}>
+                  {pinMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                  {pinMessage.text}
+                </div>
+              )}
+
+              {!pinMode && (
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {hasPin ? 'Mã PIN đã được thiết lập' : 'Chưa có mã PIN'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {hasPin ? 'Mã PIN sẽ được yêu cầu mỗi khi bạn rút tiền' : 'Bạn cần tạo mã PIN để có thể rút tiền'}
+                    </p>
+                  </div>
+                  {hasPin ? (
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" /> Đã thiết lập
+                      </span>
+                      <Button variant="outline" size="sm" onClick={() => { setPinMode('change'); setPinMessage(null); }}>
+                        Đổi mã PIN
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={() => { setPinMode('set'); setPinMessage(null); }}
+                      className="bg-purple-600 hover:bg-purple-700"
+                      size="sm"
+                    >
+                      <Lock className="w-4 h-4 mr-2" /> Tạo mã PIN
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* Set PIN Form */}
+              {pinMode === 'set' && (
+                <div className="space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-900">Tạo mã PIN rút tiền</h4>
+
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label className="text-sm text-gray-700">Mã PIN (6 chữ số)</Label>
+                      <div className="relative">
+                        <Input
+                          type={showPin ? 'text' : 'password'}
+                          placeholder="Nhập 6 chữ số"
+                          value={pinData.pin}
+                          onChange={(e) => setPinData(prev => ({ ...prev, pin: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                          maxLength={6}
+                          className="h-10 pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPin(!showPin)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm text-gray-700">Xác nhận mã PIN</Label>
+                      <Input
+                        type={showPin ? 'text' : 'password'}
+                        placeholder="Nhập lại 6 chữ số"
+                        value={pinData.confirmPin}
+                        onChange={(e) => setPinData(prev => ({ ...prev, confirmPin: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                        maxLength={6}
+                        className="h-10"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 justify-end">
+                    <Button variant="outline" onClick={() => { setPinMode(null); setPinMessage(null); }}>Hủy</Button>
+                    <Button
+                      onClick={handleSetPin}
+                      disabled={isSavingPin || pinData.pin.length !== 6}
+                      className="bg-purple-600 hover:bg-purple-700"
+                    >
+                      {isSavingPin ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Đang tạo...</> : 'Tạo mã PIN'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Change PIN Form */}
+              {pinMode === 'change' && (
+                <div className="space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-900">Đổi mã PIN rút tiền</h4>
+
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label className="text-sm text-gray-700">Mã PIN hiện tại</Label>
+                      <div className="relative">
+                        <Input
+                          type={showPin ? 'text' : 'password'}
+                          placeholder="Nhập PIN hiện tại"
+                          value={pinData.oldPin}
+                          onChange={(e) => setPinData(prev => ({ ...prev, oldPin: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                          maxLength={6}
+                          className="h-10 pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPin(!showPin)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm text-gray-700">Mã PIN mới (6 chữ số)</Label>
+                      <Input
+                        type={showPin ? 'text' : 'password'}
+                        placeholder="Nhập PIN mới"
+                        value={pinData.newPin}
+                        onChange={(e) => setPinData(prev => ({ ...prev, newPin: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                        maxLength={6}
+                        className="h-10"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm text-gray-700">Xác nhận mã PIN mới</Label>
+                      <Input
+                        type={showPin ? 'text' : 'password'}
+                        placeholder="Nhập lại PIN mới"
+                        value={pinData.confirmNewPin}
+                        onChange={(e) => setPinData(prev => ({ ...prev, confirmNewPin: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                        maxLength={6}
+                        className="h-10"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 justify-end">
+                    <Button variant="outline" onClick={() => { setPinMode(null); setPinMessage(null); }}>Hủy</Button>
+                    <Button
+                      onClick={handleChangePin}
+                      disabled={isSavingPin || pinData.newPin.length !== 6 || pinData.oldPin.length !== 6}
+                      className="bg-purple-600 hover:bg-purple-700"
+                    >
+                      {isSavingPin ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Đang đổi...</> : 'Đổi mã PIN'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Settings Form */}
         <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200">
           {/* Form Header */}
@@ -555,10 +1098,12 @@ export default function SellerSettingsPage() {
             {/* Logo Upload */}
             <div>
               <Label className="text-sm font-medium text-gray-700 mb-3 block">Logo cửa hàng</Label>
-              <div className="flex items-start gap-5">
+
+              {/* Logo Preview */}
+              <div className="flex items-start gap-5 mb-4">
                 <div className="relative">
                   <div className="w-24 h-24 rounded-lg bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden">
-                    {isUploadingLogo ? (
+                    {isUploadingLogo || isSavingLogoUrl ? (
                       <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
                     ) : formData.shopLogo ? (
                       <img src={getFullImageUrl(formData.shopLogo)} alt="Logo" className="w-full h-full object-cover" />
@@ -568,6 +1113,95 @@ export default function SellerSettingsPage() {
                       <ImageIcon className="w-8 h-8 text-gray-400" />
                     )}
                   </div>
+                </div>
+                <div className="flex-1 pt-1">
+                  <p className="text-sm text-gray-600">
+                    Khuyến nghị ảnh vuông, kích thước tối thiểu 200x200px.
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">Hỗ trợ JPG, PNG, GIF (động), WEBP</p>
+                </div>
+              </div>
+
+              {/* Tab Switch */}
+              <div className="flex rounded-lg bg-gray-100 p-1 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setLogoMode('url')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all ${logoMode === 'url'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                >
+                  <Globe className="w-4 h-4" />
+                  Nhập URL
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLogoMode('upload')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all ${logoMode === 'upload'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                >
+                  <MonitorUp className="w-4 h-4" />
+                  Tải lên từ máy
+                </button>
+              </div>
+
+              {/* URL Input Mode */}
+              {logoMode === 'url' && (
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="https://example.com/logo.png"
+                      value={logoUrl}
+                      onChange={(e) => setLogoUrl(e.target.value)}
+                      className="h-10 flex-1"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleLogoUrl}
+                      disabled={isSavingLogoUrl || !logoUrl.trim()}
+                      className="h-10 bg-blue-600 hover:bg-blue-700 whitespace-nowrap"
+                    >
+                      {isSavingLogoUrl ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Đang lưu...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4 mr-2" />
+                          Lưu URL
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    Nhập đường dẫn trực tiếp đến hình ảnh (URL phải bắt đầu bằng https://)
+                  </p>
+                  {/* URL Preview */}
+                  {logoUrl.trim() && (() => { try { new URL(logoUrl.trim()); return true; } catch { return false; } })() && (
+                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <p className="text-xs text-gray-500 mb-2">Xem trước:</p>
+                      <div className="w-16 h-16 rounded-lg overflow-hidden bg-white border border-gray-200">
+                        <img
+                          src={logoUrl.trim()}
+                          alt="Preview"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* File Upload Mode */}
+              {logoMode === 'upload' && (
+                <div className="space-y-3">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -577,42 +1211,29 @@ export default function SellerSettingsPage() {
                     disabled={isUploadingLogo}
                     title="Chọn logo cửa hàng (JPG, PNG, GIF, WEBP)"
                   />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploadingLogo}
-                    className="absolute -bottom-1 -right-1 w-8 h-8 bg-white border border-gray-300 hover:border-gray-400 text-gray-600 rounded-full flex items-center justify-center shadow-sm transition-colors disabled:opacity-50"
-                  >
-                    <Camera className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="flex-1 pt-1">
-                  <p className="text-sm text-gray-600 mb-3">
-                    Tải lên logo cho cửa hàng. Khuyến nghị ảnh vuông, kích thước tối thiểu 200x200px.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploadingLogo}
-                    className="h-9"
+                  <div
+                    onClick={() => !isUploadingLogo && fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all ${isUploadingLogo
+                      ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
+                      : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50/50'
+                      }`}
                   >
                     {isUploadingLogo ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Dang tai len...
-                      </>
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+                        <p className="text-sm text-gray-500">Đang tải lên...</p>
+                      </div>
                     ) : (
-                      <>
-                        <Upload className="w-4 h-4 mr-2" />
-                        Tai anh len
-                      </>
+                      <div className="flex flex-col items-center gap-2">
+                        <Upload className="w-8 h-8 text-gray-400" />
+                        <p className="text-sm text-gray-600 font-medium">Nhấn để chọn ảnh từ máy tính</p>
+                        <p className="text-xs text-gray-400">JPG, PNG, GIF (động), WEBP - Tối đa 5MB</p>
+                      </div>
                     )}
-                  </Button>
-                  <p className="text-xs text-gray-400 mt-2">JPG, PNG, GIF (động), WEBP - Tối đa 5MB. GIF lớn có thể nén tại <a href="https://ezgif.com/optimize" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">ezgif.com</a></p>
+                  </div>
+                  <p className="text-xs text-gray-400">GIF lớn có thể nén tại <a href="https://ezgif.com/optimize" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">ezgif.com</a></p>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Shop Name */}
@@ -641,9 +1262,9 @@ export default function SellerSettingsPage() {
                 value={formData.shopDescription}
                 onChange={(e) => setFormData(prev => ({ ...prev, shopDescription: e.target.value }))}
                 rows={4}
-                className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400"
+                className="w-full px-3 py-2.5 text-sm bg-white text-gray-900 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400"
               />
-              <p className="text-xs text-gray-400 mt-1.5">{formData.shopDescription.length}/500 ky tu</p>
+              <p className="text-xs text-gray-400 mt-1.5">{formData.shopDescription.length}/500 ký tự</p>
             </div>
           </div>
 
@@ -655,7 +1276,7 @@ export default function SellerSettingsPage() {
               onClick={() => router.back()}
               className="h-10"
             >
-              Huy
+              Hủy
             </Button>
             <Button
               type="submit"
@@ -665,513 +1286,17 @@ export default function SellerSettingsPage() {
               {isSaving ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Dang luu...
+                  Đang lưu...
                 </>
               ) : (
                 <>
                   <Save className="w-4 h-4 mr-2" />
-                  {hasStore ? 'Luu thay doi' : 'Tao cua hang'}
+                  {hasStore ? 'Lưu thay đổi' : 'Tạo cửa hàng'}
                 </>
               )}
             </Button>
           </div>
         </form>
-
-        {/* Telegram Bot 1: Order Notifications */}
-        {hasStore && (
-          <div className="bg-white rounded-lg border border-gray-200">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-green-500 flex items-center justify-center">
-                  <ShoppingBag className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-gray-900">Telegram - Thông báo Đơn hàng</h3>
-                  <p className="text-sm text-gray-500">@bachhoammobot - Nhận thông báo đơn hàng, khiếu nại, rút tiền</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {/* Status */}
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-                <div className="flex items-center gap-3">
-                  {orderBotConnected ? (
-                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                      <CheckCircle className="w-5 h-5 text-green-600" />
-                    </div>
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
-                      <Bell className="w-5 h-5 text-gray-400" />
-                    </div>
-                  )}
-                  <div>
-                    <p className={`font-medium ${orderBotConnected ? 'text-green-700' : 'text-gray-700'}`}>
-                      {orderBotConnected ? 'Đã kết nối' : 'Chưa kết nối'}
-                    </p>
-                    {orderBotLinkedAt && (
-                      <p className="text-xs text-gray-500">
-                        Kết nối lúc: {new Date(orderBotLinkedAt).toLocaleString('vi-VN')}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {orderBotConnected ? (
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={sendTestNotification}
-                      disabled={isSendingTest}
-                      className="gap-2"
-                    >
-                      {isSendingTest ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Bell className="w-4 h-4" />
-                      )}
-                      Test
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => unlinkTelegramClick('order')}
-                      disabled={isLoadingTelegram}
-                      className="gap-2 text-red-600 border-red-200 hover:bg-red-50"
-                    >
-                      <Unlink className="w-4 h-4" />
-                      Hủy
-                    </Button>
-                  </div>
-                ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={getTelegramLinks}
-                    disabled={isLoadingTelegram}
-                    className="gap-2 bg-green-600 hover:bg-green-700"
-                  >
-                    {isLoadingTelegram ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Link2 className="w-4 h-4" />
-                    )}
-                    Kết nối
-                  </Button>
-                )}
-              </div>
-
-              {/* Order Bot Link */}
-              {telegramOrderBotLink && !orderBotConnected && (
-                <div className="p-4 bg-green-50 border border-green-200 rounded-xl space-y-3">
-                  <div className="flex items-start gap-3">
-                    <Send className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="font-medium text-green-800 mb-1">Hướng dẫn kết nối:</p>
-                      <ol className="text-sm text-green-700 space-y-1 list-decimal list-inside">
-                        <li>Nhấn nút bên dưới để mở Telegram</li>
-                        <li>Nhấn <strong>Start</strong> trong bot</li>
-                        <li>Quay lại đây và nhấn &quot;Kiểm tra&quot;</li>
-                      </ol>
-                    </div>
-                  </div>
-
-                  <a
-                    href={telegramOrderBotLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    Mở Bot Đơn hàng
-                  </a>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => {
-                      fetchTelegramStatus();
-                      setTelegramMessage({ type: 'success', text: 'Đang kiểm tra...' });
-                      setTimeout(() => setTelegramMessage(null), 2000);
-                    }}
-                  >
-                    Kiểm tra kết nối
-                  </Button>
-                </div>
-              )}
-
-              {/* Features */}
-              <div className="text-sm text-gray-600">
-                <p className="font-medium text-gray-700 mb-2">Bạn sẽ nhận thông báo khi:</p>
-                <ul className="list-disc list-inside space-y-1">
-                  <li>Có đơn hàng mới</li>
-                  <li>Có khiếu nại cần xử lý</li>
-                  <li>Yêu cầu rút tiền được duyệt/từ chối</li>
-                  <li>Có thông báo từ Admin</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Telegram Bot 2: Message Notifications */}
-        {hasStore && (
-          <div className="bg-white rounded-lg border border-gray-200">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-purple-500 flex items-center justify-center">
-                  <MessageSquare className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-gray-900">Telegram - Thông báo Tin nhắn</h3>
-                  <p className="text-sm text-gray-500">@bachhoammochat_bot - Nhận thông báo tin nhắn từ khách hàng</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {/* Status */}
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-                <div className="flex items-center gap-3">
-                  {chatBotConnected ? (
-                    <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-                      <CheckCircle className="w-5 h-5 text-purple-600" />
-                    </div>
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
-                      <MessageSquare className="w-5 h-5 text-gray-400" />
-                    </div>
-                  )}
-                  <div>
-                    <p className={`font-medium ${chatBotConnected ? 'text-purple-700' : 'text-gray-700'}`}>
-                      {chatBotConnected ? 'Đã kết nối' : 'Chưa kết nối'}
-                    </p>
-                    {chatBotLinkedAt && (
-                      <p className="text-xs text-gray-500">
-                        Kết nối lúc: {new Date(chatBotLinkedAt).toLocaleString('vi-VN')}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {chatBotConnected ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => unlinkTelegramClick('chat')}
-                    disabled={isLoadingTelegram}
-                    className="gap-2 text-red-600 border-red-200 hover:bg-red-50"
-                  >
-                    <Unlink className="w-4 h-4" />
-                    Hủy
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={getTelegramLinks}
-                    disabled={isLoadingTelegram}
-                    className="gap-2 bg-purple-600 hover:bg-purple-700"
-                  >
-                    {isLoadingTelegram ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Link2 className="w-4 h-4" />
-                    )}
-                    Kết nối
-                  </Button>
-                )}
-              </div>
-
-              {/* Chat Bot Link */}
-              {telegramChatBotLink && !chatBotConnected && (
-                <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl space-y-3">
-                  <div className="flex items-start gap-3">
-                    <Send className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="font-medium text-purple-800 mb-1">Hướng dẫn kết nối:</p>
-                      <ol className="text-sm text-purple-700 space-y-1 list-decimal list-inside">
-                        <li>Nhấn nút bên dưới để mở Telegram</li>
-                        <li>Nhấn <strong>Start</strong> trong bot</li>
-                        <li>Quay lại đây và nhấn &quot;Kiểm tra&quot;</li>
-                      </ol>
-                    </div>
-                  </div>
-
-                  <a
-                    href={telegramChatBotLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    Mở Bot Tin nhắn
-                  </a>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => {
-                      fetchTelegramStatus();
-                      setTelegramMessage({ type: 'success', text: 'Đang kiểm tra...' });
-                      setTimeout(() => setTelegramMessage(null), 2000);
-                    }}
-                  >
-                    Kiểm tra kết nối
-                  </Button>
-                </div>
-              )}
-
-              {/* Features */}
-              <div className="text-sm text-gray-600">
-                <p className="font-medium text-gray-700 mb-2">Bạn sẽ nhận thông báo khi:</p>
-                <ul className="list-disc list-inside space-y-1">
-                  <li>Có tin nhắn mới từ khách hàng</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Telegram Message */}
-        {telegramMessage && (
-          <div className={`p-3 rounded-lg flex items-center gap-2 ${telegramMessage.type === 'success'
-            ? 'bg-green-50 border border-green-200 text-green-700'
-            : 'bg-red-50 border border-red-200 text-red-700'
-            }`}>
-            {telegramMessage.type === 'success' ? (
-              <CheckCircle className="w-4 h-4" />
-            ) : (
-              <AlertTriangle className="w-4 h-4" />
-            )}
-            <p className="text-sm">{telegramMessage.text}</p>
-          </div>
-        )}
-
-        {/* API Integration Section */}
-        {hasStore && (
-          <div className="bg-white rounded-lg border border-gray-200">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-purple-500 flex items-center justify-center">
-                  <Code className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-gray-900">API Integration</h3>
-                  <p className="text-sm text-gray-500">Kết nối API để tự động quản lý kho hàng</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {/* API Documentation Link */}
-              <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl">
-                <div className="flex items-start gap-3">
-                  <Key className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="font-medium text-purple-800 mb-1">Tài liệu API</p>
-                    <p className="text-sm text-purple-700 mb-3">
-                      Sử dụng API để tự động thêm hàng vào kho, quản lý sản phẩm, xem đơn hàng từ hệ thống của bạn.
-                    </p>
-                    <a
-                      href="https://documenter.getpostman.com/view/27876203/2sBXc7Mjo5"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      Xem tài liệu API
-                    </a>
-                  </div>
-                </div>
-              </div>
-
-              {/* Generate New API Key */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium text-gray-700">Tạo API Key mới</Label>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Tên API Key (VD: Production, Testing...)"
-                    value={newApiKeyName}
-                    onChange={(e) => setNewApiKeyName(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button
-                    type="button"
-                    onClick={generateApiKey}
-                    disabled={isGeneratingKey}
-                    className="gap-2 bg-purple-600 hover:bg-purple-700"
-                  >
-                    {isGeneratingKey ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Key className="w-4 h-4" />
-                    )}
-                    Tạo Key
-                  </Button>
-                </div>
-              </div>
-
-              {/* Newly Created Key (show once) */}
-              {newlyCreatedKey && (
-                <div className="p-4 bg-green-50 border border-green-200 rounded-xl space-y-3">
-                  <div className="flex items-center gap-2 text-green-800 font-medium">
-                    <CheckCircle className="w-5 h-5" />
-                    Đã tạo API Key! Lưu thông tin ngay.
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-700 w-20">API Key:</span>
-                      <code className="flex-1 px-3 py-2 bg-white border rounded text-sm font-mono">
-                        {newlyCreatedKey.apiKey}
-                      </code>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => copyToClipboard(newlyCreatedKey.apiKey, 'API Key')}
-                      >
-                        <Copy className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-700 w-20">Secret:</span>
-                      <code className="flex-1 px-3 py-2 bg-white border rounded text-sm font-mono">
-                        {showSecret ? newlyCreatedKey.secret : '••••••••••••••••••••••••••••••••'}
-                      </code>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowSecret(!showSecret)}
-                      >
-                        {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => copyToClipboard(newlyCreatedKey.secret, 'Secret')}
-                      >
-                        <Copy className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                  <p className="text-xs text-red-600 font-medium">
-                    ⚠️ Secret chỉ hiển thị MỘT LẦN DUY NHẤT! Hãy lưu lại ngay.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setNewlyCreatedKey(null)}
-                  >
-                    Đã lưu, đóng thông báo
-                  </Button>
-                </div>
-              )}
-
-              {/* API Key List */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium text-gray-700">API Keys của bạn</Label>
-                {isLoadingApiKeys ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-                  </div>
-                ) : apiKeys.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <Key className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                    <p>Chưa có API Key nào</p>
-                    <p className="text-sm">Tạo API Key để bắt đầu sử dụng API</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {apiKeys.map((key) => (
-                      <div
-                        key={key.id}
-                        className={`p-4 border rounded-xl ${key.isActive ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-200'}`}
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-medium text-gray-900">{key.name}</span>
-                              <span className={`px-2 py-0.5 text-xs rounded-full ${key.isActive
-                                ? 'bg-green-100 text-green-700'
-                                : 'bg-gray-100 text-gray-500'
-                                }`}>
-                                {key.isActive ? 'Active' : 'Inactive'}
-                              </span>
-                            </div>
-                            <code className="text-sm text-gray-600 font-mono">{key.apiKey}</code>
-                            <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                              <span>Calls: {key.totalCalls?.toLocaleString() || 0}</span>
-                              <span>Rate: {key.rateLimit}/phút</span>
-                              {key.lastUsedAt && (
-                                <span>Last: {new Date(key.lastUsedAt).toLocaleString('vi-VN')}</span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => toggleApiKeyStatus(key.id)}
-                              title={key.isActive ? 'Tắt' : 'Bật'}
-                            >
-                              {key.isActive ? 'Tắt' : 'Bật'}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => revokeApiKey(key.id)}
-                              className="text-red-600 hover:bg-red-50"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* API Key Message */}
-              {apiKeyMessage && (
-                <div className={`p-3 rounded-lg flex items-center gap-2 ${apiKeyMessage.type === 'success'
-                  ? 'bg-green-50 border border-green-200 text-green-700'
-                  : 'bg-red-50 border border-red-200 text-red-700'
-                  }`}>
-                  {apiKeyMessage.type === 'success' ? (
-                    <CheckCircle className="w-4 h-4" />
-                  ) : (
-                    <AlertTriangle className="w-4 h-4" />
-                  )}
-                  <p className="text-sm">{apiKeyMessage.text}</p>
-                </div>
-              )}
-
-              {/* Info */}
-              <div className="text-sm text-gray-500 space-y-1">
-                <p className="font-medium text-gray-700">API cho phép bạn:</p>
-                <ul className="list-disc list-inside space-y-1 text-gray-600">
-                  <li>Tự động thêm hàng vào kho từ hệ thống của bạn</li>
-                  <li>Quản lý sản phẩm (tạo, sửa, xóa)</li>
-                  <li>Xem và xử lý đơn hàng</li>
-                  <li>Giao hàng tự động hoặc thủ công</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Danger Zone */}
         {hasStore && (
@@ -1197,20 +1322,6 @@ export default function SellerSettingsPage() {
           </div>
         )}
       </div>
-
-      {/* Unlink Telegram Confirmation Dialog */}
-      <ConfirmDialog
-        isOpen={showUnlinkDialog}
-        onClose={() => setShowUnlinkDialog(false)}
-        onConfirm={unlinkTelegramConfirm}
-        title="Hủy kết nối Telegram"
-        description="Bạn có chắc muốn hủy kết nối Telegram? Bạn sẽ không nhận được thông báo nữa."
-        confirmText="Hủy kết nối"
-        cancelText="Đóng"
-        variant="warning"
-        isLoading={isLoadingTelegram}
-        icon={<Unlink className="w-7 h-7" />}
-      />
     </div>
   );
 }

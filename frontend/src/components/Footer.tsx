@@ -4,168 +4,174 @@ import Link from 'next/link';
 import { Mail, Facebook, MessageCircle, Send, Phone, MapPin } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-interface SiteSettings {
-  social: {
-    facebook: string;
-    telegram: string;
-    zalo: string;
-  };
-  contact: {
-    email: string;
-    phone: string;
-    address: string;
-  };
-  site: {
-    name: string;
-    description: string;
-    telegramBot: string;
-  };
+interface FooterLink {
+  label: string;
+  href: string;
 }
+
+interface SiteSettings {
+  social: { facebook: string; telegram: string; zalo: string; zaloDisplay?: string };
+  contact: { email: string; phone: string; address: string };
+  site: { name: string; description: string; telegramBot: string };
+  footer?: { quickLinks: FooterLink[]; policyLinks: FooterLink[]; description: string };
+}
+
+// Default fallbacks
+const DEFAULT_QUICK_LINKS: FooterLink[] = [
+  { label: 'Trang chủ', href: '/' },
+  { label: 'Sản phẩm', href: '/explore' },
+  { label: 'Đấu giá', href: '/auction' },
+];
+
+const DEFAULT_POLICY_LINKS: FooterLink[] = [
+  { label: 'Điều khoản', href: '/page/terms' },
+  { label: 'Bảo mật', href: '/page/privacy' },
+  { label: 'Đổi trả', href: '/page/refund-policy' },
+  { label: 'Thanh toán', href: '/page/payment-guide' },
+  { label: 'Mua hàng', href: '/page/shopping-guide' },
+];
 
 export function Footer() {
   const [settings, setSettings] = useState<SiteSettings | null>(null);
 
   useEffect(() => {
-    fetchSettings();
+    fetch('/api/settings/site')
+      .then(res => res.json())
+      .then(data => { if (data.success) setSettings(data.settings); })
+      .catch(() => { });
   }, []);
 
-  const fetchSettings = async () => {
-    try {
-      const res = await fetch('/api/settings/site');
-      const data = await res.json();
-      if (data.success) {
-        setSettings(data.settings);
-      }
-    } catch (error) {
-      console.error('Error fetching site settings:', error);
-    }
-  };
-
-  // Default values
   const siteName = settings?.site?.name || 'BachHoaMMO';
+  const footerDesc = settings?.footer?.description || 'Nền tảng mua bán tài khoản, dịch vụ game uy tín hàng đầu Việt Nam. Giao dịch an toàn, nhanh chóng và bảo mật.';
   const facebookLink = settings?.social?.facebook || '#';
   const telegramLink = settings?.social?.telegram || 'https://t.me/bachhoammobot';
   const zaloLink = settings?.social?.zalo || '#';
+  const zaloDisplay = settings?.social?.zaloDisplay || '';
   const contactEmail = settings?.contact?.email || 'support@bachhoammo.store';
   const contactPhone = settings?.contact?.phone || '';
   const contactAddress = settings?.contact?.address || '';
-  const telegramBot = settings?.site?.telegramBot || '@bachhoammobot';
+
+  const quickLinks = settings?.footer?.quickLinks?.length ? settings.footer.quickLinks : DEFAULT_QUICK_LINKS;
+  const policyLinks = settings?.footer?.policyLinks?.length ? settings.footer.policyLinks : DEFAULT_POLICY_LINKS;
+
+  const socialLinks = [
+    facebookLink && facebookLink !== '#' && { href: facebookLink, icon: Facebook, label: 'Facebook' },
+    telegramLink && telegramLink !== '#' && { href: telegramLink, icon: Send, label: 'Telegram' },
+    zaloLink && zaloLink !== '#' && { href: zaloLink, icon: MessageCircle, label: 'Zalo' },
+  ].filter(Boolean) as { href: string; icon: any; label: string }[];
+
+  const displaySocials = socialLinks.length > 0 ? socialLinks : [
+    { href: '#', icon: Facebook, label: 'Facebook' },
+    { href: '#', icon: Send, label: 'Telegram' },
+    { href: '#', icon: MessageCircle, label: 'Zalo' },
+  ];
+
+  const contactItems = [
+    telegramLink && telegramLink !== '#' && { icon: Send, text: '@' + telegramLink.replace(/^https?:\/\/(t\.me|telegram\.me)\//, ''), href: telegramLink },
+    zaloLink && zaloLink !== '#' && { icon: MessageCircle, text: 'Zalo: ' + (zaloDisplay || zaloLink.replace(/^https?:\/\/(zalo\.me|chat\.zalo\.me)\//, '')), href: zaloLink },
+    contactEmail && { icon: Mail, text: contactEmail, href: `mailto:${contactEmail}` },
+    contactPhone && { icon: Phone, text: contactPhone, href: `tel:${contactPhone}` },
+    contactAddress && { icon: MapPin, text: contactAddress },
+  ].filter(Boolean) as { icon: any; text: string; href?: string }[];
+
+  const isExternal = (href: string) => href.startsWith('http');
 
   return (
     <footer className="text-white" style={{ backgroundColor: '#0a59cc' }}>
-      {/* Main Footer */}
-      <div className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          {/* About */}
-          <div>
-            <h3 className="text-xl font-bold mb-4">{siteName}</h3>
-            <p className="text-gray-200 text-sm mb-4">
-              Nền tảng mua bán tài khoản game, vật phẩm, dịch vụ game uy tín hàng đầu Việt Nam. 
-              Cam kết giao dịch an toàn, nhanh chóng và bảo mật.
-            </p>
-            <div className="flex space-x-3">
-              {facebookLink && facebookLink !== '#' && (
-                <a href={facebookLink} target="_blank" rel="noopener noreferrer" aria-label={`Theo dõi ${siteName} trên Facebook`} className="w-10 h-10 rounded-full flex items-center justify-center hover:opacity-80 transition-opacity" style={{ backgroundColor: '#2579f2' }}>
-                  <Facebook className="w-5 h-5" />
+      <div className="page-wrapper">
+
+        {/* Main content */}
+        <div className="py-8 sm:py-10">
+          {/* Brand + Socials */}
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
+            <div className="max-w-md">
+              <h2 className="text-lg font-bold mb-1.5">{siteName}</h2>
+              <p className="text-[13px] text-blue-200 leading-relaxed">{footerDesc}</p>
+            </div>
+            <div className="flex gap-2">
+              {displaySocials.map((s) => (
+                <a
+                  key={s.label}
+                  href={s.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={s.label}
+                  className="w-9 h-9 rounded-lg flex items-center justify-center hover:scale-110 transition-transform"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}
+                >
+                  <s.icon className="w-4 h-4" />
                 </a>
-              )}
-              {telegramLink && telegramLink !== '#' && (
-                <a href={telegramLink} target="_blank" rel="noopener noreferrer" aria-label="Liên hệ qua Telegram" className="w-10 h-10 rounded-full flex items-center justify-center hover:opacity-80 transition-opacity" style={{ backgroundColor: '#2579f2' }}>
-                  <Send className="w-5 h-5" />
-                </a>
-              )}
-              {zaloLink && zaloLink !== '#' && (
-                <a href={zaloLink} target="_blank" rel="noopener noreferrer" aria-label={`Chat với ${siteName} trên Zalo`} className="w-10 h-10 rounded-full flex items-center justify-center hover:opacity-80 transition-opacity" style={{ backgroundColor: '#2579f2' }}>
-                  <MessageCircle className="w-5 h-5" />
-                </a>
-              )}
-              {/* Show placeholder if no social links are set */}
-              {(!facebookLink || facebookLink === '#') && (!telegramLink || telegramLink === '#') && (!zaloLink || zaloLink === '#') && (
-                <>
-                  <a href="#" aria-label="Facebook" className="w-10 h-10 rounded-full flex items-center justify-center hover:opacity-80 transition-opacity" style={{ backgroundColor: '#2579f2' }}>
-                    <Facebook className="w-5 h-5" />
-                  </a>
-                  <a href="#" aria-label="Telegram" className="w-10 h-10 rounded-full flex items-center justify-center hover:opacity-80 transition-opacity" style={{ backgroundColor: '#2579f2' }}>
-                    <Send className="w-5 h-5" />
-                  </a>
-                  <a href="#" aria-label="Zalo" className="w-10 h-10 rounded-full flex items-center justify-center hover:opacity-80 transition-opacity" style={{ backgroundColor: '#2579f2' }}>
-                    <MessageCircle className="w-5 h-5" />
-                  </a>
-                </>
-              )}
+              ))}
             </div>
           </div>
 
-          {/* Quick Links */}
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Liên kết nhanh</h3>
-            <ul className="space-y-2 text-sm">
-              <li><Link href="/" className="text-gray-200 hover:text-white transition-colors">Trang chủ</Link></li>
-              <li><Link href="/explore" className="text-gray-200 hover:text-white transition-colors">Sản phẩm</Link></li>
-              <li><Link href="/auction" className="text-gray-200 hover:text-white transition-colors">Đấu giá</Link></li>
-            </ul>
-          </div>
+          {/* Links grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 sm:gap-8">
+            {/* Quick Links */}
+            <div>
+              <h3 className="text-[12px] font-semibold uppercase tracking-wider text-blue-200 mb-3">Liên kết</h3>
+              <ul className="space-y-1.5">
+                {quickLinks.map((l, i) => (
+                  <li key={i}>
+                    {isExternal(l.href) ? (
+                      <a href={l.href} target="_blank" rel="noopener noreferrer" className="text-[13px] text-blue-100 hover:text-white transition-colors">
+                        {l.label}
+                      </a>
+                    ) : (
+                      <Link href={l.href} className="text-[13px] text-blue-100 hover:text-white transition-colors">
+                        {l.label}
+                      </Link>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
 
-          {/* Policies */}
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Chính sách</h3>
-            <ul className="space-y-2 text-sm">
-              <li><Link href="/terms" className="text-gray-200 hover:text-white transition-colors">Điều khoản dịch vụ</Link></li>
-              <li><Link href="/privacy" className="text-gray-200 hover:text-white transition-colors">Chính sách bảo mật</Link></li>
-              <li><Link href="/refund-policy" className="text-gray-200 hover:text-white transition-colors">Chính sách đổi trả</Link></li>
-              <li><Link href="/payment-guide" className="text-gray-200 hover:text-white transition-colors">Hướng dẫn thanh toán</Link></li>
-              <li><Link href="/shopping-guide" className="text-gray-200 hover:text-white transition-colors">Hướng dẫn mua hàng</Link></li>
-            </ul>
-          </div>
+            {/* Policies */}
+            <div>
+              <h3 className="text-[12px] font-semibold uppercase tracking-wider text-blue-200 mb-3">Chính sách</h3>
+              <ul className="space-y-1.5">
+                {policyLinks.map((l, i) => (
+                  <li key={i}>
+                    {isExternal(l.href) ? (
+                      <a href={l.href} target="_blank" rel="noopener noreferrer" className="text-[13px] text-blue-100 hover:text-white transition-colors">
+                        {l.label}
+                      </a>
+                    ) : (
+                      <Link href={l.href} className="text-[13px] text-blue-100 hover:text-white transition-colors">
+                        {l.label}
+                      </Link>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
 
-          {/* Contact */}
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Liên hệ</h3>
-            <ul className="space-y-3 text-sm">
-              {telegramBot && (
-                <li className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#2579f2' }}>
-                    <Send className="w-4 h-4" />
-                  </div>
-                  <a href={telegramLink} target="_blank" rel="noopener noreferrer" className="text-gray-200 hover:text-white">@{telegramLink.replace(/^https?:\/\/(t\.me|telegram\.me)\//, '')}</a>
-                </li>
-              )}
-              {contactEmail && (
-                <li className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#2579f2' }}>
-                    <Mail className="w-4 h-4" />
-                  </div>
-                  <a href={`mailto:${contactEmail}`} className="text-gray-200 hover:text-white">{contactEmail}</a>
-                </li>
-              )}
-              {contactPhone && (
-                <li className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#2579f2' }}>
-                    <Phone className="w-4 h-4" />
-                  </div>
-                  <a href={`tel:${contactPhone}`} className="text-gray-200 hover:text-white">{contactPhone}</a>
-                </li>
-              )}
-              {contactAddress && (
-                <li className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#2579f2' }}>
-                    <MapPin className="w-4 h-4" />
-                  </div>
-                  <span className="text-gray-200">{contactAddress}</span>
-                </li>
-              )}
-            </ul>
+            {/* Contact */}
+            <div className="col-span-2 sm:col-span-1">
+              <h3 className="text-[12px] font-semibold uppercase tracking-wider text-blue-200 mb-3">Liên hệ</h3>
+              <ul className="space-y-2">
+                {contactItems.map((item, i) => (
+                  <li key={i} className="flex items-center gap-2">
+                    <item.icon className="w-3.5 h-3.5 text-blue-300 flex-shrink-0" />
+                    {item.href ? (
+                      <a href={item.href} target={item.href.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer" className="text-[13px] text-blue-100 hover:text-white transition-colors truncate">
+                        {item.text}
+                      </a>
+                    ) : (
+                      <span className="text-[13px] text-blue-100 truncate">{item.text}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Copyright */}
-      <div className="border-t border-blue-400" style={{ backgroundColor: '#084a9e' }}>
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex flex-col md:flex-row justify-between items-center text-sm text-gray-200">
-            <p>© 2026 {siteName}. Tất cả quyền được bảo lưu.</p>
-            <p className="mt-2 md:mt-0">Thiết kế bởi {siteName} Team</p>
-          </div>
+        {/* Copyright */}
+        <div className="border-t border-blue-500/30 py-4 flex flex-col sm:flex-row justify-between items-center gap-1">
+          <p className="text-[12px] text-blue-300">© 2026 {siteName}. Tất cả quyền được bảo lưu.</p>
+          <p className="text-[12px] text-blue-400">Thiết kế bởi {siteName} Team</p>
         </div>
       </div>
     </footer>

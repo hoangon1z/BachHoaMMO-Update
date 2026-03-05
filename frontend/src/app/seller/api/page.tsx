@@ -53,7 +53,7 @@ export default function SellerApiPage() {
     try {
       setIsLoadingWebhooks(true);
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/v1/webhooks', {
+      const response = await fetch('/api/seller/webhooks', {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (response.ok) {
@@ -313,8 +313,8 @@ export default function SellerApiPage() {
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-medium text-gray-900">{key.name}</span>
                             <span className={`px-2 py-0.5 text-xs rounded-full ${key.isActive
-                                ? 'bg-green-100 text-green-700'
-                                : 'bg-gray-100 text-gray-500'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-gray-100 text-gray-500'
                               }`}>
                               {key.isActive ? 'Active' : 'Inactive'}
                             </span>
@@ -358,8 +358,8 @@ export default function SellerApiPage() {
             {/* API Key Message */}
             {apiKeyMessage && (
               <div className={`p-3 rounded-lg flex items-center gap-2 ${apiKeyMessage.type === 'success'
-                  ? 'bg-green-50 border border-green-200 text-green-700'
-                  : 'bg-red-50 border border-red-200 text-red-700'
+                ? 'bg-green-50 border border-green-200 text-green-700'
+                : 'bg-red-50 border border-red-200 text-red-700'
                 }`}>
                 {apiKeyMessage.type === 'success' ? (
                   <CheckCircle className="w-4 h-4" />

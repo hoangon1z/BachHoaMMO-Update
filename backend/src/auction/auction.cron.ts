@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { AuctionService } from './auction.service';
 import { AuctionGateway } from './auction.gateway';
 import { SettingsService } from '../settings/settings.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class AuctionCronService {
@@ -12,47 +13,57 @@ export class AuctionCronService {
     private auctionService: AuctionService,
     private auctionGateway: AuctionGateway,
     private settingsService: SettingsService,
-  ) {}
+    private prisma: PrismaService,
+  ) { }
 
   /**
-   * Check every minute if auction should be finalized
-   * This runs every minute and checks if current time matches the configured end time
+   * Check every minute:
+   * 1. Auto-create today's auction if autoCreate is enabled
+   * 2. Finalize expired auctions
    */
   @Cron(CronExpression.EVERY_MINUTE)
-  async checkAuctionEnd() {
+  async checkAuctions() {
     try {
+      // 1. Auto-create if enabled
       const settings = await this.settingsService.getAuctionSettings();
-      const now = new Date();
-      
-      // Check if current day and hour match the configured end time
-      const isEndDay = now.getDay() === settings.endDay;
-      const isEndHour = now.getHours() === settings.endHour;
-      const isFirstMinute = now.getMinutes() === 0;
+      if (settings.autoCreate) {
+        const created = await this.auctionService.autoCreateTodayAuction();
+        if (created) {
+          this.logger.log('Auto-created today\'s auction');
+        }
+      }
 
-      if (isEndDay && isEndHour && isFirstMinute) {
-        this.logger.log('Auction end time reached, finalizing...');
-        await this.finalizeCurrentAuction();
+      // 2. Check for expired ACTIVE auctions
+      const now = new Date();
+      const expiredAuction = await this.prisma.auction.findFirst({
+        where: {
+          status: 'ACTIVE',
+          endTime: { lte: now },
+        },
+      });
+
+      if (expiredAuction) {
+        this.logger.log(
+          `Auction ${expiredAuction.id} has passed endTime (${expiredAuction.endTime.toISOString()}), finalizing...`
+        );
+        await this.finalizeAuction();
       }
     } catch (error) {
-      this.logger.error('Error checking auction end:', error);
+      this.logger.error('Error in auction cron check:', error);
     }
   }
 
   /**
-   * Finalize the current auction and notify winners
+   * Finalize the expired auction and notify winners
    */
-  async finalizeCurrentAuction() {
+  async finalizeAuction() {
     try {
       const auction = await this.auctionService.finalizeAuction();
-      
+
       if (auction) {
-        // Get winners
         const winners = await this.auctionService.getCurrentWinners();
-        
-        // Broadcast auction ended to all connected clients
         this.auctionGateway.broadcastAuctionEnded(winners);
-        
-        // Notify each winner
+
         for (const winner of winners) {
           this.auctionGateway.notifyWinner(
             winner.sellerId,
@@ -60,7 +71,7 @@ export class AuctionCronService {
             winner.amount
           );
         }
-        
+
         this.logger.log(`Auction finalized with ${winners.length} winners`);
       }
     } catch (error) {
@@ -69,18 +80,12 @@ export class AuctionCronService {
   }
 
   /**
-   * Cleanup old auctions (optional - runs daily at 3 AM)
-   * Keeps auctions for 3 months for history
+   * Daily cleanup check at 3 AM
    */
   @Cron('0 3 * * *')
-  async cleanupOldAuctions() {
+  async cleanupCheck() {
     try {
-      const threeMonthsAgo = new Date();
-      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-      
-      // We don't delete, just log for now
-      // In production, you might want to archive old auctions
-      this.logger.log('Auction cleanup check completed');
+      this.logger.log('Daily auction cleanup check completed');
     } catch (error) {
       this.logger.error('Error in auction cleanup:', error);
     }

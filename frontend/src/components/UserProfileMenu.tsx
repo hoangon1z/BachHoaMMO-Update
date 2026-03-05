@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { User, LogOut, ShoppingBag, Wallet, Settings, ChevronDown, Store, Shield, MessageCircle, UserPlus } from 'lucide-react';
+import { User, LogOut, ShoppingBag, Wallet, Settings, ChevronDown, Store, Shield, MessageCircle, UserPlus, Wrench, Plus } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 interface UserProfileMenuProps {
@@ -62,6 +63,12 @@ export function UserProfileMenu({ user, onLogout }: UserProfileMenuProps) {
       href: '/wallet',
       description: 'Nạp tiền & quản lý số dư',
       balance: user.balance || 0,
+    },
+    {
+      icon: Wrench,
+      label: 'Công cụ tiện ích',
+      href: '/tools',
+      description: '2FA, Check FB, Random...',
     },
     {
       icon: Settings,
@@ -167,7 +174,7 @@ export function UserProfileMenu({ user, onLogout }: UserProfileMenuProps) {
           {/* User Info Header */}
           <div className="p-4 bg-gradient-to-r from-primary/10 to-primary/5 border-b border-border">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-white font-bold text-lg">
+              <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
                 {user.avatar ? (
                   <img 
                     src={user.avatar} 
@@ -185,8 +192,22 @@ export function UserProfileMenu({ user, onLogout }: UserProfileMenuProps) {
                 <p className="text-sm text-muted-foreground truncate">
                   {user.email}
                 </p>
+                {user.balance !== undefined && (
+                  <p className="text-sm font-bold text-green-600 mt-0.5">
+                    {user.balance.toLocaleString('vi-VN')}đ
+                  </p>
+                )}
               </div>
             </div>
+            {/* Nút Nạp tiền nổi bật trong dropdown */}
+            <Link
+              href="/wallet/recharge"
+              onClick={() => setIsOpen(false)}
+              className="mt-3 w-full h-9 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-all shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Nạp tiền ngay
+            </Link>
           </div>
 
           {/* Menu Items */}

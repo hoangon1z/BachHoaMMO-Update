@@ -9,16 +9,17 @@ import { useCartStore } from '@/store/cartStore';
 import { useWalletStore } from '@/store/walletStore';
 import { useToast } from '@/components/Toast';
 import { Button } from '@/components/ui/button';
-import { 
-  Wallet, 
-  ShoppingBag, 
-  CheckCircle, 
+import {
+  Wallet,
+  ShoppingBag,
+  CheckCircle,
   ChevronRight,
   Package,
   Shield,
   ArrowLeft,
   AlertTriangle,
-  Download
+  Download,
+  X
 } from 'lucide-react';
 import Link from 'next/link';
 import { authFetch } from '@/lib/config';
@@ -35,13 +36,16 @@ export default function CheckoutPage() {
   const { user, logout, checkAuth } = useAuthStore();
   const { items, getTotalItems, getTotalPrice, clearCart } = useCartStore();
   const { balance, fetchBalance } = useWalletStore();
-  
+
   const [currentStep, setCurrentStep] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [orderId, setOrderId] = useState('');
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [note, setNote] = useState('');
+  const [discountCode, setDiscountCode] = useState('');
+  const [discountInfo, setDiscountInfo] = useState<{code: string; type: string; value: number; discountAmount: number; description?: string} | null>(null);
+  const [isValidatingCode, setIsValidatingCode] = useState(false);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -77,8 +81,9 @@ export default function CheckoutPage() {
   };
 
   const totalAmount = getTotalPrice();
+  const discountedTotal = discountInfo ? Math.max(0, totalAmount - discountInfo.discountAmount) : totalAmount;
   const currentBalance = balance || 0;
-  const insufficientBalance = currentBalance < totalAmount;
+  const insufficientBalance = currentBalance < discountedTotal;
 
   const handleNextStep = () => {
     setCurrentStep(prev => Math.min(prev + 1, 3));
@@ -86,6 +91,35 @@ export default function CheckoutPage() {
 
   const handlePrevStep = () => {
     setCurrentStep(prev => Math.max(prev - 1, 1));
+  };
+
+  const handleValidateCode = async () => {
+    if (!discountCode.trim()) return;
+    setIsValidatingCode(true);
+    try {
+      const sellerId = items[0]?.sellerId || '';
+      const response = await authFetch('/discount-codes/validate', {
+        method: 'POST',
+        body: JSON.stringify({
+          code: discountCode.trim().toUpperCase(),
+          orderTotal: totalAmount,
+          sellerId,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setDiscountInfo(data.data);
+        toast.success('Áp dụng mã thành công!', `Giảm ${data.data.discountAmount.toLocaleString('vi-VN')}đ`);
+      } else {
+        setDiscountInfo(null);
+        toast.error('Mã không hợp lệ', data.message || 'Vui lòng kiểm tra lại mã giảm giá');
+      }
+    } catch (err: any) {
+      setDiscountInfo(null);
+      toast.error('Lỗi', err.message || 'Không thể kiểm tra mã giảm giá');
+    } finally {
+      setIsValidatingCode(false);
+    }
   };
 
   const handlePlaceOrder = async () => {
@@ -112,16 +146,28 @@ export default function CheckoutPage() {
       const response = await authFetch('/orders/create', {
         method: 'POST',
         body: JSON.stringify({
-          items: items.map(item => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            price: item.originalPrice || item.price,
-            // Include buyer provided data for UPGRADE products
-            buyerProvidedData: item.buyerProvidedData 
-              ? JSON.stringify(item.buyerProvidedData) 
-              : undefined,
-          })),
-          total: totalAmount,
+          items: items.map(item => {
+            // Parse buyerProvidedData to extract SERVICE-specific fields
+            const bpd = item.buyerProvidedData;
+            const isService = item.productType === 'SERVICE';
+            return {
+              productId: item.productId,
+              quantity: item.quantity,
+              price: item.price,
+              // Include variant info if product has variants
+              variantId: item.variantId || undefined,
+              variantName: item.variantName || undefined,
+              // Include buyer provided data (for UPGRADE / SERVICE products)
+              buyerProvidedData: bpd
+                ? JSON.stringify(bpd)
+                : undefined,
+              // SERVICE specific: extract link and quantity for backend validation
+              serviceLink: isService && bpd?.link ? bpd.link : undefined,
+              serviceQuantity: isService && bpd?.quantity ? parseInt(bpd.quantity) : undefined,
+            };
+          }),
+          total: discountedTotal,
+          discountCode: discountInfo?.code || undefined,
           notes: note,
         }),
       });
@@ -132,13 +178,13 @@ export default function CheckoutPage() {
       }
 
       const data = await response.json();
-      
+
       clearCart();
       setOrderId(data.orders?.[0]?.orderNumber || data.id || '');
       setOrderSuccess(true);
       setCurrentStep(3);
       toast.success('Đặt hàng thành công!', 'Cảm ơn bạn đã mua hàng');
-      
+
     } catch (error: any) {
       console.error('Order error:', error);
       toast.error('Đặt hàng thất bại', error.message || 'Vui lòng thử lại');
@@ -158,7 +204,7 @@ export default function CheckoutPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header user={user} onLogout={handleLogout} onSearch={handleSearch} />
-      
+
       <main className="flex-1 py-6 lg:py-10">
         <div className="max-w-5xl mx-auto px-4">
           {/* Steps Progress */}
@@ -166,16 +212,15 @@ export default function CheckoutPage() {
             <div className="flex items-center justify-center">
               {STEPS.map((step, index) => (
                 <div key={step.id} className="flex items-center">
-                  <div className={`flex items-center gap-1.5 sm:gap-2 ${
-                    currentStep >= step.id ? 'text-blue-600' : 'text-gray-400'
-                  }`}>
+                  <div className={`flex items-center gap-1.5 sm:gap-2 ${currentStep >= step.id ? 'text-blue-600' : 'text-gray-400'
+                    }`}>
                     <div className={`
                       w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-xs sm:text-sm font-semibold
                       transition-all duration-300
-                      ${currentStep > step.id 
-                        ? 'bg-green-500 text-white' 
-                        : currentStep === step.id 
-                          ? 'bg-blue-600 text-white' 
+                      ${currentStep > step.id
+                        ? 'bg-green-500 text-white'
+                        : currentStep === step.id
+                          ? 'bg-blue-600 text-white'
                           : 'bg-gray-200 text-gray-500'
                       }
                     `}>
@@ -185,16 +230,14 @@ export default function CheckoutPage() {
                         <step.icon className="w-4 h-4 sm:w-5 sm:h-5" />
                       )}
                     </div>
-                    <span className={`hidden sm:block font-medium text-sm lg:text-base ${
-                      currentStep >= step.id ? 'text-gray-900' : 'text-gray-400'
-                    }`}>
+                    <span className={`hidden sm:block font-medium text-sm lg:text-base ${currentStep >= step.id ? 'text-gray-900' : 'text-gray-400'
+                      }`}>
                       {step.name}
                     </span>
                   </div>
                   {index < STEPS.length - 1 && (
-                    <div className={`w-8 sm:w-12 lg:w-20 h-0.5 mx-1.5 sm:mx-2 lg:mx-4 ${
-                      currentStep > step.id ? 'bg-green-500' : 'bg-gray-200'
-                    }`} />
+                    <div className={`w-8 sm:w-12 lg:w-20 h-0.5 mx-1.5 sm:mx-2 lg:mx-4 ${currentStep > step.id ? 'bg-green-500' : 'bg-gray-200'
+                      }`} />
                   )}
                 </div>
               ))}
@@ -208,7 +251,7 @@ export default function CheckoutPage() {
                 <div>
                   <p className="text-sm text-gray-500">{getTotalItems()} sản phẩm</p>
                   <p className="text-lg font-bold text-blue-600">
-                    {totalAmount.toLocaleString('vi-VN')}đ
+                    {discountedTotal.toLocaleString('vi-VN')}đ
                   </p>
                 </div>
                 <div className="flex -space-x-2">
@@ -294,7 +337,7 @@ export default function CheckoutPage() {
                       <div className="p-3 lg:p-4 bg-red-50 border border-red-200 rounded-xl">
                         <p className="text-red-700 font-medium text-sm lg:text-base">Số dư không đủ!</p>
                         <p className="text-xs lg:text-sm text-red-600 mt-1">
-                          Bạn cần nạp thêm {(totalAmount - currentBalance).toLocaleString('vi-VN')}đ để thanh toán
+                          Bạn cần nạp thêm {(discountedTotal - currentBalance).toLocaleString('vi-VN')}đ để thanh toán
                         </p>
                         <Link href="/wallet/recharge">
                           <Button size="sm" className="mt-3 bg-red-600 hover:bg-red-700 text-xs lg:text-sm">
@@ -303,6 +346,47 @@ export default function CheckoutPage() {
                         </Link>
                       </div>
                     )}
+
+                    {/* Mã giảm giá */}
+                    <div className="space-y-2">
+                      <label className="text-xs lg:text-sm font-medium text-gray-700">Mã giảm giá</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={discountCode}
+                          onChange={(e) => {
+                            setDiscountCode(e.target.value.toUpperCase());
+                            if (discountInfo) setDiscountInfo(null); // reset when code changes
+                          }}
+                          placeholder="Nhập mã giảm giá (nếu có)"
+                          className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm uppercase"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleValidateCode}
+                          disabled={isValidatingCode || !discountCode.trim()}
+                          className="px-4 text-sm whitespace-nowrap"
+                        >
+                          {isValidatingCode ? (
+                            <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                          ) : 'Áp dụng'}
+                        </Button>
+                      </div>
+                      {discountInfo && (
+                        <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                          <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                          <div className="flex-1 text-sm">
+                            <span className="font-semibold text-green-700">{discountInfo.code}</span>
+                            <span className="text-green-600 ml-2">-{discountInfo.discountAmount.toLocaleString('vi-VN')}đ</span>
+                            {discountInfo.description && <p className="text-xs text-green-600">{discountInfo.description}</p>}
+                          </div>
+                          <button onClick={() => { setDiscountInfo(null); setDiscountCode(''); }} className="text-gray-400 hover:text-gray-600">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
 
                     {/* Note */}
                     <div className="space-y-2">
@@ -413,7 +497,7 @@ export default function CheckoutPage() {
                     <ArrowLeft className="w-4 h-4" />
                     <span className="truncate">{currentStep === 1 ? 'Quay lại giỏ hàng' : 'Quay lại'}</span>
                   </Button>
-                  
+
                   {currentStep === 1 ? (
                     <Button onClick={handleNextStep} className="bg-blue-600 hover:bg-blue-700 gap-2 w-full sm:w-auto">
                       <span className="truncate">Tiếp tục thanh toán</span>
@@ -457,6 +541,12 @@ export default function CheckoutPage() {
                     <span className="text-gray-600">Tạm tính</span>
                     <span className="font-medium">{totalAmount.toLocaleString('vi-VN')}đ</span>
                   </div>
+                  {discountInfo && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-green-600">Mã giảm giá ({discountInfo.code})</span>
+                      <span className="font-medium text-green-600">-{discountInfo.discountAmount.toLocaleString('vi-VN')}đ</span>
+                    </div>
+                  )}
                   {/* <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Phí vận chuyển</span>
                     <span className="font-medium text-green-600">Miễn phí</span>
@@ -465,7 +555,7 @@ export default function CheckoutPage() {
                     <div className="flex justify-between">
                       <span className="font-semibold text-gray-900">Tổng cộng</span>
                       <span className="text-xl font-bold text-blue-600">
-                        {totalAmount.toLocaleString('vi-VN')}đ
+                        {discountedTotal.toLocaleString('vi-VN')}đ
                       </span>
                     </div>
                   </div>

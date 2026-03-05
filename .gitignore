@@ -46,3 +46,25 @@ backend/uploads/
 
 # Temp / test files
 frontend/tmp_*
+
+# Recovery & backup
+recovery/
+*.backup_*
+backup_gdrive.sh
+
+# Rclone (chứa Google Drive token)
+~/.config/rclone/
+
+# PM2 logs
+.pm2/
+
+# Temp backup files
+/tmp/bachhoammo_*
+
+# Google Service Account keys (TUYỆT ĐỐI không commit!)
+*.json
+!package.json
+!package-lock.json
+!tsconfig*.json
+!next.config*.json
+!eslint*.json

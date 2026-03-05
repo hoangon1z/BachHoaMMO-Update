@@ -58,6 +58,18 @@ export class ProductsController {
     return this.productsService.getLatest();
   }
 
+  @Get('best-sellers-weekly')
+  @Public()
+  getBestSellersWeekly() {
+    return this.productsService.getBestSellersWeekly();
+  }
+
+  @Get('trusted-shops')
+  @Public()
+  getTrustedShopProducts() {
+    return this.productsService.getTrustedShopProducts();
+  }
+
   /**
    * Get product by SEO-friendly slug
    * GET /products/slug/:slug

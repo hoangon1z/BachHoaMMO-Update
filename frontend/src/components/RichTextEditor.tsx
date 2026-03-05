@@ -1,237 +1,335 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { Bold, Italic, Link, Unlink, Type } from 'lucide-react';
-import { Button } from './ui/button';
+import { useMemo, useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
+
+// Import Quill styles globally
+import 'react-quill/dist/quill.snow.css';
+
+// Dynamically import ReactQuill to prevent SSR issues
+const ReactQuill = dynamic(
+  () => import('react-quill'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="border border-gray-200 rounded-lg p-4 min-h-[150px] animate-pulse bg-gray-50">
+        <div className="h-10 bg-gray-200 rounded mb-2"></div>
+        <div className="h-24 bg-gray-100 rounded"></div>
+      </div>
+    ),
+  }
+);
 
 interface RichTextEditorProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   minHeight?: string;
+  maxHeight?: string;
+  readOnly?: boolean;
 }
 
-export function RichTextEditor({ 
-  value, 
-  onChange, 
-  placeholder = 'Nhập nội dung...',
-  minHeight = '150px'
-}: RichTextEditorProps) {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const [showLinkInput, setShowLinkInput] = useState(false);
-  const [linkUrl, setLinkUrl] = useState('');
-  const [isEmpty, setIsEmpty] = useState(true);
+// Custom toolbar configuration - Word-like experience
+const TOOLBAR_OPTIONS = [
+  // Font styles
+  [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+  [{ 'font': [] }],
+  [{ 'size': ['small', false, 'large', 'huge'] }],
 
-  // nội dung content
+  // Basic formatting
+  ['bold', 'italic', 'underline', 'strike'],
+
+  // Colors
+  [{ 'color': [] }, { 'background': [] }],
+
+  // Lists and indentation
+  [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+  [{ 'indent': '-1' }, { 'indent': '+1' }],
+
+  // Alignment
+  [{ 'align': [] }],
+
+  // Rich content
+  ['blockquote', 'code-block'],
+  ['link', 'image'],
+
+  // Misc
+  [{ 'script': 'sub' }, { 'script': 'super' }],
+  [{ 'direction': 'rtl' }],
+
+  // Clean formatting
+  ['clean'],
+];
+
+// Quill formats we allow
+const FORMATS = [
+  'header', 'font', 'size',
+  'bold', 'italic', 'underline', 'strike',
+  'color', 'background',
+  'list', 'bullet', 'indent',
+  'align', 'direction',
+  'blockquote', 'code-block',
+  'link', 'image',
+  'script',
+];
+
+export function RichTextEditor({
+  value,
+  onChange,
+  placeholder = 'Nhập nội dung...',
+  minHeight = '200px',
+  maxHeight = '500px',
+  readOnly = false,
+}: RichTextEditorProps) {
+  const [isMounted, setIsMounted] = useState(false);
+
   useEffect(() => {
-    if (editorRef.current && editorRef.current.innerHTML !== value) {
-      editorRef.current.innerHTML = value;
-    }
-    setIsEmpty(!value || value === '<br>' || value.trim() === '');
+    setIsMounted(true);
   }, []);
 
-  // cập nhật nội dung cho parent
-  const handleInput = useCallback(() => {
-    if (editorRef.current) {
-      const content = editorRef.current.innerHTML;
+  const modules = useMemo(() => ({
+    toolbar: readOnly ? false : TOOLBAR_OPTIONS,
+    clipboard: {
+      matchVisual: false,
+    },
+  }), [readOnly]);
+
+  const handleChange = (content: string) => {
+    // Quill returns <p><br></p> for empty content, normalize it
+    if (content === '<p><br></p>' || content === '<p></p>') {
+      onChange('');
+    } else {
       onChange(content);
-      setIsEmpty(!content || content === '<br>' || content.trim() === '');
-    }
-  }, [onChange]);
-
-  // Execute formatting command
-  const execCommand = (command: string, value?: string) => {
-    document.execCommand(command, false, value);
-    editorRef.current?.focus();
-    handleInput();
-  };
-
-  // Toggle bold
-  const toggleBold = () => {
-    execCommand('bold');
-  };
-
-  // Toggle italic
-  const toggleItalic = () => {
-    execCommand('italic');
-  };
-
-  // Handle link creation
-  const createLink = () => {
-    if (!linkUrl.trim()) return;
-    
-    const url = linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`;
-    execCommand('createLink', url);
-    setShowLinkInput(false);
-    setLinkUrl('');
-  };
-
-  // Remove link
-  const removeLink = () => {
-    execCommand('unlink');
-  };
-
-  // Handle key press for link input
-  const handleLinkKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      createLink();
-    }
-    if (e.key === 'Escape') {
-      setShowLinkInput(false);
-      setLinkUrl('');
-      editorRef.current?.focus();
     }
   };
 
-  // Check if format is active
-  const isFormatActive = (format: string): boolean => {
-    try {
-      return document.queryCommandState(format);
-    } catch {
-      return false;
-    }
-  };
+  if (!isMounted) {
+    return (
+      <div className="border border-gray-200 rounded-lg p-4 min-h-[150px] animate-pulse bg-gray-50">
+        <div className="h-10 bg-gray-200 rounded mb-2"></div>
+        <div className="h-24 bg-gray-100 rounded"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent">
-      {/* Toolbar */}
-      <div className="flex items-center gap-1 p-2 border-b border-gray-200 bg-gray-50">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={toggleBold}
-          className={`h-8 w-8 p-0 ${isFormatActive('bold') ? 'bg-blue-100 text-blue-600' : ''}`}
-          title="In đậm (Ctrl+B)"
-        >
-          <Bold className="w-4 h-4" />
-        </Button>
+    <div className="rich-text-editor">
+      <style jsx global>{`
+        .rich-text-editor .ql-container {
+          min-height: ${minHeight};
+          max-height: ${maxHeight};
+          overflow-y: auto;
+          font-size: 14px;
+          font-family: inherit;
+        }
         
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={toggleItalic}
-          className={`h-8 w-8 p-0 ${isFormatActive('italic') ? 'bg-blue-100 text-blue-600' : ''}`}
-          title="In nghiêng (Ctrl+I)"
-        >
-          <Italic className="w-4 h-4" />
-        </Button>
+        .rich-text-editor .ql-editor {
+          min-height: ${minHeight};
+          line-height: 1.75;
+        }
         
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        .rich-text-editor .ql-editor.ql-blank::before {
+          color: #9ca3af;
+          font-style: normal;
+        }
         
-        <div className="relative">
-          {showLinkInput ? (
-            <div className="flex items-center gap-1">
-              <input
-                type="text"
-                placeholder="https://example.com"
-                value={linkUrl}
-                onChange={(e) => setLinkUrl(e.target.value)}
-                onKeyDown={handleLinkKeyPress}
-                className="h-7 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                autoFocus
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={createLink}
-                className="h-7 px-2"
-              >
-                Thêm
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setShowLinkInput(false);
-                  setLinkUrl('');
-                }}
-                className="h-7 px-2"
-              >
-                Hủy
-              </Button>
-            </div>
-          ) : (
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowLinkInput(true)}
-                className="h-8 w-8 p-0"
-                title="Thêm liên kết"
-              >
-                <Link className="w-4 h-4" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={removeLink}
-                className="h-8 w-8 p-0"
-                title="Xóa liên kết"
-              >
-                <Unlink className="w-4 h-4" />
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-      
-      {/* Editor */}
-      <div className="relative">
-        <div
-          ref={editorRef}
-          contentEditable
-          onInput={handleInput}
-          className="px-3 py-2 outline-none prose prose-sm max-w-none"
-          style={{ minHeight }}
-        />
+        .rich-text-editor .ql-toolbar {
+          border-color: #e5e7eb;
+          border-top-left-radius: 0.5rem;
+          border-top-right-radius: 0.5rem;
+          background: #f9fafb;
+          flex-wrap: wrap;
+          padding: 8px;
+        }
         
-        {/* Placeholder */}
-        {isEmpty && (
-          <div 
-            className="absolute top-2 left-3 text-gray-400 pointer-events-none"
-            aria-hidden="true"
-          >
-            {placeholder}
-          </div>
-        )}
-      </div>
-      
+        .rich-text-editor .ql-container {
+          border-color: #e5e7eb;
+          border-bottom-left-radius: 0.5rem;
+          border-bottom-right-radius: 0.5rem;
+        }
+        
+        .rich-text-editor .ql-toolbar button:hover,
+        .rich-text-editor .ql-toolbar button.ql-active {
+          color: #2563eb;
+        }
+        
+        .rich-text-editor .ql-toolbar button:hover .ql-stroke,
+        .rich-text-editor .ql-toolbar button.ql-active .ql-stroke {
+          stroke: #2563eb;
+        }
+        
+        .rich-text-editor .ql-toolbar button:hover .ql-fill,
+        .rich-text-editor .ql-toolbar button.ql-active .ql-fill {
+          fill: #2563eb;
+        }
+        
+        .rich-text-editor .ql-snow .ql-picker {
+          color: #374151;
+        }
+        
+        .rich-text-editor .ql-snow .ql-picker-label:hover,
+        .rich-text-editor .ql-snow .ql-picker-label.ql-active {
+          color: #2563eb;
+        }
+        
+        /* Better tooltip styling */
+        .rich-text-editor .ql-tooltip {
+          z-index: 100;
+          border-radius: 8px;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+        
+        /* Image styling */
+        .rich-text-editor .ql-editor img {
+          max-width: 100%;
+          height: auto;
+          border-radius: 8px;
+          margin: 8px 0;
+        }
+        
+        /* Blockquote styling */
+        .rich-text-editor .ql-editor blockquote {
+          border-left: 4px solid #2563eb;
+          padding-left: 16px;
+          margin: 16px 0;
+          color: #374151;
+          font-style: italic;
+        }
+        
+        /* Code block styling */
+        .rich-text-editor .ql-editor pre.ql-syntax {
+          background: #1e293b;
+          color: #e2e8f0;
+          border-radius: 8px;
+          padding: 16px;
+          overflow-x: auto;
+        }
+        
+        /* Lists styling */
+        .rich-text-editor .ql-editor ul,
+        .rich-text-editor .ql-editor ol {
+          padding-left: 24px;
+        }
+        
+        .rich-text-editor .ql-editor li {
+          margin: 4px 0;
+        }
+        
+        /* Headings */
+        .rich-text-editor .ql-editor h1 {
+          font-size: 2em;
+          font-weight: 700;
+          margin: 16px 0 8px;
+        }
+        
+        .rich-text-editor .ql-editor h2 {
+          font-size: 1.5em;
+          font-weight: 600;
+          margin: 14px 0 6px;
+        }
+        
+        .rich-text-editor .ql-editor h3 {
+          font-size: 1.25em;
+          font-weight: 600;
+          margin: 12px 0 4px;
+        }
+        
+        /* Mobile responsive toolbar */
+        @media (max-width: 640px) {
+          .rich-text-editor .ql-toolbar {
+            padding: 4px;
+          }
+          
+          .rich-text-editor .ql-toolbar .ql-formats {
+            margin-right: 4px;
+            margin-bottom: 4px;
+          }
+          
+          .rich-text-editor .ql-toolbar button {
+            width: 24px;
+            height: 24px;
+          }
+        }
+      `}</style>
+
+      <ReactQuill
+        theme="snow"
+        value={value}
+        onChange={handleChange}
+        modules={modules}
+        formats={FORMATS}
+        placeholder={placeholder}
+        readOnly={readOnly}
+      />
+
       {/* Help text */}
-      <div className="px-3 py-2 border-t border-gray-100 bg-gray-50 text-xs text-gray-500">
-        Hỗ trợ: <strong>In đậm</strong>, <em>in nghiêng</em>, và <a href="#" className="text-blue-600 underline" onClick={(e) => e.preventDefault()}>liên kết</a>
-      </div>
+      {!readOnly && (
+        <div className="px-3 py-2 border border-t-0 border-gray-200 rounded-b-lg bg-gray-50 text-xs text-gray-500 -mt-1">
+          <span className="hidden sm:inline">
+            💡 Mẹo: Sử dụng toolbar để định dạng văn bản. Bạn có thể chèn hình ảnh, tạo danh sách, thay đổi màu sắc và nhiều hơn nữa!
+          </span>
+          <span className="sm:hidden">
+            💡 Sử dụng toolbar để định dạng văn bản
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
 // Simple utility to convert HTML to plain text (for display in cards etc.)
+// Note: This only works on client-side as it uses DOM
 export function htmlToPlainText(html: string): string {
+  if (typeof window === 'undefined') return stripHtml(html);
   const div = document.createElement('div');
   div.innerHTML = html;
   return div.textContent || div.innerText || '';
 }
 
+// Strip HTML tags using regex - works on both server and client
+// Use this for previews and summaries
+export function stripHtml(html: string): string {
+  if (!html) return '';
+  // Remove HTML tags
+  let text = html.replace(/<[^>]*>/g, ' ');
+  // Replace multiple spaces with single space
+  text = text.replace(/\s+/g, ' ');
+  // Decode common HTML entities
+  text = text.replace(/&nbsp;/g, ' ');
+  text = text.replace(/&amp;/g, '&');
+  text = text.replace(/&lt;/g, '<');
+  text = text.replace(/&gt;/g, '>');
+  text = text.replace(/&quot;/g, '"');
+  text = text.replace(/&#39;/g, "'");
+  return text.trim();
+}
+
 // Utility to sanitize HTML (remove dangerous tags/attributes)
+// Updated to allow more tags from Quill editor
 export function sanitizeHtml(html: string): string {
+  if (!html) return '';
+  if (typeof window === 'undefined') return html;
+
   // Basic sanitization - in production, use a library like DOMPurify
   const div = document.createElement('div');
   div.innerHTML = html;
-  
-  // Only allow certain tags
-  const allowedTags = ['b', 'strong', 'i', 'em', 'a', 'p', 'br', 'ul', 'ol', 'li'];
-  const allowedAttributes = ['href', 'target', 'rel'];
-  
+
+  // Only allow certain tags (including Quill-generated ones)
+  const allowedTags = [
+    'p', 'br', 'div', 'span',
+    'b', 'strong', 'i', 'em', 'u', 's', 'strike',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'ul', 'ol', 'li',
+    'a', 'img',
+    'blockquote', 'pre', 'code',
+    'sub', 'sup',
+  ];
+  const allowedAttributes = ['href', 'target', 'rel', 'src', 'alt', 'width', 'height', 'class', 'style'];
+
   const sanitize = (element: Element) => {
     Array.from(element.children).forEach(child => {
       const tagName = child.tagName.toLowerCase();
-      
+
       if (!allowedTags.includes(tagName)) {
         // Replace with text content
         child.replaceWith(document.createTextNode(child.textContent || ''));
@@ -242,19 +340,19 @@ export function sanitizeHtml(html: string): string {
             child.removeAttribute(attr.name);
           }
         });
-        
+
         // For links, add safety attributes
         if (tagName === 'a') {
           child.setAttribute('target', '_blank');
           child.setAttribute('rel', 'noopener noreferrer');
         }
-        
+
         // Recursively sanitize children
         sanitize(child);
       }
     });
   };
-  
+
   sanitize(div);
   return div.innerHTML;
 }

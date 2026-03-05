@@ -1,39 +1,70 @@
-import { 
-  Controller, 
-  Post, 
-  Get, 
-  Body, 
-  Param, 
-  UseGuards, 
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  UseGuards,
   Request,
-  Headers,
+  Req,
   HttpCode,
   Logger,
 } from '@nestjs/common';
-import { PayOSService } from './payos.service';
+import { PayOSService, BankKey } from './payos.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Public } from '../security/decorators/security.decorators';
+
+// In-memory rate limiter for webhook endpoint
+const webhookRateLimit = new Map<string, { count: number; resetAt: number }>();
+const WEBHOOK_RATE_LIMIT = 30; // max calls per window
+const WEBHOOK_RATE_WINDOW = 60 * 1000; // 1 minute window
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = webhookRateLimit.get(ip);
+
+  if (!entry || now > entry.resetAt) {
+    webhookRateLimit.set(ip, { count: 1, resetAt: now + WEBHOOK_RATE_WINDOW });
+    return true;
+  }
+
+  if (entry.count >= WEBHOOK_RATE_LIMIT) {
+    return false; // Rate limited
+  }
+
+  entry.count++;
+  return true;
+}
+
+// Clean up old entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of webhookRateLimit.entries()) {
+    if (now > entry.resetAt) webhookRateLimit.delete(ip);
+  }
+}, 5 * 60 * 1000);
 
 @Controller('payos')
 export class PayOSController {
   private readonly logger = new Logger(PayOSController.name);
 
-  constructor(private payosService: PayOSService) {}
+  constructor(private payosService: PayOSService) { }
 
   /**
    * Create payment link for wallet recharge
    * POST /payos/create-payment
-   * Body: { amount: number, returnUrl?: string, cancelUrl?: string }
+   * Body: { amount: number, returnUrl?: string, cancelUrl?: string, bank?: 'bidv' | 'mbbank' }
    */
   @UseGuards(JwtAuthGuard)
   @Post('create-payment')
   async createPaymentLink(
-    @Body() body: { amount: number; returnUrl?: string; cancelUrl?: string },
+    @Body() body: { amount: number; returnUrl?: string; cancelUrl?: string; bank?: BankKey },
     @Request() req,
   ) {
     const userId = req.user.id;
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    
+    const bank = body.bank || 'bidv';
+
     const returnUrl = body.returnUrl || `${baseUrl}/wallet/recharge/success`;
     const cancelUrl = body.cancelUrl || `${baseUrl}/wallet/recharge/cancel`;
 
@@ -42,6 +73,7 @@ export class PayOSController {
       body.amount,
       returnUrl,
       cancelUrl,
+      bank,
     );
 
     return {
@@ -55,41 +87,189 @@ export class PayOSController {
         description: result.paymentLink.description,
         orderCode: result.paymentLink.orderCode,
         transactionId: result.transaction.id,
-        bin: result.paymentLink.bin, // Bank identification number
+        bin: result.paymentLink.bin,
+        bank, // Include selected bank in response
       },
     };
   }
 
   /**
-   * Webhook endpoint to receive payment notifications from PayOS
+   * Process webhook payload (shared logic for all bank routes)
+   */
+  private async processWebhook(payload: any, clientIp: string, bank?: BankKey) {
+    const bankLabel = (bank || 'bidv').toUpperCase();
+    this.logger.log(`[${bankLabel}] Webhook received from ${clientIp} — orderCode: ${payload?.data?.orderCode}`);
+
+    if (!payload?.data || !payload?.signature) {
+      this.logger.warn(`[${bankLabel}] Webhook rejected: missing data or signature`);
+      return { success: false, message: 'Missing required fields' };
+    }
+
+    // Verify HMAC-SHA256 signature with the correct bank's checksum key
+    const isValid = this.payosService.verifyWebhookSignature(payload, bank);
+
+    if (!isValid) {
+      this.logger.warn(`[${bankLabel}] Signature mismatch for orderCode ${payload.data.orderCode} — falling back to API verification`);
+
+      const apiVerified = await this.payosService.verifyPaymentViaAPI(
+        payload.data.orderCode,
+        payload.data.amount,
+        bank,
+      );
+
+      if (!apiVerified) {
+        this.logger.warn(`[${bankLabel}] Webhook rejected: both signature AND API verification failed for orderCode: ${payload.data.orderCode}`);
+        return { success: false, message: 'Verification failed' };
+      }
+
+      this.logger.log(`[${bankLabel}] Payment verified via PayOS API fallback for orderCode: ${payload.data.orderCode}`);
+    }
+
+    const result = await this.payosService.handleWebhook(payload, bank);
+    return { success: result.success, message: result.message };
+  }
+
+  // ============================================================
+  // BIDV WEBHOOK ENDPOINTS (existing — backward compatible)
+  // ============================================================
+
+  /**
+   * Webhook endpoint — BIDV base URL
    * POST /payos/webhook
-   * This endpoint is PUBLIC - called by PayOS server
    */
   @Public()
   @Post('webhook')
-  @HttpCode(200) // Always return 200 to PayOS
-  async handleWebhook(
+  @HttpCode(200)
+  async handleWebhookBase(
     @Body() payload: any,
-    @Headers('x-payos-signature') signature: string,
+    @Req() req: any,
   ) {
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+      || req.headers['x-real-ip']
+      || req.connection?.remoteAddress
+      || 'unknown';
+
+    if (!checkRateLimit(clientIp)) {
+      this.logger.warn(`Webhook rate limited: IP ${clientIp}`);
+      return { success: false, message: 'Rate limited' };
+    }
 
     try {
-      const result = await this.payosService.handleWebhook(payload);
-      
-      // Always return 200 to acknowledge receipt
-      return {
-        success: result.success,
-        message: result.message,
-      };
+      return await this.processWebhook(payload, clientIp, 'bidv');
     } catch (error) {
       this.logger.error(`Webhook processing error: ${error.message}`);
-      // Still return 200 to prevent PayOS from retrying indefinitely
-      return {
-        success: false,
-        message: error.message,
-      };
+      return { success: false, message: error.message };
     }
   }
+
+  /**
+   * Webhook endpoint — BIDV with secret token
+   * POST /payos/webhook/:secret
+   */
+  @Public()
+  @Post('webhook/:secret')
+  @HttpCode(200)
+  async handleWebhookSecret(
+    @Param('secret') secret: string,
+    @Body() payload: any,
+    @Req() req: any,
+  ) {
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+      || req.headers['x-real-ip']
+      || req.connection?.remoteAddress
+      || 'unknown';
+
+    if (!checkRateLimit(clientIp)) {
+      this.logger.warn(`Webhook rate limited: IP ${clientIp}`);
+      return { success: false, message: 'Rate limited' };
+    }
+
+    const webhookSecret = process.env.PAYOS_WEBHOOK_SECRET;
+    if (!webhookSecret || secret !== webhookSecret) {
+      this.logger.warn(`Webhook rejected: invalid URL secret from IP ${clientIp}`);
+      return { success: false, message: 'Forbidden' };
+    }
+
+    try {
+      return await this.processWebhook(payload, clientIp, 'bidv');
+    } catch (error) {
+      this.logger.error(`Webhook processing error: ${error.message}`);
+      return { success: false, message: error.message };
+    }
+  }
+
+  // ============================================================
+  // MBBANK WEBHOOK ENDPOINTS
+  // ============================================================
+
+  /**
+   * Webhook endpoint — MBBank base
+   * POST /payos/webhook-mb
+   */
+  @Public()
+  @Post('webhook-mb')
+  @HttpCode(200)
+  async handleWebhookMB(
+    @Body() payload: any,
+    @Req() req: any,
+  ) {
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+      || req.headers['x-real-ip']
+      || req.connection?.remoteAddress
+      || 'unknown';
+
+    if (!checkRateLimit(clientIp)) {
+      this.logger.warn(`[MBBANK] Webhook rate limited: IP ${clientIp}`);
+      return { success: false, message: 'Rate limited' };
+    }
+
+    try {
+      return await this.processWebhook(payload, clientIp, 'mbbank');
+    } catch (error) {
+      this.logger.error(`[MBBANK] Webhook processing error: ${error.message}`);
+      return { success: false, message: error.message };
+    }
+  }
+
+  /**
+   * Webhook endpoint — MBBank with secret token
+   * POST /payos/webhook-mb/:secret
+   */
+  @Public()
+  @Post('webhook-mb/:secret')
+  @HttpCode(200)
+  async handleWebhookMBSecret(
+    @Param('secret') secret: string,
+    @Body() payload: any,
+    @Req() req: any,
+  ) {
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+      || req.headers['x-real-ip']
+      || req.connection?.remoteAddress
+      || 'unknown';
+
+    if (!checkRateLimit(clientIp)) {
+      this.logger.warn(`[MBBANK] Webhook rate limited: IP ${clientIp}`);
+      return { success: false, message: 'Rate limited' };
+    }
+
+    const webhookSecret = process.env.PAYOS_WEBHOOK_SECRET;
+    if (!webhookSecret || secret !== webhookSecret) {
+      this.logger.warn(`[MBBANK] Webhook rejected: invalid URL secret from IP ${clientIp}`);
+      return { success: false, message: 'Forbidden' };
+    }
+
+    try {
+      return await this.processWebhook(payload, clientIp, 'mbbank');
+    } catch (error) {
+      this.logger.error(`[MBBANK] Webhook processing error: ${error.message}`);
+      return { success: false, message: error.message };
+    }
+  }
+
+  // ============================================================
+  // COMMON ENDPOINTS
+  // ============================================================
 
   /**
    * Get payment status
@@ -98,7 +278,10 @@ export class PayOSController {
   @UseGuards(JwtAuthGuard)
   @Get('status/:orderCode')
   async getPaymentStatus(@Param('orderCode') orderCode: string) {
-    const result = await this.payosService.getPaymentStatus(orderCode);
+    // Try to detect bank from transaction metadata
+    const txInfo = await this.payosService.findTransactionByOrderCode(orderCode);
+    const bank = (txInfo?.bank as BankKey) || 'bidv';
+    const result = await this.payosService.getPaymentStatus(orderCode, bank);
     return result;
   }
 
@@ -112,27 +295,28 @@ export class PayOSController {
     @Param('orderCode') orderCode: string,
     @Body() body: { reason?: string },
   ) {
-    const result = await this.payosService.cancelPaymentLink(orderCode, body.reason);
+    const txInfo = await this.payosService.findTransactionByOrderCode(orderCode);
+    const bank = (txInfo?.bank as BankKey) || 'bidv';
+    const result = await this.payosService.cancelPaymentLink(orderCode, body.reason, bank);
     return result;
   }
 
   /**
    * Check if PayOS is configured
    * GET /payos/config-status
+   * Returns available banks and their configuration status
    */
   @Public()
   @Get('config-status')
   getConfigStatus() {
-    const isConfigured = !!(
-      process.env.PAYOS_CLIENT_ID && 
-      process.env.PAYOS_API_KEY && 
-      process.env.PAYOS_CHECKSUM_KEY
-    );
+    const banks = this.payosService.getAvailableBanks();
+    const anyConfigured = banks.some(b => b.configured);
 
     return {
-      configured: isConfigured,
-      message: isConfigured 
-        ? 'PayOS is configured' 
+      configured: anyConfigured,
+      banks,
+      message: anyConfigured
+        ? 'PayOS is configured'
         : 'PayOS credentials not set. Please configure PAYOS_CLIENT_ID, PAYOS_API_KEY, and PAYOS_CHECKSUM_KEY',
     };
   }
@@ -140,16 +324,30 @@ export class PayOSController {
   /**
    * Check payment status from PayOS and auto-approve if paid
    * POST /payos/check-and-approve/:orderCode
-   * Use this for local testing when webhook is not available
+   * SECURITY: Only allows the transaction owner to check & approve
    */
   @UseGuards(JwtAuthGuard)
   @Post('check-and-approve/:orderCode')
-  async checkAndApprove(@Param('orderCode') orderCode: string) {
-    
+  async checkAndApprove(
+    @Param('orderCode') orderCode: string,
+    @Request() req,
+  ) {
+    const userId = req.user.id;
+
     try {
-      // Get payment status from PayOS
-      const payosStatus = await this.payosService.getPaymentStatus(orderCode);
-      
+      const orderCodeStr = String(orderCode);
+      const userTransactions = await this.payosService.findTransactionByOrderCode(orderCodeStr);
+
+      if (!userTransactions || userTransactions.userId !== userId) {
+        this.logger.warn(`User ${userId} tried to check-and-approve orderCode ${orderCode} that doesn't belong to them`);
+        return { success: false, message: 'Transaction not found or unauthorized' };
+      }
+
+      // Auto-detect bank from stored transaction metadata
+      const bank = (userTransactions.bank as BankKey) || 'bidv';
+
+      const payosStatus = await this.payosService.getPaymentStatus(orderCode, bank);
+
       if (payosStatus.code !== '00') {
         return {
           success: false,
@@ -159,10 +357,8 @@ export class PayOSController {
       }
 
       const paymentData = payosStatus.data;
-      
-      // Check if payment is completed (PAID status)
+
       if (paymentData.status === 'PAID') {
-        // Simulate webhook payload
         const webhookPayload = {
           code: '00',
           desc: 'success',
@@ -182,9 +378,8 @@ export class PayOSController {
           signature: 'manual_check',
         };
 
-        // Process as webhook
-        const result = await this.payosService.handleWebhook(webhookPayload as any);
-        
+        const result = await this.payosService.handleWebhook(webhookPayload as any, bank);
+
         return {
           success: result.success,
           message: result.message,

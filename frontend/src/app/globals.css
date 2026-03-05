@@ -1,7 +1,32 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
- 
+
+@layer components {
+  .page-wrapper {
+    width: 100%;
+    max-width: 1280px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  @media (min-width: 640px) {
+    .page-wrapper {
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .page-wrapper {
+      padding-left: 2rem;
+      padding-right: 2rem;
+    }
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -9,92 +34,519 @@
 
     --card: 0 0% 100%;
     --card-foreground: 0 0% 10%;
- 
+
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 10%;
- 
+
     --primary: 43 74% 49%;
     --primary-foreground: 0 0% 0%;
- 
+
     --secondary: 0 0% 96%;
     --secondary-foreground: 0 0% 10%;
- 
+
     --muted: 0 0% 96%;
     --muted-foreground: 0 0% 45%;
- 
+
     --accent: 43 74% 49%;
     --accent-foreground: 0 0% 0%;
- 
+
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
     --border: 0 0% 90%;
     --input: 0 0% 90%;
     --ring: 43 74% 49%;
- 
+
     --radius: 0rem;
+
+    /* ── Extended tokens for dark mode compatibility ── */
+    --surface-primary: 255, 255, 255;
+    /* white surfaces */
+    --surface-secondary: 245, 245, 245;
+    /* gray-100 surfaces */
+    --surface-elevated: 255, 255, 255;
+    /* cards, modals */
+    --text-primary: 17, 24, 39;
+    /* gray-900 */
+    --text-secondary: 107, 114, 128;
+    /* gray-500 */
+    --text-tertiary: 156, 163, 175;
+    /* gray-400 */
+    --border-primary: 243, 244, 246;
+    /* gray-100 */
+    --border-secondary: 229, 231, 235;
+    /* gray-200 */
   }
- 
+
   .dark {
-    --background: 0 0% 10%;
-    --foreground: 0 0% 98%;
- 
-    --card: 0 0% 12%;
-    --card-foreground: 0 0% 98%;
- 
-    --popover: 0 0% 12%;
-    --popover-foreground: 0 0% 98%;
- 
-    --primary: 43 74% 49%;
-    --primary-foreground: 0 0% 0%;
- 
-    --secondary: 0 0% 20%;
-    --secondary-foreground: 0 0% 98%;
- 
-    --muted: 0 0% 20%;
-    --muted-foreground: 0 0% 65%;
- 
-    --accent: 43 74% 49%;
-    --accent-foreground: 0 0% 0%;
- 
+    --background: 224 15% 10%;
+    --foreground: 210 20% 95%;
+
+    --card: 225 15% 13%;
+    --card-foreground: 210 20% 95%;
+
+    --popover: 225 15% 13%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 224 15% 17%;
+    --secondary-foreground: 210 20% 90%;
+
+    --muted: 224 15% 17%;
+    --muted-foreground: 215 15% 55%;
+
+    --accent: 217 91% 60%;
+    --accent-foreground: 0 0% 100%;
+
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
- 
-    --border: 0 0% 25%;
-    --input: 0 0% 25%;
-    --ring: 43 74% 49%;
+
+    --border: 224 15% 22%;
+    --input: 224 15% 22%;
+    --ring: 217 91% 60%;
+
+    /* ── Extended tokens ── */
+    --surface-primary: 26, 29, 36;
+    --surface-secondary: 31, 34, 43;
+    --surface-elevated: 35, 39, 49;
+    --text-primary: 236, 238, 242;
+    --text-secondary: 148, 155, 172;
+    --text-tertiary: 107, 114, 130;
+    --border-primary: 42, 46, 58;
+    --border-secondary: 52, 57, 70;
   }
 }
- 
+
 @layer base {
   * {
     @apply border-border;
   }
-  
-  html, body {
+
+  html,
+  body {
     @apply bg-background text-foreground;
+    font-size: 14px;
   }
-  
+
+  @media (min-width: 640px) {
+
+    html,
+    body {
+      font-size: 15px;
+    }
+  }
+
+  @media (min-width: 1024px) {
+
+    html,
+    body {
+      font-size: 16px;
+    }
+  }
+
   /* MOBILE ONLY: Prevent iOS Safari auto-zoom and overflow issues */
   @media screen and (max-width: 640px) {
     html {
       -webkit-text-size-adjust: 100%;
       touch-action: manipulation;
     }
-    
+
     body {
       overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
     }
-    
-    /* Prevent iOS auto-zoom on input focus (font-size < 16px) */
-    input, 
-    textarea, 
+  }
+
+  /* Prevent iOS auto-zoom on input focus — applies to ALL touch devices (phones + tablets) */
+  @media (hover: none) and (pointer: coarse) {
+
+    input,
+    textarea,
     select {
       font-size: 16px !important;
     }
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   DARK MODE OVERRIDES
+   These use .dark class selector to override hardcoded Tailwind colors
+   used throughout components. This approach is more reliable than
+   rewriting every component.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Background surfaces ── */
+.dark .bg-white {
+  background-color: rgb(var(--surface-primary)) !important;
+}
+
+.dark .bg-gray-50 {
+  background-color: rgb(var(--surface-secondary)) !important;
+}
+
+.dark .bg-gray-100 {
+  background-color: rgb(24, 27, 34) !important;
+}
+
+.dark .bg-secondary {
+  background-color: hsl(var(--secondary)) !important;
+}
+
+/* ── Text colors ── */
+.dark .text-gray-900 {
+  color: rgb(var(--text-primary)) !important;
+}
+
+.dark .text-gray-800 {
+  color: rgb(215, 218, 224) !important;
+}
+
+.dark .text-gray-700 {
+  color: rgb(190, 195, 205) !important;
+}
+
+.dark .text-gray-600 {
+  color: rgb(var(--text-secondary)) !important;
+}
+
+.dark .text-gray-500 {
+  color: rgb(var(--text-secondary)) !important;
+}
+
+.dark .text-gray-400 {
+  color: rgb(var(--text-tertiary)) !important;
+}
+
+/* ── Border colors ── */
+.dark .border-gray-50 {
+  border-color: rgb(var(--border-primary)) !important;
+}
+
+.dark .border-gray-100 {
+  border-color: rgb(var(--border-primary)) !important;
+}
+
+.dark .border-gray-200 {
+  border-color: rgb(var(--border-secondary)) !important;
+}
+
+.dark .border-gray-300 {
+  border-color: rgb(60, 65, 80) !important;
+}
+
+/* ── Divide colors ── */
+.dark .divide-gray-100> :not([hidden])~ :not([hidden]) {
+  border-color: rgb(var(--border-primary)) !important;
+}
+
+.dark .divide-gray-200> :not([hidden])~ :not([hidden]) {
+  border-color: rgb(var(--border-secondary)) !important;
+}
+
+/* ── Hover states ── */
+.dark .hover\:bg-gray-50:hover {
+  background-color: rgb(var(--surface-secondary)) !important;
+}
+
+.dark .hover\:bg-gray-100:hover {
+  background-color: rgb(35, 39, 48) !important;
+}
+
+.dark .hover\:text-gray-900:hover {
+  color: rgb(var(--text-primary)) !important;
+}
+
+/* ── Specific component overrides ── */
+
+/* Header */
+.dark header.sticky {
+  background-color: rgb(var(--surface-primary)) !important;
+}
+
+.dark .shadow-sm {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Cards / Product cards */
+.dark article.bg-white,
+.dark .bg-white.rounded-lg,
+.dark .bg-white.rounded-xl,
+.dark .bg-white.rounded-2xl {
+  background-color: rgb(var(--surface-primary)) !important;
+}
+
+/* Group hover for cards */
+.dark .group-hover\:border-blue-200:hover {
+  border-color: rgba(37, 99, 235, 0.3) !important;
+}
+
+.dark .group-hover\:shadow-\[0_2px_12px_rgba\(0\,0\,0\,0\.06\)\]:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Footer */
+.dark footer {
+  background-color: rgb(var(--surface-primary)) !important;
+}
+
+/* Placeholder / Skeleton loading */
+.dark .bg-gray-100.animate-pulse {
+  background-color: rgb(35, 39, 48) !important;
+}
+
+.dark .bg-gray-200.animate-pulse {
+  background-color: rgb(40, 44, 55) !important;
+}
+
+/* Badge/chip colors — keep vibrant */
+.dark .bg-blue-50 {
+  background-color: rgba(37, 99, 235, 0.12) !important;
+}
+
+.dark .bg-blue-100 {
+  background-color: rgba(37, 99, 235, 0.18) !important;
+}
+
+.dark .bg-green-50 {
+  background-color: rgba(22, 163, 74, 0.12) !important;
+}
+
+.dark .bg-green-100 {
+  background-color: rgba(22, 163, 74, 0.18) !important;
+}
+
+.dark .bg-red-50 {
+  background-color: rgba(220, 38, 38, 0.12) !important;
+}
+
+.dark .bg-red-100 {
+  background-color: rgba(220, 38, 38, 0.18) !important;
+}
+
+.dark .bg-orange-50 {
+  background-color: rgba(234, 88, 12, 0.12) !important;
+}
+
+.dark .bg-orange-100 {
+  background-color: rgba(234, 88, 12, 0.18) !important;
+}
+
+.dark .bg-amber-50 {
+  background-color: rgba(217, 119, 6, 0.12) !important;
+}
+
+.dark .bg-amber-100 {
+  background-color: rgba(217, 119, 6, 0.18) !important;
+}
+
+.dark .bg-purple-50 {
+  background-color: rgba(124, 58, 237, 0.12) !important;
+}
+
+.dark .bg-purple-100 {
+  background-color: rgba(124, 58, 237, 0.18) !important;
+}
+
+.dark .bg-indigo-50 {
+  background-color: rgba(79, 70, 229, 0.12) !important;
+}
+
+.dark .bg-yellow-50 {
+  background-color: rgba(234, 179, 8, 0.1) !important;
+}
+
+.dark .bg-cyan-50 {
+  background-color: rgba(6, 182, 212, 0.1) !important;
+}
+
+.dark .bg-violet-50 {
+  background-color: rgba(139, 92, 246, 0.1) !important;
+}
+
+.dark .bg-slate-50 {
+  background-color: rgba(100, 116, 139, 0.12) !important;
+}
+
+.dark .bg-teal-50 {
+  background-color: rgba(20, 184, 166, 0.1) !important;
+}
+
+/* Input fields */
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: rgb(var(--surface-secondary)) !important;
+  color: rgb(var(--text-primary)) !important;
+  border-color: rgb(var(--border-secondary)) !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: rgb(var(--text-tertiary)) !important;
+}
+
+/* Dropdown / popover */
+.dark [role="menu"],
+.dark [role="listbox"],
+.dark [role="dialog"] {
+  background-color: rgb(var(--surface-elevated)) !important;
+  border-color: rgb(var(--border-secondary)) !important;
+}
+
+/* Scrollbar for dark mode */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: rgb(var(--surface-secondary));
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgb(var(--border-secondary));
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgb(70, 75, 90);
+}
+
+/* Mobile menu panel */
+.dark .bg-white.h-full.overflow-y-auto {
+  background-color: rgb(var(--surface-primary)) !important;
+}
+
+/* Gradient backgrounds - tone down for dark */
+.dark .bg-gradient-to-r.from-blue-50.to-indigo-50 {
+  background: rgb(var(--surface-secondary)) !important;
+}
+
+/* Ring colors */
+.dark .ring-gray-300 {
+  --tw-ring-color: rgb(var(--border-secondary)) !important;
+}
+
+.dark .ring-amber-300 {
+  --tw-ring-color: rgba(217, 119, 6, 0.35) !important;
+}
+
+.dark .ring-slate-300 {
+  --tw-ring-color: rgba(100, 116, 139, 0.35) !important;
+}
+
+.dark .ring-orange-300 {
+  --tw-ring-color: rgba(234, 88, 12, 0.35) !important;
+}
+
+/* Shadow adjustments — darker in dark mode */
+.dark .shadow-md {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4) !important;
+}
+
+.dark .shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4) !important;
+}
+
+.dark .shadow-xl {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5) !important;
+}
+
+.dark .shadow-2xl {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6) !important;
+}
+
+.dark .hover\:shadow-lg:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Backdrop blur panels */
+.dark .backdrop-blur-sm {
+  backdrop-filter: blur(4px) !important;
+}
+
+/* Button special states */
+.dark .bg-blue-600 {
+  background-color: rgb(37, 99, 235) !important;
+}
+
+.dark .hover\:bg-blue-700:hover {
+  background-color: rgb(29, 78, 216) !important;
+}
+
+.dark .text-blue-600 {
+  color: rgb(96, 165, 250) !important;
+}
+
+.dark .text-blue-700 {
+  color: rgb(96, 165, 250) !important;
+}
+
+.dark .hover\:text-blue-600:hover {
+  color: rgb(96, 165, 250) !important;
+}
+
+.dark .border-blue-200 {
+  border-color: rgba(37, 99, 235, 0.3) !important;
+}
+
+.dark .border-blue-600 {
+  border-color: rgb(59, 130, 246) !important;
+}
+
+/* Red (destructive) text in dark */
+.dark .text-red-600 {
+  color: rgb(239, 68, 68) !important;
+}
+
+.dark .text-red-700 {
+  color: rgb(248, 113, 113) !important;
+}
+
+.dark .border-red-200 {
+  border-color: rgba(220, 38, 38, 0.3) !important;
+}
+
+/* Green text in dark */
+.dark .text-green-600 {
+  color: rgb(74, 222, 128) !important;
+}
+
+.dark .text-green-700 {
+  color: rgb(134, 239, 172) !important;
+}
+
+/* Purple text in dark */
+.dark .text-purple-600 {
+  color: rgb(168, 85, 247) !important;
+}
+
+.dark .text-purple-700 {
+  color: rgb(192, 132, 252) !important;
+}
+
+/* Orange text in dark */
+.dark .text-orange-600 {
+  color: rgb(251, 146, 60) !important;
+}
+
+.dark .text-orange-500 {
+  color: rgb(249, 115, 22) !important;
+}
+
+/* Price red color - keep vibrant */
+.dark .text-\[#ee4d2d\] {
+  color: #ff6b4d !important;
+}
+
+/* ── Line through (old price) ── */
+.dark .text-gray-400.line-through {
+  color: rgb(var(--text-tertiary)) !important;
+}
+
+/* ──────────────────────────────────────────── */
 
 /* Hide scrollbar utility */
 @layer utilities {
@@ -102,6 +554,7 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
@@ -113,4 +566,289 @@
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
   }
+}
+
+/* Mobile menu animations */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Smooth theme transition (applied after initial load to prevent flash) */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color 0.3s ease, color 0.2s ease, border-color 0.3s ease, box-shadow 0.3s ease !important;
+  transition-delay: 0s !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DARK MODE — CHAT / MESSAGES PAGE
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Message bubbles ── */
+/* Others' message bubble — Facebook gray → dark subtle */
+.dark .bg-\[#e4e6eb\] {
+  background-color: rgb(45, 49, 60) !important;
+  color: rgb(var(--text-primary)) !important;
+}
+
+/* Own message bubble — slightly adjusted blue */
+.dark .bg-\[#0084ff\] {
+  background-color: #1a73e8 !important;
+}
+
+/* Reply preview bg */
+.dark .bg-gray-100\/80 {
+  background-color: rgba(45, 49, 60, 0.9) !important;
+}
+
+/* ── Chat window input area ── */
+.dark .border-t.bg-white {
+  background-color: rgb(var(--surface-primary)) !important;
+  border-color: rgb(var(--border-primary)) !important;
+}
+
+/* ── Emoji picker popup ── */
+.dark .bg-white.rounded-xl.shadow-xl {
+  background-color: rgb(var(--surface-elevated)) !important;
+  border-color: rgb(var(--border-secondary)) !important;
+}
+
+/* ── Context menu button background ── */
+.dark .bg-white\/80 {
+  background-color: rgba(35, 39, 49, 0.85) !important;
+}
+
+/* ── Jump-to-bottom button ── */
+.dark .bg-white.border.border-gray-200.rounded-full.shadow-lg {
+  background-color: rgb(var(--surface-elevated)) !important;
+  border-color: rgb(var(--border-secondary)) !important;
+}
+
+/* ── Date separator line ── */
+.dark .h-px.bg-gray-200 {
+  background-color: rgb(var(--border-secondary)) !important;
+}
+
+/* ── Pinned message bar ── */
+.dark .bg-amber-50\/80 {
+  background-color: rgba(217, 119, 6, 0.1) !important;
+}
+
+.dark .border-amber-100 {
+  border-color: rgba(217, 119, 6, 0.2) !important;
+}
+
+/* ── Chat sidebar ── */
+.dark .bg-white.border-r {
+  background-color: rgb(var(--surface-primary)) !important;
+  border-color: rgb(var(--border-primary)) !important;
+}
+
+/* ── Conversation list selected state ── */
+.dark .bg-blue-50\/80 {
+  background-color: rgba(37, 99, 235, 0.12) !important;
+}
+
+.dark .bg-blue-50\/30 {
+  background-color: rgba(37, 99, 235, 0.06) !important;
+}
+
+/* ── Avatar rings — match dark surface ── */
+.dark .ring-gray-100 {
+  --tw-ring-color: rgb(var(--border-primary)) !important;
+}
+
+.dark .ring-white {
+  --tw-ring-color: rgb(var(--surface-primary)) !important;
+}
+
+/* ── Online indicator border ── */
+.dark .border-2.border-white {
+  border-color: rgb(var(--surface-primary)) !important;
+}
+
+/* ── Product embed card in chat ── */
+.dark a.bg-white.border.border-gray-100.rounded-xl {
+  background-color: rgb(var(--surface-secondary)) !important;
+  border-color: rgb(var(--border-secondary)) !important;
+}
+
+/* ── Edit message dialog ── */
+.dark .bg-white.border-2.border-blue-400 {
+  background-color: rgb(var(--surface-elevated)) !important;
+}
+
+/* ── File attachment (other's msg) ── */
+.dark .bg-white\/60 {
+  background-color: rgba(35, 39, 49, 0.6) !important;
+}
+
+.dark .hover\:bg-white\/80:hover {
+  background-color: rgba(45, 49, 60, 0.8) !important;
+}
+
+/* ── File attachment (own msg) ── */
+.dark .bg-white\/15 {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.dark .hover\:bg-white\/25:hover {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* ── Reply bar ── */
+.dark .bg-blue-50\/50 {
+  background-color: rgba(37, 99, 235, 0.08) !important;
+}
+
+.dark .border-blue-100 {
+  border-color: rgba(37, 99, 235, 0.2) !important;
+}
+
+/* ── Drag overlay ── */
+.dark .bg-blue-50\/80 {
+  background-color: rgba(37, 99, 235, 0.15) !important;
+}
+
+/* ── Moderation warning banners ── */
+.dark .bg-yellow-50.border-yellow-200 {
+  background-color: rgba(234, 179, 8, 0.08) !important;
+  border-color: rgba(234, 179, 8, 0.2) !important;
+}
+
+.dark .bg-red-50.border-red-200 {
+  background-color: rgba(220, 38, 38, 0.08) !important;
+  border-color: rgba(220, 38, 38, 0.2) !important;
+}
+
+/* ── Dispute/resolution banners ── */
+.dark .bg-yellow-50.border-y {
+  background-color: rgba(234, 179, 8, 0.08) !important;
+  border-color: rgba(234, 179, 8, 0.2) !important;
+}
+
+.dark .bg-green-50.border-y {
+  background-color: rgba(22, 163, 74, 0.08) !important;
+  border-color: rgba(22, 163, 74, 0.2) !important;
+}
+
+/* ── Chat area main bg ── */
+.dark .bg-white.min-w-0 {
+  background-color: rgb(var(--surface-primary)) !important;
+}
+
+/* ── Emerald badge (seller in chat header) ── */
+.dark .bg-emerald-100 {
+  background-color: rgba(16, 185, 129, 0.18) !important;
+}
+
+/* ── Reaction buttons ── */
+.dark .bg-gray-50.border-gray-200.text-gray-600 {
+  background-color: rgb(var(--surface-secondary)) !important;
+  border-color: rgb(var(--border-secondary)) !important;
+  color: rgb(var(--text-secondary)) !important;
+}
+
+/* ── Reaction picker pill ── */
+.dark .bg-white.rounded-full.border.border-gray-200 {
+  background-color: rgb(var(--surface-elevated)) !important;
+  border-color: rgb(var(--border-secondary)) !important;
+}
+
+/* ── Error modal ── */
+.dark .bg-white.rounded-xl.shadow-2xl {
+  background-color: rgb(var(--surface-elevated)) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DARK MODE — SELLER MESSAGES + ADDITIONAL
+   ═══════════════════════════════════════════════════════════ */
+
+/* Seller messages gradient header */
+.dark .bg-gradient-to-r.from-blue-50.to-indigo-50 {
+  background: rgb(var(--surface-secondary)) !important;
+}
+
+/* Filter bar bg */
+.dark .bg-gray-50\/50 {
+  background-color: rgba(var(--surface-secondary), 0.5) !important;
+}
+
+/* Filter button inactive */
+.dark .bg-white.text-gray-600.border.border-gray-200 {
+  background-color: rgb(var(--surface-secondary)) !important;
+  color: rgb(var(--text-secondary)) !important;
+  border-color: rgb(var(--border-secondary)) !important;
+}
+
+.dark .bg-white.text-gray-600.border.border-gray-200:hover {
+  background-color: rgb(var(--surface-elevated)) !important;
+}
+
+/* Seller chat wrapper card */
+.dark .bg-white.rounded-2xl.shadow-sm.border {
+  background-color: rgb(var(--surface-primary)) !important;
+  border-color: rgb(var(--border-primary)) !important;
+}
+
+/* Seller chat header */
+.dark .px-4.py-3.border-b.bg-white {
+  background-color: rgb(var(--surface-primary)) !important;
+  border-color: rgb(var(--border-primary)) !important;
+}
+
+/* file previews in input area */
+.dark .bg-gray-50.rounded-lg.border.border-gray-100 {
+  background-color: rgb(var(--surface-secondary)) !important;
+  border-color: rgb(var(--border-primary)) !important;
+}
+
+/* AdminContactDialog */
+.dark .bg-white.rounded-2xl {
+  background-color: rgb(var(--surface-elevated)) !important;
+}
+
+/* Notification badge on chat */
+.dark .bg-white.rounded-lg.border {
+  background-color: rgb(var(--surface-primary)) !important;
+  border-color: rgb(var(--border-primary)) !important;
+}
+
+/* ── Safety warning banner gradient ── */
+.dark .bg-gradient-to-r.from-amber-50.to-orange-50 {
+  background: rgba(217, 119, 6, 0.08) !important;
+}
+
+.dark .border-amber-200\/60 {
+  border-color: rgba(217, 119, 6, 0.2) !important;
+}
+
+.dark .text-amber-800 {
+  color: rgb(251, 191, 36) !important;
+}
+
+.dark .text-amber-600\/90 {
+  color: rgba(251, 191, 36, 0.7) !important;
 }

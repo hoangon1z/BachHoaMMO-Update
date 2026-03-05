@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBlogPostDto, UpdateBlogPostDto, CreateCommentDto, BlogQueryDto, BlogStatus } from './dto/blog.dto';
+import { SeoService } from '../seo/seo.service';
 
 @Injectable()
 export class BlogService {
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    private seoService: SeoService,
+  ) { }
 
   // ============================================
   // HELPER METHODS
@@ -299,6 +303,11 @@ export class BlogService {
       },
     });
 
+    // Notify Google Indexing API when blog is published
+    if (dto.status === 'PUBLISHED') {
+      this.seoService.notifyBlogCreated(slug);
+    }
+
     return {
       ...post,
       tags: post.tags ? JSON.parse(post.tags) : [],
@@ -355,6 +364,11 @@ export class BlogService {
         },
       },
     });
+
+    // Notify Google Indexing API when blog is newly published
+    if (dto.status === 'PUBLISHED' && post.status !== 'PUBLISHED') {
+      this.seoService.notifyBlogCreated(slug);
+    }
 
     return {
       ...updatedPost,

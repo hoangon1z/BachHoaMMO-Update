@@ -7,7 +7,7 @@ import { Public } from '../security/decorators/security.decorators';
 @Controller('settings')
 @Public()
 export class PublicSettingsController {
-  constructor(private settingsService: SettingsService) {}
+  constructor(private settingsService: SettingsService) { }
 
   /**
    * Get public site settings (social links, contact info)
@@ -23,7 +23,7 @@ export class PublicSettingsController {
 @Controller('admin/settings')
 @UseGuards(JwtAuthGuard)
 export class SettingsController {
-  constructor(private settingsService: SettingsService) {}
+  constructor(private settingsService: SettingsService) { }
 
   /**
    * Get all settings
@@ -70,7 +70,7 @@ export class SettingsController {
     },
   ) {
     const updates: Record<string, string> = {};
-    
+
     if (body.startPrice !== undefined) {
       updates['auction_start_price'] = body.startPrice.toString();
     }
@@ -83,7 +83,7 @@ export class SettingsController {
     if (body.endHour !== undefined) {
       updates['auction_end_hour'] = body.endHour.toString();
     }
-    
+
     await this.settingsService.updateMany(updates);
     const settings = await this.settingsService.getAuctionSettings();
     return { success: true, settings };
@@ -106,12 +106,46 @@ export class SettingsController {
   @Put('site')
   async updateSiteSettings(
     @Body() body: {
-      social?: { facebook?: string; telegram?: string; zalo?: string };
+      social?: { facebook?: string; telegram?: string; zalo?: string; zaloDisplay?: string };
       contact?: { email?: string; phone?: string; address?: string };
       site?: { name?: string; description?: string; telegramBot?: string };
+      footer?: { quickLinks?: { label: string; href: string }[]; policyLinks?: { label: string; href: string }[]; description?: string };
+      announcement?: { enabled?: boolean; text?: string; link?: string; type?: string };
     },
   ) {
     const settings = await this.settingsService.updateSiteSettings(body);
+    return { success: true, settings };
+  }
+
+  /**
+   * Get USDT settings
+   * GET /admin/settings/usdt
+   */
+  @Get('usdt')
+  async getUsdtSettings() {
+    const settings = await this.settingsService.getUsdtSettings();
+    return { success: true, settings };
+  }
+
+  /**
+   * Update USDT settings
+   * PUT /admin/settings/usdt
+   */
+  @Put('usdt')
+  async updateUsdtSettings(
+    @Body() body: {
+      enabled?: boolean;
+      exchangeRate?: number;
+      networks?: { network: string; address: string }[];
+    },
+  ) {
+    const updates: Record<string, string> = {};
+    if (body.enabled !== undefined) updates['usdt_enabled'] = body.enabled.toString();
+    if (body.exchangeRate !== undefined) updates['usdt_exchange_rate'] = body.exchangeRate.toString();
+    if (body.networks !== undefined) updates['usdt_networks'] = JSON.stringify(body.networks);
+
+    await this.settingsService.updateMany(updates);
+    const settings = await this.settingsService.getUsdtSettings();
     return { success: true, settings };
   }
 }

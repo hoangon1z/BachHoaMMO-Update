@@ -52,30 +52,36 @@ export default function PaymentGuidePage() {
             <section>
               <h2 className="text-xl font-bold text-gray-900 mb-4">Phương thức thanh toán</h2>
               <div className="grid md:grid-cols-2 gap-4">
-                <div className="p-5 border border-gray-200 rounded-xl hover:border-blue-300 transition-colors">
+                <div className="p-5 border border-green-300 rounded-xl hover:border-green-400 transition-colors bg-green-50">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center">
+                      <Banknote className="w-6 h-6 text-green-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900">BIDV</h3>
+                      <p className="text-sm text-green-600">QR Code & Chuyển khoản</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-600">Tự động sau 1-5 phút</p>
+                    <span className="inline-block px-2.5 py-1 bg-green-600 text-white text-xs font-semibold rounded-full">Khuyến nghị</span>
+                  </div>
+                </div>
+                <div className="p-5 border border-blue-300 rounded-xl hover:border-blue-400 transition-colors bg-blue-50">
                   <div className="flex items-center gap-3 mb-3">
                     <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
-                      <QrCode className="w-6 h-6 text-blue-600" />
+                      <Banknote className="w-6 h-6 text-blue-600" />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-900">QR Code / Banking</h3>
-                      <p className="text-sm text-green-600">Khuyến nghị</p>
+                      <h3 className="font-semibold text-gray-900">MB Bank (MBBank)</h3>
+                      <p className="text-sm text-blue-600">QR Code & Chuyển khoản</p>
                     </div>
                   </div>
-                  <p className="text-sm text-gray-600">Chuyển khoản qua mã QR hoặc số tài khoản ngân hàng. Tự động cộng tiền sau 1-5 phút.</p>
+                  <p className="text-sm text-gray-600">Tự động sau 1-5 phút</p>
                 </div>
-                <div className="p-5 border border-gray-200 rounded-xl hover:border-blue-300 transition-colors">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                      <Wallet className="w-6 h-6 text-purple-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">Ví điện tử</h3>
-                      <p className="text-sm text-gray-500">MoMo, ZaloPay, VNPay</p>
-                    </div>
-                  </div>
-                  <p className="text-sm text-gray-600">Thanh toán qua các ví điện tử phổ biến. Cộng tiền tự động ngay lập tức.</p>
-                </div>
+              </div>
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                <p className="text-sm text-blue-800"><strong>💡 Lưu ý:</strong> Hệ thống tự động nhận tiền 24/7, không cần thông báo sau khi chuyển khoản. Tiền sẽ được cộng ngay khi hệ thống nhận được chuyển khoản đúng nội dung.</p>
               </div>
             </section>
 
@@ -86,8 +92,8 @@ export default function PaymentGuidePage() {
                 <div className="flex gap-4 p-4 bg-gray-50 rounded-xl">
                   <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold flex-shrink-0">1</div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">Đăng nhập tài khoản</h3>
-                    <p className="text-gray-600 text-sm mt-1">Đăng nhập vào tài khoản BachHoaMMO của bạn</p>
+                    <h3 className="font-semibold text-gray-900">Đăng nhập & Nạp tiền</h3>
+                    <p className="text-gray-600 text-sm mt-1">Đăng nhập vào tài khoản → Vào menu avatar → Nhấn <strong>&apos;Nạp tiền ngay&apos;</strong> (nút xanh lá)</p>
                   </div>
                 </div>
                 <div className="flex justify-center">
@@ -96,8 +102,8 @@ export default function PaymentGuidePage() {
                 <div className="flex gap-4 p-4 bg-gray-50 rounded-xl">
                   <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold flex-shrink-0">2</div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">Vào trang Ví tiền</h3>
-                    <p className="text-gray-600 text-sm mt-1">Nhấn vào avatar → Chọn &quot;Ví tiền&quot; hoặc truy cập trực tiếp trang /wallet</p>
+                    <h3 className="font-semibold text-gray-900">Chọn ngân hàng</h3>
+                    <p className="text-gray-600 text-sm mt-1">Chọn một trong 2 ngân hàng: <strong>BIDV</strong> hoặc <strong>MB Bank (MBBank)</strong></p>
                   </div>
                 </div>
                 <div className="flex justify-center">
@@ -106,8 +112,8 @@ export default function PaymentGuidePage() {
                 <div className="flex gap-4 p-4 bg-gray-50 rounded-xl">
                   <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold flex-shrink-0">3</div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">Nhấn &quot;Nạp tiền&quot;</h3>
-                    <p className="text-gray-600 text-sm mt-1">Nhập số tiền muốn nạp (tối thiểu 10,000đ)</p>
+                    <h3 className="font-semibold text-gray-900">Nhập số tiền</h3>
+                    <p className="text-gray-600 text-sm mt-1">Nhập số tiền muốn nạp (tối thiểu <strong>10.000đ</strong>). Hệ thống sẽ tính phí nếu có.</p>
                   </div>
                 </div>
                 <div className="flex justify-center">
@@ -116,18 +122,28 @@ export default function PaymentGuidePage() {
                 <div className="flex gap-4 p-4 bg-gray-50 rounded-xl">
                   <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold flex-shrink-0">4</div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">Chuyển khoản theo hướng dẫn</h3>
-                    <p className="text-gray-600 text-sm mt-1">Quét mã QR hoặc chuyển khoản theo thông tin hiển thị. <strong>Quan trọng:</strong> Nhập đúng nội dung chuyển khoản!</p>
+                    <h3 className="font-semibold text-gray-900">QR Code & Nội dung chuyển khoản</h3>
+                    <p className="text-gray-600 text-sm mt-1">Hệ thống sẽ tạo mã QR + thông tin chuyển khoản với <strong>nội dung tự động</strong> (dạng số orderCode)</p>
+                  </div>
+                </div>
+                <div className="flex justify-center">
+                  <ArrowRight className="w-5 h-5 text-gray-300 rotate-90" />
+                </div>
+                <div className="flex gap-4 p-4 bg-amber-50 rounded-xl border border-amber-200">
+                  <div className="w-10 h-10 rounded-full bg-amber-600 text-white flex items-center justify-center font-bold flex-shrink-0">5</div>
+                  <div>
+                    <h3 className="font-semibold text-amber-900">Chuyển khoản - ⚠️ LƯU Ý QUAN TRỌNG</h3>
+                    <p className="text-amber-800 text-sm mt-1">Nhập <strong>ĐÚNG nội dung chuyển khoản</strong> để hệ thống tự động nhận biết. Nội dung thường là dạng số (orderCode). Sai nội dung = phải liên hệ Admin để xác nhận thủ công.</p>
                   </div>
                 </div>
                 <div className="flex justify-center">
                   <ArrowRight className="w-5 h-5 text-gray-300 rotate-90" />
                 </div>
                 <div className="flex gap-4 p-4 bg-green-50 rounded-xl">
-                  <div className="w-10 h-10 rounded-full bg-green-600 text-white flex items-center justify-center font-bold flex-shrink-0">5</div>
+                  <div className="w-10 h-10 rounded-full bg-green-600 text-white flex items-center justify-center font-bold flex-shrink-0">6</div>
                   <div>
-                    <h3 className="font-semibold text-green-800">Hoàn tất!</h3>
-                    <p className="text-green-700 text-sm mt-1">Tiền sẽ được cộng vào tài khoản sau 1-5 phút. Nếu quá 30 phút chưa nhận được, vui lòng liên hệ Admin.</p>
+                    <h3 className="font-semibold text-green-800">Tiền cộng tự động!</h3>
+                    <p className="text-green-700 text-sm mt-1">Tiền sẽ được cộng tự động sau <strong>1-5 phút</strong> khi hệ thống nhận được chuyển khoản đúng nội dung. Bạn sẽ nhận thông báo khi tiền được cộng vào tài khoản.</p>
                   </div>
                 </div>
               </div>
@@ -184,24 +200,76 @@ export default function PaymentGuidePage() {
                   <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                   <p className="text-sm text-blue-800">Hệ thống giám sát giao dịch 24/7</p>
                 </div>
+                <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-xl md:col-span-2">
+                  <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-blue-800">Webhook signature verification cho mọi giao dịch ngân hàng</p>
+                </div>
               </div>
             </section>
 
-            {/* Warning */}
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
-              <div className="flex gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold text-amber-800">Lưu ý quan trọng</p>
-                  <ul className="text-sm text-amber-700 mt-2 space-y-1">
-                    <li>• Luôn nhập đúng nội dung chuyển khoản để hệ thống tự động xác nhận</li>
-                    <li>• Không chuyển tiền cho bất kỳ ai tự xưng là Admin ngoài hệ thống</li>
-                    <li>• Lưu lại biên lai giao dịch để đối chiếu khi cần</li>
-                    <li>• Liên hệ Admin qua chat nếu gặp vấn đề</li>
+            {/* Withdrawal Policy */}
+            <section>
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Chính sách rút tiền (Seller)</h2>
+              <div className="space-y-3">
+                <div className="p-4 border-l-4 border-green-600 bg-green-50 rounded-r-xl">
+                  <h3 className="font-semibold text-gray-900 mb-1">Miễn phí</h3>
+                  <p className="text-sm text-gray-700">2 lần rút tiền mỗi tuần (Thứ 2 - Chủ nhật)</p>
+                </div>
+                <div className="p-4 border-l-4 border-amber-600 bg-amber-50 rounded-r-xl">
+                  <h3 className="font-semibold text-gray-900 mb-1">Phí rút tiền</h3>
+                  <p className="text-sm text-gray-700">Từ lần rút thứ 3 trở đi: tính phí % (hiển thị tại trang rút tiền)</p>
+                </div>
+                <div className="p-4 border-l-4 border-blue-600 bg-blue-50 rounded-r-xl">
+                  <h3 className="font-semibold text-gray-900 mb-1">Thời gian xử lý</h3>
+                  <p className="text-sm text-gray-700">Xử lý trong 24 giờ làm việc kể từ khi yêu cầu</p>
+                </div>
+                <div className="p-4 border-l-4 border-purple-600 bg-purple-50 rounded-r-xl">
+                  <h3 className="font-semibold text-gray-900 mb-1">Yêu cầu tài khoản</h3>
+                  <p className="text-sm text-gray-700">Cần tài khoản ngân hàng <strong>đúng tên đăng ký</strong> trên BachHoaMMO</p>
+                </div>
+              </div>
+            </section>
+
+            {/* Troubleshooting */}
+            <section>
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Xử lý sự cố</h2>
+              <div className="bg-red-50 border border-red-200 rounded-xl p-5 mb-4">
+                <h3 className="font-semibold text-red-900 mb-3">Chuyển khoản xong nhưng chưa nhận tiền sau 30 phút?</h3>
+                <div className="space-y-3 text-sm text-red-800">
+                  <p><strong>1. Kiểm tra:</strong></p>
+                  <ul className="ml-4 space-y-1">
+                    <li>✓ Nội dung chuyển khoản đúng không?</li>
+                    <li>✓ Số tài khoản đúng không?</li>
+                    <li>✓ Chuyển vào đúng ngân hàng không? (BIDV hoặc MB Bank)</li>
+                  </ul>
+                  <p><strong>2. Chuẩn bị:</strong></p>
+                  <ul className="ml-4 space-y-1">
+                    <li>✓ Chụp màn hình biên lai giao dịch từ ngân hàng</li>
+                  </ul>
+                  <p><strong>3. Liên hệ:</strong></p>
+                  <ul className="ml-4 space-y-1">
+                    <li>✓ Hotline: <strong>0879.06.2222</strong></li>
+                    <li>✓ Hoặc chat trực tiếp với Admin trong ứng dụng</li>
+                  </ul>
+                  <p><strong>4. Cung cấp thông tin:</strong></p>
+                  <ul className="ml-4 space-y-1">
+                    <li>✓ Mã giao dịch ngân hàng (Reference/Transaction ID)</li>
+                    <li>✓ Số tiền chuyển khoản</li>
+                    <li>✓ Thời gian chuyển khoản</li>
                   </ul>
                 </div>
               </div>
-            </div>
+              <div className="bg-red-50 border border-red-200 rounded-xl p-5">
+                <div className="space-y-3 text-sm text-red-800">
+                  <p className="font-semibold">⚠️ BẢO VỆ TÀI KHOẢN:</p>
+                  <ul className="space-y-2">
+                    <li>• <strong>KHÔNG</strong> chuyển tiền cho bất kỳ ai tự xưng là Admin ngoài hệ thống</li>
+                    <li>• Admin <strong>KHÔNG BAO GIỜ</strong> hỏi mật khẩu hoặc OTP của bạn</li>
+                    <li>• Luôn liên hệ qua Hotline chính thức hoặc chat trong ứng dụng</li>
+                  </ul>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
 

@@ -12,7 +12,11 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Res,
+  NotFoundException,
+  StreamableFile,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
@@ -34,6 +38,9 @@ import {
   UpdateInventoryDto,
   ManualDeliveryDto,
   ManualDeliveryBulkDto,
+  WarrantyReplacementDto,
+  SetWithdrawalPinDto,
+  ChangeWithdrawalPinDto,
 } from './dto/seller.dto';
 
 // Ensure upload directory for shop logos exists
@@ -42,10 +49,27 @@ if (!existsSync(shopLogoUploadDir)) {
   mkdirSync(shopLogoUploadDir, { recursive: true });
 }
 
+// Ensure upload directory for product images exists
+const productImageUploadDir = join(process.cwd(), 'uploads', 'products');
+if (!existsSync(productImageUploadDir)) {
+  mkdirSync(productImageUploadDir, { recursive: true });
+}
+
+// Ensure upload directory for inventory files exists
+const inventoryUploadDir = join(process.cwd(), 'uploads', 'inventory');
+if (!existsSync(inventoryUploadDir)) {
+  mkdirSync(inventoryUploadDir, { recursive: true });
+}
+
+import { WebhookService, CreateWebhookDto, UpdateWebhookDto } from '../webhook/webhook.service';
+
 @Controller('seller')
 @UseGuards(JwtAuthGuard)
 export class SellerController {
-  constructor(private readonly sellerService: SellerService) {}
+  constructor(
+    private readonly sellerService: SellerService,
+    private readonly webhookService: WebhookService,
+  ) { }
 
   // ==================== STORE MANAGEMENT ====================
 
@@ -57,6 +81,11 @@ export class SellerController {
   @Get('store')
   async getStore(@Request() req) {
     return this.sellerService.getStore(req.user.id);
+  }
+
+  @Get('profile-completion')
+  async getProfileCompletion(@Request() req) {
+    return this.sellerService.getProfileCompletion(req.user.id);
   }
 
   @Put('store')
@@ -79,7 +108,7 @@ export class SellerController {
         const allowedTypes = /jpeg|jpg|png|gif|webp/;
         const ext = extname(file.originalname).toLowerCase().slice(1);
         const mimetype = file.mimetype.split('/')[1];
-        
+
         if (allowedTypes.test(ext) && allowedTypes.test(mimetype)) {
           cb(null, true);
         } else {
@@ -95,6 +124,39 @@ export class SellerController {
 
     const logoUrl = `/uploads/shops/${file.filename}`;
     return this.sellerService.updateShopLogo(req.user.id, logoUrl);
+  }
+
+  @Post('products/images')
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: diskStorage({
+        destination: productImageUploadDir,
+        filename: (req, file, cb) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          cb(null, `product-${uniqueSuffix}${extname(file.originalname)}`);
+        },
+      }),
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+      fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|gif|webp/;
+        const ext = extname(file.originalname).toLowerCase().slice(1);
+        const mimetype = file.mimetype.split('/')[1];
+
+        if (allowedTypes.test(ext) && allowedTypes.test(mimetype)) {
+          cb(null, true);
+        } else {
+          cb(new BadRequestException('Chỉ chấp nhận file ảnh (jpeg, jpg, png, gif, webp)'), false);
+        }
+      },
+    }),
+  )
+  async uploadProductImage(@Request() req, @UploadedFile() file: any) {
+    if (!file) {
+      throw new BadRequestException('Vui lòng chọn file ảnh');
+    }
+
+    const imageUrl = `/uploads/products/${file.filename}`;
+    return { imageUrl };
   }
 
   // ==================== DASHBOARD ====================
@@ -220,6 +282,24 @@ export class SellerController {
     return this.sellerService.manualDeliverItem(req.user.id, orderId, itemId, dto.accountData);
   }
 
+  /**
+   * Warranty replacement - Seller thay thế tài khoản lỗi cho buyer
+   */
+  @Post('orders/:orderId/warranty')
+  async warrantyReplacement(
+    @Request() req,
+    @Param('orderId') orderId: string,
+    @Body() dto: WarrantyReplacementDto,
+  ) {
+    return this.sellerService.warrantyReplacement(
+      req.user.id,
+      orderId,
+      dto.deliveryId,
+      dto.newAccountData,
+      dto.reason,
+    );
+  }
+
   // ==================== COMPLAINT MANAGEMENT ====================
 
   @Get('complaints')
@@ -300,8 +380,8 @@ export class SellerController {
       fee,
       netAmount: amountNum - fee,
       freeWithdrawalsLeftThisWeek: freeWithdrawalsLeft,
-      message: freeWithdrawalsLeft > 0 
-        ? `Bạn còn ${freeWithdrawalsLeft} lần rút tiền miễn phí trong tuần này` 
+      message: freeWithdrawalsLeft > 0
+        ? `Bạn còn ${freeWithdrawalsLeft} lần rút tiền miễn phí trong tuần này`
         : `Phí rút tiền: ${(feeRate * 100).toFixed(0)}%`,
     };
   }
@@ -374,6 +454,49 @@ export class SellerController {
   }
 
   /**
+   * Upload inventory files (ZIP containing account files like .session, .tdata, .txt)
+   * Each file inside the ZIP = 1 inventory item
+   */
+  @Post('products/:id/inventory/upload-files')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: inventoryUploadDir,
+        filename: (req, file, cb) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          cb(null, `inventory-${uniqueSuffix}${extname(file.originalname)}`);
+        },
+      }),
+      limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+      fileFilter: (req, file, cb) => {
+        const ext = extname(file.originalname).toLowerCase();
+        if (ext === '.zip') {
+          cb(null, true);
+        } else {
+          cb(new BadRequestException('Chỉ chấp nhận file ZIP'), false);
+        }
+      },
+    }),
+  )
+  async uploadInventoryFiles(
+    @Request() req,
+    @Param('id') productId: string,
+    @UploadedFile() file: any,
+    @Body('variantId') variantId?: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Vui lòng chọn file ZIP');
+    }
+    return this.sellerService.uploadInventoryFiles(
+      req.user.id,
+      productId,
+      file.path,
+      file.originalname,
+      variantId,
+    );
+  }
+
+  /**
    * Add single account to inventory
    */
   @Post('products/:id/inventory')
@@ -409,6 +532,20 @@ export class SellerController {
   }
 
   /**
+   * Delete ALL inventory items by status filter (no IDs needed)
+   * DELETE /seller/products/:id/inventory/all?status=AVAILABLE&variantId=xxx
+   */
+  @Delete('products/:id/inventory/all')
+  async deleteAllInventoryByStatus(
+    @Request() req,
+    @Param('id') productId: string,
+    @Query('status') status: string,
+    @Query('variantId') variantId?: string,
+  ) {
+    return this.sellerService.deleteAllInventoryByStatus(req.user.id, productId, status, variantId);
+  }
+
+  /**
    * Delete multiple inventory items
    */
   @Delete('products/:id/inventory')
@@ -418,6 +555,28 @@ export class SellerController {
     @Body('inventoryIds') inventoryIds: string[],
   ) {
     return this.sellerService.deleteMultipleInventory(req.user.id, productId, inventoryIds);
+  }
+
+  /**
+   * Download inventory data as text file
+   * GET /seller/products/:id/inventory/download?status=AVAILABLE
+   */
+  @Get('products/:id/inventory/download')
+  async downloadInventory(
+    @Request() req,
+    @Res() res: Response,
+    @Param('id') productId: string,
+    @Query('status') status?: string,
+    @Query('variantId') variantId?: string,
+  ) {
+    const data = await this.sellerService.downloadInventory(req.user.id, productId, { status, variantId });
+
+    const statusLabel = status ? `_${status.toLowerCase()}` : '_all';
+    const filename = `inventory${statusLabel}_${productId.substring(0, 8)}.txt`;
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(data);
   }
 
   // ==================== API KEY MANAGEMENT ====================
@@ -472,5 +631,212 @@ export class SellerController {
     @Param('id') apiKeyId: string,
   ) {
     return this.sellerService.regenerateApiKeySecret(req.user.id, apiKeyId);
+  }
+
+  // ==================== WITHDRAWAL PIN MANAGEMENT ====================
+
+  @Get('withdrawal-pin/status')
+  async hasWithdrawalPin(@Request() req) {
+    return this.sellerService.hasWithdrawalPin(req.user.id);
+  }
+
+  @Post('withdrawal-pin')
+  async setWithdrawalPin(@Request() req, @Body() dto: SetWithdrawalPinDto) {
+    return this.sellerService.setWithdrawalPin(req.user.id, dto);
+  }
+
+  @Put('withdrawal-pin')
+  async changeWithdrawalPin(@Request() req, @Body() dto: ChangeWithdrawalPinDto) {
+    return this.sellerService.changeWithdrawalPin(req.user.id, dto);
+  }
+
+  // ==================== INSURANCE FUND MANAGEMENT ====================
+
+  /**
+   * Get seller's insurance status
+   * GET /seller/insurance
+   */
+  @Get('insurance')
+  async getInsuranceStatus(@Request() req) {
+    return this.sellerService.getInsuranceStatus(req.user.id);
+  }
+
+  /**
+   * Register / activate insurance fund
+   * POST /seller/insurance/register
+   * Body: { tier: 'BRONZE' | 'SILVER' | 'GOLD' | 'DIAMOND' | 'VIP' }
+   */
+  @Post('insurance/register')
+  async registerInsurance(
+    @Request() req,
+    @Body() body: { tier: string },
+  ) {
+    return this.sellerService.registerInsurance(req.user.id, body.tier);
+  }
+
+  /**
+   * Upgrade insurance tier
+   * POST /seller/insurance/upgrade
+   * Body: { newTier: string }
+   */
+  @Post('insurance/upgrade')
+  async upgradeInsurance(
+    @Request() req,
+    @Body() body: { newTier: string },
+  ) {
+    return this.sellerService.upgradeInsurance(req.user.id, body.newTier);
+  }
+
+  /**
+   * Withdraw insurance fund
+   * POST /seller/insurance/withdraw
+   */
+  @Post('insurance/withdraw')
+  async withdrawInsurance(@Request() req) {
+    return this.sellerService.withdrawInsurance(req.user.id);
+  }
+
+  /**
+   * Get insurance history
+   * GET /seller/insurance/history
+   */
+  @Get('insurance/history')
+  async getInsuranceHistory(
+    @Request() req,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.sellerService.getInsuranceHistory(
+      req.user.id,
+      limit ? parseInt(limit) : 20,
+      offset ? parseInt(offset) : 0,
+    );
+  }
+
+  /**
+   * Update insurance info (change shop info costs 50,000đ)
+   * POST /seller/insurance/update-info
+   */
+  @Post('insurance/update-info')
+  async updateInsuranceInfo(@Request() req) {
+    return this.sellerService.updateInsuranceInfo(req.user.id);
+  }
+
+  // ==================== PINNED PRODUCTS (Auction Winner Feature) ====================
+
+  /**
+   * Get seller's pinned product IDs
+   * GET /seller/pinned-products
+   */
+  @Get('pinned-products')
+  async getPinnedProducts(@Request() req) {
+    const profile = await this.sellerService['prisma'].sellerProfile.findUnique({
+      where: { userId: req.user.id },
+      select: { pinnedProductIds: true },
+    });
+    const ids: string[] = profile?.pinnedProductIds ? JSON.parse(profile.pinnedProductIds) : [];
+    // Fetch actual products
+    const products = ids.length > 0
+      ? await this.sellerService['prisma'].product.findMany({
+        where: { id: { in: ids }, sellerId: req.user.id, status: 'ACTIVE' },
+        select: { id: true, title: true, price: true, images: true, slug: true },
+      })
+      : [];
+    return { pinnedProductIds: ids, products };
+  }
+
+  /**
+   * Update pinned products (max 4)
+   * POST /seller/pinned-products
+   * Body: { productIds: string[] }
+   */
+  @Post('pinned-products')
+  async updatePinnedProducts(
+    @Request() req,
+    @Body() body: { productIds: string[] },
+  ) {
+    const productIds = (body.productIds || []).slice(0, 4);
+    // Validate all products belong to this seller
+    if (productIds.length > 0) {
+      const count = await this.sellerService['prisma'].product.count({
+        where: { id: { in: productIds }, sellerId: req.user.id, status: 'ACTIVE' },
+      });
+      if (count !== productIds.length) {
+        throw new BadRequestException('Một số sản phẩm không hợp lệ');
+      }
+    }
+    await this.sellerService['prisma'].sellerProfile.update({
+      where: { userId: req.user.id },
+      data: { pinnedProductIds: JSON.stringify(productIds) },
+    });
+    return { success: true, pinnedProductIds: productIds };
+  }
+
+  // ==================== WEBHOOK MANAGEMENT ====================
+
+  @Get('webhooks/events')
+  async getWebhookEvents() {
+    return this.webhookService.getAvailableEvents();
+  }
+
+  @Get('webhooks')
+  async getWebhooks(@Request() req) {
+    return this.webhookService.getWebhooks(req.user.id);
+  }
+
+  @Post('webhooks')
+  async createWebhook(
+    @Request() req,
+    @Body() dto: CreateWebhookDto,
+  ) {
+    return this.webhookService.createWebhook(req.user.id, dto);
+  }
+
+  @Put('webhooks/:id')
+  async updateWebhook(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() dto: UpdateWebhookDto,
+  ) {
+    return this.webhookService.updateWebhook(req.user.id, id, dto);
+  }
+
+  @Delete('webhooks/:id')
+  async deleteWebhook(
+    @Request() req,
+    @Param('id') id: string,
+  ) {
+    return this.webhookService.deleteWebhook(req.user.id, id);
+  }
+
+  @Post('webhooks/:id/regenerate-secret')
+  async regenerateWebhookSecret(
+    @Request() req,
+    @Param('id') id: string,
+  ) {
+    return this.webhookService.regenerateSecret(req.user.id, id);
+  }
+
+  @Post('webhooks/:id/test')
+  async testWebhook(
+    @Request() req,
+    @Param('id') id: string,
+  ) {
+    return this.webhookService.testWebhook(req.user.id, id);
+  }
+
+  @Get('webhooks/:id/logs')
+  async getWebhookLogs(
+    @Request() req,
+    @Param('id') id: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.webhookService.getWebhookLogs(
+      req.user.id,
+      id,
+      limit ? parseInt(limit) : undefined,
+      offset ? parseInt(offset) : undefined
+    );
   }
 }

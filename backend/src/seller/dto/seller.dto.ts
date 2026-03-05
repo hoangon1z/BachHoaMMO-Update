@@ -27,6 +27,43 @@ export class UpdateStoreDto {
   @IsString()
   @IsOptional()
   shopLogo?: string;
+
+  @IsString()
+  @IsOptional()
+  contactPhone?: string;
+
+  @IsString()
+  @IsOptional()
+  contactTelegram?: string;
+
+  @IsString()
+  @IsOptional()
+  storeStatus?: string; // ONLINE, OFFLINE, AWAY
+
+  @IsString()
+  @IsOptional()
+  statusMessage?: string;
+
+  // Auto-reply settings
+  @IsBoolean()
+  @IsOptional()
+  autoReplyEnabled?: boolean;
+
+  @IsString()
+  @IsOptional()
+  autoReplyMessage?: string;
+
+  @IsNumber()
+  @IsOptional()
+  autoReplyStartHour?: number; // 0-23
+
+  @IsNumber()
+  @IsOptional()
+  autoReplyEndHour?: number; // 0-23
+
+  @IsNumber()
+  @IsOptional()
+  autoReplyCooldown?: number; // minutes
 }
 
 // Product Variant DTO
@@ -97,6 +134,7 @@ export class UpdateProductVariantDto {
 export enum ProductType {
   STANDARD = 'STANDARD',  // Bán tài khoản - buyer nhận account
   UPGRADE = 'UPGRADE',    // Nâng cấp tài khoản - buyer cung cấp email, seller upgrade
+  SERVICE = 'SERVICE',    // Dịch vụ buff like/sub MXH
 }
 
 // Product/Inventory DTOs
@@ -158,11 +196,51 @@ export class CreateProductDto {
 
   @IsEnum(ProductType)
   @IsOptional()
-  productType?: ProductType; // Loại sản phẩm: STANDARD (bán tài khoản) hoặc UPGRADE (nâng cấp)
+  productType?: ProductType; // Loại sản phẩm: STANDARD, UPGRADE, hoặc SERVICE
 
   @IsString()
   @IsOptional()
   requiredBuyerFields?: string; // JSON array các trường buyer cần cung cấp (VD: ["email"])
+
+  // ====== SERVICE-specific fields ======
+  @IsString()
+  @IsOptional()
+  servicePlatform?: string; // FACEBOOK, INSTAGRAM, TIKTOK, YOUTUBE...
+
+  @IsString()
+  @IsOptional()
+  serviceType?: string; // LIKE, FOLLOW, VIEW, COMMENT...
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  pricePerUnit?: number; // Giá mỗi đơn vị (VD: 50đ/like)
+
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  minQuantity?: number; // Số lượng tối thiểu
+
+  @IsNumber()
+  @IsOptional()
+  maxQuantity?: number; // Số lượng tối đa
+
+  @IsString()
+  @IsOptional()
+  estimatedTime?: string; // "1-6 giờ", "12-24 giờ"
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  warrantyDays?: number; // Số ngày bảo hành
+
+  @IsString()
+  @IsOptional()
+  serviceSpeed?: string; // SLOW, MEDIUM, FAST
+
+  @IsString()
+  @IsOptional()
+  serviceNote?: string; // Ghi chú cho buyer
 }
 
 export class UpdateProductDto {
@@ -222,11 +300,51 @@ export class UpdateProductDto {
 
   @IsEnum(ProductType)
   @IsOptional()
-  productType?: ProductType; // Loại sản phẩm: STANDARD hoặc UPGRADE
+  productType?: ProductType; // Loại sản phẩm: STANDARD, UPGRADE, hoặc SERVICE
 
   @IsString()
   @IsOptional()
   requiredBuyerFields?: string; // JSON array các trường buyer cần cung cấp
+
+  // ====== SERVICE-specific fields ======
+  @IsString()
+  @IsOptional()
+  servicePlatform?: string;
+
+  @IsString()
+  @IsOptional()
+  serviceType?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  pricePerUnit?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  minQuantity?: number;
+
+  @IsNumber()
+  @IsOptional()
+  maxQuantity?: number;
+
+  @IsString()
+  @IsOptional()
+  estimatedTime?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  warrantyDays?: number;
+
+  @IsString()
+  @IsOptional()
+  serviceSpeed?: string;
+
+  @IsString()
+  @IsOptional()
+  serviceNote?: string;
 
   @IsBoolean()
   @IsOptional()
@@ -252,13 +370,33 @@ export class CreateWithdrawalDto {
   amount: number;
 
   @IsString()
-  bankName: string;
+  @IsOptional()
+  bankName?: string;
 
   @IsString()
-  bankAccount: string;
+  @IsOptional()
+  bankAccount?: string;
 
   @IsString()
-  bankHolder: string;
+  @IsOptional()
+  bankHolder?: string;
+
+  @IsString()
+  pin: string; // 6-digit withdrawal PIN
+}
+
+// Withdrawal PIN DTOs
+export class SetWithdrawalPinDto {
+  @IsString()
+  pin: string; // 6-digit PIN
+}
+
+export class ChangeWithdrawalPinDto {
+  @IsString()
+  oldPin: string;
+
+  @IsString()
+  newPin: string;
 }
 
 // Complaint DTOs
@@ -311,6 +449,15 @@ export class UpdateOrderStatusDto {
 }
 
 // Inventory DTOs
+export class InventoryFormatDto {
+  @IsString()
+  delimiter: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  fields: string[];
+}
+
 export class UploadInventoryDto {
   @IsString()
   accountData: string; // Raw text data (multiple lines)
@@ -322,6 +469,11 @@ export class UploadInventoryDto {
   @IsString()
   @IsOptional()
   variantId?: string; // Optional variant ID for products with variants
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => InventoryFormatDto)
+  format?: InventoryFormatDto;
 }
 
 export class AddSingleInventoryDto {
@@ -370,4 +522,17 @@ export class ManualDeliveryBulkDto {
   @ValidateNested({ each: true })
   @Type(() => ManualDeliveryDto)
   deliveries: ManualDeliveryDto[];
+}
+
+// Warranty / Account Replacement DTO
+export class WarrantyReplacementDto {
+  @IsString()
+  deliveryId: string; // ID of the delivery to replace
+
+  @IsString()
+  newAccountData: string; // New account data to replace the faulty one
+
+  @IsString()
+  @IsOptional()
+  reason?: string; // Reason for replacement
 }

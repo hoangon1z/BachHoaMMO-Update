@@ -21,7 +21,7 @@ export class WafGuard implements CanActivate {
     private wafService: WafService,
     private rateLimitService: RateLimitService,
     private auditLogService: AuditLogService,
-  ) {}
+  ) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // Check if WAF is skipped for this endpoint
@@ -35,18 +35,39 @@ export class WafGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest();
-    
+
     // Skip WAF for Public Seller API routes (they have their own security)
     const path = request.path || request.url?.split('?')[0] || '';
     if (path.startsWith('/api/v1/')) {
       return true;
     }
-    
+
+    // Skip WAF for inventory upload endpoints (account data may contain special chars)
+    // These endpoints contain sensitive account data like cookies, tokens, passwords
+    // which would trigger false positives in WAF pattern matching
+    if (path.includes('/inventory') && request.method === 'POST') {
+      this.logger.debug(`WAF skipped for inventory upload: ${path}`);
+      return true;
+    }
+
+    // Skip WAF for blog endpoints (blog content contains HTML/rich text that triggers false positives)
+    if (path.startsWith('/blog')) {
+      this.logger.debug(`WAF skipped for blog: ${path}`);
+      return true;
+    }
+
     const ip = this.getClientIp(request);
+
+    // Skip WAF for localhost/internal requests (SSR from Next.js)
+    // These are trusted server-side requests
+    if (this.isLocalhostIp(ip)) {
+      return true;
+    }
+
     const userAgent = request.headers['user-agent'] || '';
 
     // 1. Check if IP is already blocked
-    if (this.rateLimitService.isIpBlocked(ip)) {
+    if (await this.rateLimitService.isIpBlocked(ip)) {
       throw new HttpException(
         {
           statusCode: HttpStatus.FORBIDDEN,
@@ -84,12 +105,12 @@ export class WafGuard implements CanActivate {
       );
 
       // Track suspicious activity
-      const suspiciousCount = this.rateLimitService.trackSuspiciousActivity(ip);
+      const suspiciousCount = await this.rateLimitService.trackSuspiciousActivity(ip);
 
       // Progressive blocking for repeat offenders
       if (suspiciousCount >= 3) {
         const blockDuration = Math.min(600 * suspiciousCount, 86400); // Max 24 hours
-        this.rateLimitService.blockIp(
+        await this.rateLimitService.blockIp(
           ip,
           blockDuration,
           `WAF violations: ${wafResult.threats.join(', ')}`,
@@ -138,26 +159,74 @@ export class WafGuard implements CanActivate {
     return true;
   }
 
+
   /**
-   * Get client IP address
+   * List of trusted proxy IP ranges
+   */
+  private readonly trustedProxies = [
+    '127.0.0.1', '::1', '::ffff:127.0.0.1',
+    '10.', '172.16.', '172.17.', '172.18.', '192.168.',
+  ];
+
+  /**
+   * Check if the IP is localhost (internal request from SSR)
+   */
+  private isLocalhostIp(ip: string): boolean {
+    if (!ip) return false;
+    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || ip.startsWith('127.');
+  }
+
+  /**
+   * Cloudflare IP ranges
+   */
+  private readonly cloudflareIpPrefixes = [
+    '103.21.244.', '103.22.200.', '103.31.4.', '104.16.', '104.17.',
+    '104.18.', '104.19.', '104.20.', '104.21.', '104.22.', '104.23.',
+    '104.24.', '104.25.', '104.26.', '104.27.', '108.162.', '131.0.72.',
+    '141.101.', '162.158.', '172.64.', '172.65.', '172.66.', '172.67.',
+    '173.245.', '188.114.', '190.93.', '197.234.', '198.41.',
+  ];
+
+  /**
+   * Check if IP is from a trusted proxy
+   */
+  private isTrustedProxy(ip: string): boolean {
+    if (!ip) return false;
+    for (const proxy of [...this.trustedProxies, ...this.cloudflareIpPrefixes]) {
+      if (ip.startsWith(proxy) || ip === proxy) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Get client IP address with trusted proxy validation
    */
   private getClientIp(request: any): string {
-    return (
-      request.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-      request.headers['x-real-ip'] ||
+    const socketIp =
       request.connection?.remoteAddress ||
       request.socket?.remoteAddress ||
-      request.ip ||
-      'unknown'
-    );
+      request.ip || 'unknown';
+    const cleanSocketIp = socketIp.replace('::ffff:', '');
+
+    if (this.isTrustedProxy(cleanSocketIp) || this.isTrustedProxy(socketIp)) {
+      const cfIp = request.headers['cf-connecting-ip'];
+      if (cfIp) return cfIp;
+      const realIp = request.headers['x-real-ip'];
+      if (realIp) return realIp;
+      const forwardedFor = request.headers['x-forwarded-for'];
+      if (forwardedFor) return forwardedFor.split(',')[0].trim();
+    }
+
+    return cleanSocketIp || 'unknown';
   }
+
 
   /**
    * Normalize headers to string record
    */
   private normalizeHeaders(headers: any): Record<string, string> {
     const normalized: Record<string, string> = {};
-    
+
     for (const [key, value] of Object.entries(headers)) {
       if (typeof value === 'string') {
         normalized[key.toLowerCase()] = value;
@@ -165,7 +234,7 @@ export class WafGuard implements CanActivate {
         normalized[key.toLowerCase()] = value.join(', ');
       }
     }
-    
+
     return normalized;
   }
 

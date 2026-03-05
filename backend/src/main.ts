@@ -1,11 +1,14 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
 import helmet from 'helmet';
 import compression from 'compression';
 import { json, urlencoded } from 'express';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+
+const logger = new Logger('Bootstrap');
 
 // Ensure upload directories exist
 const uploadDirs = ['uploads', 'uploads/avatars', 'uploads/banners', 'uploads/products'];
@@ -40,17 +43,17 @@ async function bootstrap() {
   app.use(compression());
 
   // 3. CORS Configuration
-  const corsOrigins = process.env.CORS_ORIGIN 
+  const corsOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
     : ['http://localhost:3000'];
-  
+
   app.enableCors({
     origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: [
-      'Content-Type', 
-      'Authorization', 
+      'Content-Type',
+      'Authorization',
       'X-CSRF-Token',
       'X-Request-ID',
       'X-Device-Fingerprint',
@@ -82,11 +85,14 @@ async function bootstrap() {
     }),
   );
 
-  // 5. Trust proxy (important for getting real IP behind reverse proxy)
+  // 5. Global exception filter - CRITICAL: Prevents crashes on unhandled errors!
+  app.useGlobalFilters(new AllExceptionsFilter());
+
+  // 6. Trust proxy (important for getting real IP behind reverse proxy)
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('trust proxy', 1);
 
-  // 6. Disable X-Powered-By header
+  // 7. Disable X-Powered-By header
   expressApp.disable('x-powered-by');
 
   // ==========================================
@@ -94,7 +100,7 @@ async function bootstrap() {
   // ==========================================
   const port = process.env.PORT || 3001;
   await app.listen(port);
-  
+
   console.log(`
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
@@ -111,9 +117,46 @@ async function bootstrap() {
 ║   ✅ Security Headers (HSTS, CSP, etc.)                      ║
 ║   ✅ Audit Logging                                           ║
 ║   ✅ Device Fingerprinting                                   ║
+║   ✅ Global Exception Handler                                ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
   `);
 }
 
-bootstrap();
+// ==========================================
+// PROCESS ERROR HANDLERS - Prevent crashes
+// ==========================================
+
+// Handle unhandled promise rejections (don't crash!)
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  logger.error('Unhandled Promise Rejection:');
+  logger.error(reason);
+  // DON'T exit - just log the error
+});
+
+// Handle uncaught exceptions (log but try to continue)
+process.on('uncaughtException', (error: Error) => {
+  logger.error('Uncaught Exception:');
+  logger.error(error.stack || error);
+  // For critical errors that might corrupt state, exit gracefully
+  // But for most errors, we'll try to continue
+  if (error.message?.includes('FATAL') || error.message?.includes('out of memory')) {
+    process.exit(1);
+  }
+});
+
+// Graceful shutdown handling
+process.on('SIGTERM', async () => {
+  logger.log('SIGTERM received. Shutting down gracefully...');
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  logger.log('SIGINT received. Shutting down gracefully...');
+  process.exit(0);
+});
+
+bootstrap().catch((error) => {
+  logger.error('Failed to start application:', error);
+  process.exit(1);
+});

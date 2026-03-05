@@ -20,6 +20,7 @@ import {
   Package,
   Store,
   Shield,
+  ShieldAlert,
   Bell,
   Search,
   ChevronDown,
@@ -27,20 +28,26 @@ import {
   MessageCircle,
   Gavel,
   Wallet,
+  Send,
+  Eye,
 } from 'lucide-react';
-import { FileText } from 'lucide-react';
+import { FileText, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const sidebarLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/messages', label: 'Tin nhắn', icon: MessageCircle },
+  { href: '/admin/chat-violations', label: 'Chat Moderation', icon: ShieldAlert },
   { href: '/admin/notifications', label: 'Gửi thông báo', icon: Bell },
   { href: '/admin/auction', label: 'Đấu giá TOP', icon: Gavel },
   { href: '/admin/banners', label: 'Banners', icon: Image },
+  { href: '/admin/category-showcases', label: 'Category Showcase', icon: Image },
   { href: '/admin/blogs', label: 'Blogs', icon: FileText },
+  { href: '/admin/pages', label: 'Quản lý trang', icon: Globe },
   { href: '/admin/categories', label: 'Danh mục', icon: FolderOpen },
   { href: '/admin/products', label: 'Sản phẩm', icon: Package },
   { href: '/admin/sellers', label: 'Người bán', icon: Store },
+  { href: '/admin/insurance', label: 'Bảo hiểm', icon: Shield },
   { href: '/admin/seller-applications', label: 'Duyệt Seller', icon: Shield, badge: 'sellers' },
   { href: '/admin/users', label: 'Người dùng', icon: Users },
   { href: '/admin/orders', label: 'Đơn hàng', icon: ShoppingBag },
@@ -49,6 +56,8 @@ const sidebarLinks = [
   { href: '/admin/escrows', label: 'Escrow', icon: Lock },
   { href: '/admin/transactions', label: 'Giao dịch', icon: TrendingUp },
   { href: '/admin/settings', label: 'Cài đặt', icon: Settings },
+  // { href: '/admin/checkuid', label: 'CheckUID', icon: Eye }, // Temporarily disabled
+  { href: '/admin/telegram', label: 'Telegram Nạp tiền', icon: Send },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -143,10 +152,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Sidebar */}
-      <aside className={`fixed left-0 top-0 h-full bg-gray-900 text-white transition-all duration-300 z-50 ${isSidebarCollapsed ? 'w-16' : 'w-64'} ${!isSidebarOpen ? '-translate-x-full lg:translate-x-0' : ''}`}>
+      <aside className={`fixed left-0 top-0 h-full bg-gray-900 text-white transition-all duration-300 z-50 flex flex-col ${isSidebarCollapsed ? 'w-16' : 'w-64'} ${!isSidebarOpen ? '-translate-x-full lg:translate-x-0' : ''}`}>
         {/* Logo */}
-        <div className="h-14 border-b border-gray-800 flex items-center justify-between px-4">
+        <div className="h-14 border-b border-gray-800 flex items-center justify-between px-4 flex-shrink-0">
           {!isSidebarCollapsed ? (
             <Link href="/admin" className="flex items-center gap-2">
               <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
@@ -163,7 +171,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         {/* User Info */}
         {!isSidebarCollapsed && (
-          <div className="p-4 border-b border-gray-800">
+          <div className="p-4 border-b border-gray-800 flex-shrink-0">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-amber-500 rounded-lg flex items-center justify-center font-bold text-gray-900">
                 {user.name?.charAt(0).toUpperCase()}
@@ -176,8 +184,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         )}
 
-        {/* Navigation */}
-        <nav className="p-2 space-y-1 overflow-y-auto max-h-[calc(100vh-200px)]">
+        {/* Navigation — scrollable */}
+        <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
           {sidebarLinks.map((link) => {
             const Icon = link.icon;
             const isActive = pathname === link.href;
@@ -216,8 +224,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           })}
         </nav>
 
-        {/* Bottom Actions */}
-        <div className="absolute bottom-0 left-0 right-0 p-2 border-t border-gray-800 bg-gray-900 space-y-1">
+        {/* Bottom Actions — always visible */}
+        <div className="p-2 border-t border-gray-800 flex-shrink-0 space-y-1">
           <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-all ${isSidebarCollapsed && 'justify-center'}`}>
             <Menu className="w-5 h-5" />
             {!isSidebarCollapsed && <span className="text-sm">Thu gọn</span>}

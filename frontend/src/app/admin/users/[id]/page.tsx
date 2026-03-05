@@ -5,9 +5,9 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { 
-  ArrowLeft, Mail, Calendar, Wallet, ShoppingBag, TrendingUp, 
-  User as UserIcon, Eye, EyeOff, Key, Shield, Store, Save, 
+import {
+  ArrowLeft, Mail, Calendar, Wallet, ShoppingBag, TrendingUp,
+  User as UserIcon, Eye, EyeOff, Key, Shield, Store, Save,
   RefreshCw, Phone, MapPin, Crown, Package, AlertCircle, CheckCircle2, X, Ban, Unlock,
   Building2, CreditCard, Clock, Activity
 } from 'lucide-react';
@@ -86,7 +86,7 @@ export default function UserDetailPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [activeTab, setActiveTab] = useState<'info' | 'bank' | 'activity' | 'transactions' | 'orders' | 'sales'>('info');
-  
+
   // Edit form state
   const [editMode, setEditMode] = useState(false);
   const [formData, setFormData] = useState({
@@ -98,18 +98,18 @@ export default function UserDetailPage() {
     isSeller: false,
     balance: 0,
   });
-  
+
   // Password reset state
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
-  
+
   // Ban user state
   const [showBanModal, setShowBanModal] = useState(false);
   const [banReason, setBanReason] = useState('');
   const [isBanning, setIsBanning] = useState(false);
-  
+
   // Modal state for success/error messages
   const [modalMessage, setModalMessage] = useState<{ type: 'success' | 'error'; title: string; text: string } | null>(null);
 
@@ -123,19 +123,19 @@ export default function UserDetailPage() {
     setIsLoading(true);
     try {
       const token = localStorage.getItem('token');
-      
+
       // Fetch user detail from new API endpoint
       const response = await fetch(`/api/admin/users/${params.id}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setUser(data.user);
         setTransactions(data.recentTransactions || []);
         setOrders(data.recentOrders || []);
         setSales(data.recentSales || []);
-        
+
         // Initialize form data
         setFormData({
           name: data.user.name || '',
@@ -479,20 +479,20 @@ export default function UserDetailPage() {
             onClick={() => setActiveTab('transactions')}
             className={`px-6 py-3 text-sm font-medium ${activeTab === 'transactions' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
           >
-            Giao dịch ({transactions.length})
+            Giao dịch ({user._count?.transactions || transactions.length})
           </button>
           <button
             onClick={() => setActiveTab('orders')}
             className={`px-6 py-3 text-sm font-medium ${activeTab === 'orders' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
           >
-            Đơn mua ({orders.length})
+            Đơn mua ({user._count?.orders || orders.length})
           </button>
           {user.isSeller && (
             <button
               onClick={() => setActiveTab('sales')}
               className={`px-6 py-3 text-sm font-medium ${activeTab === 'sales' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
             >
-              Đơn bán ({sales.length})
+              Đơn bán ({user._count?.sales || sales.length})
             </button>
           )}
         </div>
@@ -506,7 +506,7 @@ export default function UserDetailPage() {
                 <h3 className="text-lg font-semibold flex items-center gap-2">
                   <UserIcon className="w-5 h-5" /> Thông tin cơ bản
                 </h3>
-                
+
                 <div className="space-y-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Tên</label>
@@ -578,7 +578,7 @@ export default function UserDetailPage() {
                   <h3 className="text-lg font-semibold flex items-center gap-2">
                     <Key className="w-5 h-5" /> Mật khẩu
                   </h3>
-                  
+
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <label className="block text-sm font-medium text-gray-700">Password Hash</label>
@@ -593,7 +593,7 @@ export default function UserDetailPage() {
                     <p className="text-xs font-mono bg-white p-2 rounded border break-all">
                       {showPassword ? user.password : '••••••••••••••••••••••••••••••••'}
                     </p>
-                    
+
                     <Button
                       variant="outline"
                       size="sm"
@@ -652,7 +652,7 @@ export default function UserDetailPage() {
                   <h3 className="text-lg font-semibold flex items-center gap-2">
                     <Shield className="w-5 h-5" /> Quyền hạn
                   </h3>
-                  
+
                   <div className="space-y-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Vai trò (Role)</label>
@@ -667,11 +667,10 @@ export default function UserDetailPage() {
                           <option value="ADMIN">Admin (Quản trị)</option>
                         </select>
                       ) : (
-                        <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${
-                          user.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' :
-                          user.role === 'SELLER' ? 'bg-green-100 text-green-800' :
-                          'bg-blue-100 text-blue-800'
-                        }`}>
+                        <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' :
+                            user.role === 'SELLER' ? 'bg-green-100 text-green-800' :
+                              'bg-blue-100 text-blue-800'
+                          }`}>
                           {user.role === 'ADMIN' ? 'Admin' : user.role === 'SELLER' ? 'Seller' : 'Buyer'}
                         </span>
                       )}
@@ -690,9 +689,8 @@ export default function UserDetailPage() {
                           <span className="text-sm">Cho phép bán hàng</span>
                         </label>
                       ) : (
-                        <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${
-                          user.isSeller ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                        }`}>
+                        <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${user.isSeller ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                          }`}>
                           {user.isSeller ? 'Đã kích hoạt' : 'Chưa kích hoạt'}
                         </span>
                       )}
@@ -722,7 +720,7 @@ export default function UserDetailPage() {
                     <h3 className="text-lg font-semibold flex items-center gap-2">
                       <Ban className="w-5 h-5" /> Khóa tài khoản
                     </h3>
-                    
+
                     {user.isBanned ? (
                       <div className="space-y-3">
                         <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -775,7 +773,7 @@ export default function UserDetailPage() {
                   Khóa tài khoản người dùng
                 </h3>
                 <p className="text-sm text-gray-600 mb-4">
-                  Bạn đang khóa tài khoản của <strong>{user.name || user.email}</strong>. 
+                  Bạn đang khóa tài khoản của <strong>{user.name || user.email}</strong>.
                   Người dùng này sẽ không thể đăng nhập vào hệ thống cho đến khi được mở khóa.
                 </p>
                 <div className="mb-4">
@@ -821,7 +819,7 @@ export default function UserDetailPage() {
                     <Building2 className="w-5 h-5 text-blue-600" />
                     <h3 className="text-lg font-semibold">Thông tin ngân hàng</h3>
                   </div>
-                  
+
                   {user.sellerProfile.bankName ? (
                     <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -885,7 +883,7 @@ export default function UserDetailPage() {
                 <Activity className="w-5 h-5 text-purple-600" />
                 <h3 className="text-lg font-semibold">Lịch sử hoạt động</h3>
               </div>
-              
+
               {(() => {
                 // Combine activities from transactions, orders, and sales
                 const activities: Array<{
@@ -904,9 +902,9 @@ export default function UserDetailPage() {
                     id: `tx-${tx.id}`,
                     type: 'transaction',
                     action: tx.type === 'DEPOSIT' ? 'Nạp tiền' :
-                            tx.type === 'WITHDRAW' ? 'Rút tiền' :
-                            tx.type === 'PURCHASE' ? 'Thanh toán' :
-                            tx.type === 'REFUND' ? 'Hoàn tiền' :
+                      tx.type === 'WITHDRAW' ? 'Rút tiền' :
+                        tx.type === 'PURCHASE' ? 'Thanh toán' :
+                          tx.type === 'REFUND' ? 'Hoàn tiền' :
                             tx.type === 'EARNING' ? 'Nhận tiền' : tx.type,
                     detail: tx.description,
                     amount: tx.amount,
@@ -957,14 +955,12 @@ export default function UserDetailPage() {
                   <div className="space-y-4">
                     {activities.slice(0, 20).map((activity) => (
                       <div key={activity.id} className="flex items-start gap-4 pb-4 border-b last:border-0">
-                        <div className={`p-2 rounded-full ${
-                          activity.type === 'transaction' ? 'bg-green-100' :
-                          activity.type === 'order' ? 'bg-blue-100' : 'bg-purple-100'
-                        }`}>
+                        <div className={`p-2 rounded-full ${activity.type === 'transaction' ? 'bg-green-100' :
+                            activity.type === 'order' ? 'bg-blue-100' : 'bg-purple-100'
+                          }`}>
                           {activity.type === 'transaction' ? (
-                            <Wallet className={`w-4 h-4 ${
-                              activity.action === 'Nạp tiền' || activity.action === 'Nhận tiền' ? 'text-green-600' : 'text-red-600'
-                            }`} />
+                            <Wallet className={`w-4 h-4 ${activity.action === 'Nạp tiền' || activity.action === 'Nhận tiền' ? 'text-green-600' : 'text-red-600'
+                              }`} />
                           ) : activity.type === 'order' ? (
                             <ShoppingBag className="w-4 h-4 text-blue-600" />
                           ) : (
@@ -974,12 +970,11 @@ export default function UserDetailPage() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <p className="font-medium text-sm">{activity.action}</p>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${
-                              activity.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
-                              activity.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
-                              activity.status === 'PROCESSING' ? 'bg-blue-100 text-blue-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${activity.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                                activity.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                                  activity.status === 'PROCESSING' ? 'bg-blue-100 text-blue-800' :
+                                    'bg-gray-100 text-gray-800'
+                              }`}>
                               {activity.status}
                             </span>
                           </div>
@@ -989,13 +984,12 @@ export default function UserDetailPage() {
                           </p>
                         </div>
                         {activity.amount !== undefined && (
-                          <p className={`font-semibold text-sm ${
-                            activity.type === 'transaction' && (activity.action === 'Nạp tiền' || activity.action === 'Nhận tiền') ? 'text-green-600' :
-                            activity.type === 'transaction' ? 'text-red-600' :
-                            activity.type === 'sale' ? 'text-green-600' : 'text-blue-600'
-                          }`}>
-                            {activity.type === 'transaction' && (activity.action === 'Nạp tiền' || activity.action === 'Nhận tiền') ? '+' : 
-                             activity.type === 'transaction' ? '-' : ''}
+                          <p className={`font-semibold text-sm ${activity.type === 'transaction' && (activity.action === 'Nạp tiền' || activity.action === 'Nhận tiền') ? 'text-green-600' :
+                              activity.type === 'transaction' ? 'text-red-600' :
+                                activity.type === 'sale' ? 'text-green-600' : 'text-blue-600'
+                            }`}>
+                            {activity.type === 'transaction' && (activity.action === 'Nạp tiền' || activity.action === 'Nhận tiền') ? '+' :
+                              activity.type === 'transaction' ? '-' : ''}
                             {activity.amount.toLocaleString('vi-VN')}đ
                           </p>
                         )}
@@ -1023,17 +1017,15 @@ export default function UserDetailPage() {
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className={`font-bold text-sm ${
-                          tx.type === 'DEPOSIT' || tx.type === 'EARNING' ? 'text-green-600' : 'text-red-600'
-                        }`}>
+                        <p className={`font-bold text-sm ${tx.type === 'DEPOSIT' || tx.type === 'EARNING' ? 'text-green-600' : 'text-red-600'
+                          }`}>
                           {tx.type === 'DEPOSIT' || tx.type === 'EARNING' ? '+' : '-'}
                           {tx.amount.toLocaleString('vi-VN')}đ
                         </p>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          tx.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
-                          tx.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${tx.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                            tx.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-red-100 text-red-800'
+                          }`}>
                           {tx.status}
                         </span>
                       </div>
@@ -1063,11 +1055,10 @@ export default function UserDetailPage() {
                         <p className="font-bold text-sm text-green-600">
                           {order.total.toLocaleString('vi-VN')}đ
                         </p>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          order.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
-                          order.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-blue-100 text-blue-800'
-                        }`}>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${order.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                            order.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-blue-100 text-blue-800'
+                          }`}>
                           {order.status}
                         </span>
                       </div>
@@ -1097,11 +1088,10 @@ export default function UserDetailPage() {
                         <p className="font-bold text-sm text-green-600">
                           {order.total.toLocaleString('vi-VN')}đ
                         </p>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          order.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
-                          order.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-blue-100 text-blue-800'
-                        }`}>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${order.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                            order.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-blue-100 text-blue-800'
+                          }`}>
                           {order.status}
                         </span>
                       </div>
@@ -1117,15 +1107,14 @@ export default function UserDetailPage() {
       {/* Message Modal */}
       {modalMessage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div 
+          <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setModalMessage(null)}
           />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 text-center">
-              <div className={`w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center ${
-                modalMessage.type === 'success' ? 'bg-green-100' : 'bg-red-100'
-              }`}>
+              <div className={`w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center ${modalMessage.type === 'success' ? 'bg-green-100' : 'bg-red-100'
+                }`}>
                 {modalMessage.type === 'success' ? (
                   <CheckCircle2 className="w-8 h-8 text-green-600" />
                 ) : (
@@ -1134,7 +1123,7 @@ export default function UserDetailPage() {
               </div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">{modalMessage.title}</h3>
               <p className="text-gray-600 mb-6">{modalMessage.text}</p>
-              <Button 
+              <Button
                 className="w-full"
                 onClick={() => setModalMessage(null)}
               >

@@ -1,5 +1,6 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { createUniqueSlug } from '../common/utils/slug.util';
 import { randomBytes, createHash } from 'crypto';
 import {
   CreateStoreDto,
@@ -11,11 +12,33 @@ import {
   UpdateComplaintDto,
   SendComplaintMessageDto,
   UpdateOrderStatusDto,
+  SetWithdrawalPinDto,
+  ChangeWithdrawalPinDto,
 } from './dto/seller.dto';
 
 @Injectable()
 export class SellerService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(SellerService.name);
+
+  constructor(private prisma: PrismaService) { }
+
+  /**
+   * Check if a product slug already exists
+   */
+  private async slugExists(slug: string, excludeId?: string): Promise<boolean> {
+    const existing = await this.prisma.product.findUnique({
+      where: { slug },
+      select: { id: true },
+    });
+    return existing !== null && existing.id !== excludeId;
+  }
+
+  /**
+   * Generate unique slug for product
+   */
+  private async generateProductSlug(title: string, excludeId?: string): Promise<string> {
+    return createUniqueSlug(title, (slug) => this.slugExists(slug, excludeId));
+  }
 
   // ==================== STORE MANAGEMENT ====================
 
@@ -41,7 +64,7 @@ export class SellerService {
       }),
       this.prisma.user.update({
         where: { id: userId },
-        data: { 
+        data: {
           role: 'SELLER',
           isSeller: true,
         },
@@ -93,7 +116,86 @@ export class SellerService {
       totalSales: store.user._count.sales || store.totalSales || 0,
       rating: reviewStats._avg.rating || store.rating || 0,
       reviewCount: reviewStats._count.rating || 0,
+      hasWithdrawalPin: !!store.withdrawalPin,
+      contactPhone: store.contactPhone,
+      contactTelegram: store.contactTelegram,
+      storeStatus: store.storeStatus,
+      statusMessage: store.statusMessage,
     };
+  }
+
+  // ==================== PROFILE COMPLETION CHECK ====================
+
+  async getProfileCompletion(userId: string) {
+    const store = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!store) {
+      throw new NotFoundException('Không tìm thấy cửa hàng');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { telegramChatId: true, telegramLinkedAt: true },
+    });
+
+    const requirements = [
+      {
+        id: 'shopLogo',
+        label: 'Ảnh đại diện cửa hàng (Logo)',
+        completed: !!store.shopLogo,
+        link: '/seller/settings',
+      },
+      {
+        id: 'shopDescription',
+        label: 'Mô tả cửa hàng',
+        completed: !!store.shopDescription && store.shopDescription.length >= 10,
+        link: '/seller/settings',
+      },
+      {
+        id: 'contactPhone',
+        label: 'Số điện thoại liên lạc',
+        completed: !!store.contactPhone,
+        link: '/seller/settings',
+      },
+      {
+        id: 'contactTelegram',
+        label: 'Telegram liên lạc',
+        completed: !!store.contactTelegram,
+        link: '/seller/settings',
+      },
+      {
+        id: 'telegramNotification',
+        label: 'Liên kết Telegram thông báo đơn hàng',
+        completed: !!user?.telegramChatId && !!user?.telegramLinkedAt,
+        link: '/seller/settings',
+      },
+    ];
+
+    const completedCount = requirements.filter(r => r.completed).length;
+    const isComplete = completedCount === requirements.length;
+
+    return {
+      isComplete,
+      completedCount,
+      totalCount: requirements.length,
+      requirements,
+    };
+  }
+
+  private async checkSellerProfileCompletion(userId: string) {
+    const completion = await this.getProfileCompletion(userId);
+
+    if (!completion.isComplete) {
+      const missing = completion.requirements
+        .filter(r => !r.completed)
+        .map(r => r.label);
+
+      throw new BadRequestException(
+        `Vui lòng hoàn thiện thông tin cửa hàng trước khi upload kho hàng. Còn thiếu: ${missing.join(', ')}. Vào Cài đặt cửa hàng để cập nhật.`
+      );
+    }
   }
 
   async updateStore(userId: string, dto: UpdateStoreDto) {
@@ -146,7 +248,12 @@ export class SellerService {
 
     const { variants, hasVariants, ...productData } = dto;
     const { originalPrice, ...productDataForPrisma } = productData as any;
-    let productPayload = { ...productDataForPrisma, salePrice: originalPrice ?? null, sellerId: userId, status: 'ACTIVE' as const };
+
+    // Generate SEO-friendly slug from title
+    const slug = await this.generateProductSlug(dto.title);
+    this.logger.log(`📝 Generated slug for new product: ${slug}`);
+
+    let productPayload = { ...productDataForPrisma, slug, salePrice: originalPrice ?? null, sellerId: userId, status: 'ACTIVE' as const };
 
     // If product has variants, create product with variants
     if (hasVariants && variants && variants.length > 0) {
@@ -194,11 +301,11 @@ export class SellerService {
     const skip = (page - 1) * limit;
     const where: any = { sellerId: userId };
 
-    // Mặc định chỉ hiển thị đang bán + hết hàng (không hiện "ngừng bán" / đã xóa)
+    // Mặc định hiển thị tất cả sản phẩm của seller (bao gồm cả ngừng bán)
     if (status) {
       where.status = status;
     } else {
-      where.status = { in: ['ACTIVE', 'OUT_OF_STOCK'] };
+      where.status = { in: ['ACTIVE', 'OUT_OF_STOCK', 'INACTIVE'] };
     }
 
     const [products, total] = await Promise.all([
@@ -245,7 +352,7 @@ export class SellerService {
     }
 
     // Map salePrice -> originalPrice cho form edit (API/frontend dùng originalPrice)
-    const variants = (product.variants || []).map((v: { salePrice?: number | null; [k: string]: any }) => ({
+    const variants = (product.variants || []).map((v: { salePrice?: number | null;[k: string]: any }) => ({
       ...v,
       originalPrice: v.salePrice ?? undefined,
     }));
@@ -280,11 +387,37 @@ export class SellerService {
           updateData.hasVariants = dtoHasVariants;
         }
 
+        // Regenerate slug if title changed
+        if (updateData.title && updateData.title !== product.title) {
+          updateData.slug = await this.generateProductSlug(updateData.title, productId);
+          this.logger.log(`📝 Regenerated slug for product ${productId}: ${updateData.slug}`);
+        }
+
+        const isDigital = updateData.isDigital !== undefined ? updateData.isDigital : product.isDigital;
+        const autoDelivery = updateData.autoDelivery !== undefined ? updateData.autoDelivery : product.autoDelivery;
+
+        // For digital products with auto delivery, stock MUST be calculated from inventory
+        // Prevent manual stock update
+        if (isDigital && autoDelivery) {
+          delete updateData.stock;
+        }
+
         // Update product fields (no variants - relation handled below)
         await tx.product.update({
           where: { id: productId },
           data: updateData,
         });
+
+        // If digital & auto delivery, update stock from inventory count just to be safe
+        if (isDigital && autoDelivery) {
+          const availableCount = await tx.productInventory.count({
+            where: { productId, status: 'AVAILABLE' },
+          });
+          await tx.product.update({
+            where: { id: productId },
+            data: { stock: availableCount },
+          });
+        }
 
         // Sync variants if provided
         if (dtoHasVariants === true && dtoVariants && dtoVariants.length > 0) {
@@ -307,14 +440,28 @@ export class SellerService {
           // Update existing variants, create new ones
           for (let i = 0; i < dtoVariants.length; i++) {
             const v = dtoVariants[i];
+            let variantStock = v.stock;
+
+            // For digital & auto-delivery, calculate stock from inventory
+            if (isDigital && autoDelivery) {
+              if (v.id) {
+                variantStock = await tx.productInventory.count({
+                  where: { productId, variantId: v.id, status: 'AVAILABLE' },
+                });
+              } else {
+                // New variant for auto-delivery has 0 stock initially (must upload inventory)
+                variantStock = 0;
+              }
+            }
+
             const payload = {
               name: v.name,
               price: v.price,
               salePrice: (v as any).originalPrice ?? null,
-              stock: v.stock,
+              stock: variantStock,
               position: i,
             };
-            
+
             if (v.id && existingIds.includes(v.id)) {
               await tx.productVariant.update({
                 where: { id: v.id },
@@ -366,12 +513,12 @@ export class SellerService {
     } catch (error) {
       // Log error for debugging
       console.error('Error updating product:', error);
-      
+
       // Re-throw BadRequestException as-is
       if (error instanceof BadRequestException || error instanceof NotFoundException) {
         throw error;
       }
-      
+
       // Wrap other errors in BadRequestException
       throw new BadRequestException(
         error?.message || 'Không thể cập nhật sản phẩm. Vui lòng kiểm tra dữ liệu và thử lại.'
@@ -434,8 +581,18 @@ export class SellerService {
 
   async getOrders(userId: string, page = 1, limit = 10, status?: string, search?: string) {
     const skip = (page - 1) * limit;
-    const where: any = { sellerId: userId };
-    
+    const where: any = {
+      sellerId: userId,
+      // Ẩn đơn hàng chỉ chứa sản phẩm SERVICE (quản lý qua trang Đơn dịch vụ)
+      items: {
+        some: {
+          product: {
+            productType: { not: 'SERVICE' },
+          },
+        },
+      },
+    };
+
     if (status) {
       where.status = status;
     }
@@ -474,6 +631,12 @@ export class SellerService {
                   productType: true,
                 },
               },
+              variant: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
               deliveries: true,
             },
           },
@@ -488,15 +651,18 @@ export class SellerService {
     const ordersWithDeliveryInfo = orders.map(order => {
       const items = order.items.map(item => {
         const isAutoDelivery = item.product.autoDelivery;
+        const isServiceProduct = item.product.productType === 'SERVICE' || item.productType === 'SERVICE';
         const deliveredQuantity = item.deliveries?.length || 0;
-        const needsManualDelivery = !isAutoDelivery && deliveredQuantity < item.quantity;
-        
+        // SERVICE products use service-orders progress system, not manual delivery
+        // So they should never be flagged as needing manual delivery
+        const needsManualDelivery = isServiceProduct ? false : (deliveredQuantity < item.quantity);
+
         return {
           ...item,
-          isAutoDelivery,
+          isAutoDelivery: isServiceProduct ? true : isAutoDelivery,
           deliveredQuantity,
           needsManualDelivery,
-          pendingDeliveryCount: item.quantity - deliveredQuantity,
+          pendingDeliveryCount: isServiceProduct ? 0 : (item.quantity - deliveredQuantity),
         };
       });
 
@@ -547,6 +713,7 @@ export class SellerService {
                 images: true,
                 autoDelivery: true,
                 isDigital: true,
+                productType: true,
               },
             },
             deliveries: true,
@@ -564,15 +731,17 @@ export class SellerService {
     // Map items with delivery info
     const items = order.items.map(item => {
       const isAutoDelivery = item.product.autoDelivery;
+      const isServiceProduct = item.product.productType === 'SERVICE' || item.productType === 'SERVICE';
       const deliveredQuantity = item.deliveries?.length || 0;
-      const needsManualDelivery = !isAutoDelivery && deliveredQuantity < item.quantity;
-      
+      // SERVICE products use service-orders progress system, not manual delivery
+      const needsManualDelivery = isServiceProduct ? false : (deliveredQuantity < item.quantity);
+
       return {
         ...item,
-        isAutoDelivery,
+        isAutoDelivery: isServiceProduct ? true : isAutoDelivery,
         deliveredQuantity,
         needsManualDelivery,
-        pendingDeliveryCount: item.quantity - deliveredQuantity,
+        pendingDeliveryCount: isServiceProduct ? 0 : (item.quantity - deliveredQuantity),
       };
     });
 
@@ -610,7 +779,7 @@ export class SellerService {
 
     // Validate status transition
     const validTransitions: Record<string, string[]> = {
-      PENDING: ['PROCESSING', 'CANCELLED'],
+      PENDING: ['PROCESSING', 'COMPLETED', 'CANCELLED'],
       PROCESSING: ['COMPLETED', 'CANCELLED'],
       COMPLETED: [],
       CANCELLED: [],
@@ -685,35 +854,51 @@ export class SellerService {
         });
       }
 
-      // 3. Restore inventory if auto-delivery items were sold
+      // 3. Restore inventory items that were sold for this order
+      // Áp dụng cho tất cả sản phẩm (cả auto-delivery và manual-delivery có hàng trong kho)
       for (const item of order.items) {
-        if (item.product.autoDelivery) {
-          // Mark inventory items as AVAILABLE again
-          await tx.productInventory.updateMany({
-            where: {
-              orderId: order.id,
-              orderItemId: item.id,
-              status: 'SOLD',
-            },
-            data: {
-              status: 'AVAILABLE',
-              soldAt: null,
-              soldToId: null,
-              orderId: null,
-              orderItemId: null,
-            },
-          });
+        // Always try to restore inventory regardless of autoDelivery flag
+        await tx.productInventory.updateMany({
+          where: {
+            orderId: order.id,
+            orderItemId: item.id,
+            status: 'SOLD',
+          },
+          data: {
+            status: 'AVAILABLE',
+            soldAt: null,
+            soldToId: null,
+            orderId: null,
+            orderItemId: null,
+          },
+        });
 
-          // Update product stock
-          const availableCount = await tx.productInventory.count({
-            where: { productId: item.productId, status: 'AVAILABLE' },
-          });
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stock: availableCount },
-          });
-        }
+        // Update product stock
+        const availableCount = await tx.productInventory.count({
+          where: { productId: item.productId, status: 'AVAILABLE' },
+        });
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stock: availableCount },
+        });
+
+        // Decrement product sales count
+        await tx.product.update({
+          where: { id: item.productId },
+          data: {
+            sales: { decrement: item.quantity },
+          },
+        });
       }
+
+      // Decrement seller's totalSales
+      const totalQuantity = order.items.reduce((sum: number, item: any) => sum + item.quantity, 0);
+      await tx.sellerProfile.updateMany({
+        where: { userId: sellerId },
+        data: {
+          totalSales: { decrement: totalQuantity },
+        },
+      });
 
       // 4. Delete order deliveries
       await tx.orderDelivery.deleteMany({
@@ -943,7 +1128,7 @@ export class SellerService {
         await tx.order.update({
           where: { id: orderId },
           data: {
-            status: 'PROCESSING',
+            status: 'COMPLETED',
             deliveredAt: new Date(),
           },
         });
@@ -958,12 +1143,127 @@ export class SellerService {
     };
   }
 
+  /**
+   * Warranty replacement - Seller thay thế tài khoản lỗi cho buyer
+   * Cho phép seller cập nhật lại accountData đã giao khi tài khoản bị lỗi
+   */
+  async warrantyReplacement(
+    userId: string,
+    orderId: string,
+    deliveryId: string,
+    newAccountData: string,
+    reason?: string,
+  ) {
+    // Verify order belongs to seller
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id: orderId,
+        sellerId: userId,
+      },
+      include: {
+        buyer: { select: { id: true, name: true, email: true } },
+        items: {
+          include: { product: true },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Không tìm thấy đơn hàng');
+    }
+
+    // Find the delivery record
+    const delivery = await this.prisma.orderDelivery.findUnique({
+      where: { id: deliveryId },
+      include: {
+        inventory: true,
+        orderItem: { include: { product: true } },
+      },
+    });
+
+    if (!delivery) {
+      throw new NotFoundException('Không tìm thấy thông tin giao hàng');
+    }
+
+    if (delivery.orderId !== orderId) {
+      throw new BadRequestException('Delivery không thuộc đơn hàng này');
+    }
+
+    // Create hash for new data
+    const crypto = require('crypto');
+    const hash = crypto.createHash('md5').update(newAccountData).digest('hex');
+    const oldAccountData = delivery.accountData;
+
+    // Update in a transaction
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Create new inventory record for the replacement
+      const newInventory = await tx.productInventory.create({
+        data: {
+          productId: delivery.orderItem.productId,
+          variantId: delivery.orderItem.variantId,
+          accountData: newAccountData,
+          hash: `warranty-${orderId}-${deliveryId}-${Date.now()}-${hash}`,
+          status: 'SOLD',
+          soldAt: new Date(),
+          soldToId: order.buyerId,
+          orderId: orderId,
+          orderItemId: delivery.orderItemId,
+        },
+      });
+
+      // 2. Mark old inventory as replaced (DISABLED)
+      if (delivery.inventoryId) {
+        await tx.productInventory.update({
+          where: { id: delivery.inventoryId },
+          data: { status: 'DISABLED' },
+        }).catch(() => {
+          // Old inventory may not exist for manual deliveries
+        });
+      }
+
+      // 3. Update the delivery record with new account data and new inventory
+      const updatedDelivery = await tx.orderDelivery.update({
+        where: { id: deliveryId },
+        data: {
+          accountData: newAccountData,
+          inventoryId: newInventory.id,
+          deliveredAt: new Date(), // Reset delivery time
+          viewedAt: null, // Reset viewed status
+          viewCount: 0,
+        },
+      });
+
+      // 4. Create notification for buyer
+      const productTitle = delivery.orderItem?.product?.title || 'sản phẩm';
+      await tx.notification.create({
+        data: {
+          userId: order.buyerId,
+          type: 'ORDER',
+          title: '🔄 Tài khoản đã được thay thế (Bảo hành)',
+          message: reason
+            ? `Shop đã thay thế tài khoản cho "${productTitle}" trong đơn hàng #${order.orderNumber}. Lý do: ${reason}. Vui lòng kiểm tra lại.`
+            : `Shop đã thay thế tài khoản cho "${productTitle}" trong đơn hàng #${order.orderNumber}. Vui lòng kiểm tra lại.`,
+          link: `/orders/${order.id}`,
+          icon: 'RefreshCw',
+        },
+      });
+
+      return updatedDelivery;
+    });
+
+    return {
+      success: true,
+      message: 'Bảo hành thành công - Đã thay thế tài khoản mới cho buyer',
+      delivery: result,
+    };
+  }
+
   // ==================== COMPLAINT MANAGEMENT ====================
 
   async getComplaints(userId: string, page = 1, limit = 10, status?: string) {
     const skip = (page - 1) * limit;
     const where: any = { sellerId: userId };
-    
+
     if (status) {
       where.status = status;
     }
@@ -1216,7 +1516,7 @@ export class SellerService {
    */
   async calculateWithdrawalFee(userId: string, amount: number): Promise<{ feeRate: number; fee: number; freeWithdrawalsLeft: number }> {
     const startOfWeek = this.getStartOfWeek();
-    
+
     // Count withdrawals this week (including pending ones)
     const withdrawalsThisWeek = await this.prisma.sellerWithdrawal.count({
       where: {
@@ -1225,20 +1525,20 @@ export class SellerService {
         status: { in: ['PENDING', 'COMPLETED'] }, // Count both pending and completed
       },
     });
-    
+
     const FREE_WITHDRAWALS_PER_WEEK = 2;
     const freeWithdrawalsLeft = Math.max(0, FREE_WITHDRAWALS_PER_WEEK - withdrawalsThisWeek);
-    
+
     let feeRate = 0;
-    
+
     if (withdrawalsThisWeek >= FREE_WITHDRAWALS_PER_WEEK) {
       // Calculate fee: 3% for 3rd, 6% for 4th, 9% for 5th, etc.
       const extraWithdrawals = withdrawalsThisWeek - FREE_WITHDRAWALS_PER_WEEK + 1;
       feeRate = extraWithdrawals * 0.03; // 3% increase per withdrawal
     }
-    
+
     const fee = Math.round(amount * feeRate);
-    
+
     return { feeRate, fee, freeWithdrawalsLeft };
   }
 
@@ -1256,6 +1556,7 @@ export class SellerService {
           bankHolder: true,
           bankBranch: true,
           bankInfoAddedAt: true,
+          withdrawalPin: true,
         },
       }),
     ]);
@@ -1273,6 +1574,22 @@ export class SellerService {
       throw new BadRequestException(
         'Bạn cần thêm thông tin ngân hàng trước khi rút tiền. Vui lòng vào phần Cài đặt ngân hàng.',
       );
+    }
+
+    // Verify withdrawal PIN
+    if (!sellerProfile.withdrawalPin) {
+      throw new BadRequestException(
+        'Bạn cần tạo mã PIN rút tiền trước. Vui lòng vào phần Cài đặt cửa hàng để tạo mã PIN.',
+      );
+    }
+
+    if (!dto.pin || dto.pin.length !== 6) {
+      throw new BadRequestException('Mã PIN phải gồm 6 chữ số');
+    }
+
+    const pinHash = createHash('sha256').update(dto.pin).digest('hex');
+    if (pinHash !== sellerProfile.withdrawalPin) {
+      throw new BadRequestException('Mã PIN rút tiền không chính xác');
     }
 
     if (user.balance < dto.amount) {
@@ -1335,7 +1652,7 @@ export class SellerService {
   async getWithdrawals(userId: string, page = 1, limit = 10, status?: string) {
     const skip = (page - 1) * limit;
     const where: any = { sellerId: userId };
-    
+
     if (status) {
       where.status = status;
     }
@@ -1450,7 +1767,7 @@ export class SellerService {
         // Products
         this.prisma.product.count({ where: { sellerId: userId } }),
         this.prisma.product.count({ where: { sellerId: userId, status: 'ACTIVE' } }),
-        
+
         // Orders
         this.prisma.order.count({ where: { sellerId: userId } }),
         this.prisma.order.count({ where: { sellerId: userId, status: 'PENDING' } }),
@@ -1468,7 +1785,7 @@ export class SellerService {
             createdAt: { gte: startOfLastMonth, lte: endOfLastMonth },
           },
         }),
-        
+
         // Revenue
         this.prisma.order.aggregate({
           where: {
@@ -1558,6 +1875,59 @@ export class SellerService {
       },
     });
 
+    // === Extra stats: today, total, 7-day chart ===
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    let todayRevenue = 0;
+    let todayOrders = 0;
+    let todayNewOrders = 0;
+    let totalAllTimeRevenue = 0;
+    let revenueChartData: { date: string; revenue: number; orders: number }[] = [];
+
+    try {
+      const [todayRevAgg, todayOrdCount, todayNewCount, allTimeRevAgg] = await Promise.all([
+        this.prisma.order.aggregate({
+          where: { sellerId: userId, status: 'COMPLETED', createdAt: { gte: todayStart } },
+          _sum: { subtotal: true },
+        }),
+        this.prisma.order.count({
+          where: { sellerId: userId, status: 'COMPLETED', createdAt: { gte: todayStart } },
+        }),
+        this.prisma.order.count({
+          where: { sellerId: userId, createdAt: { gte: todayStart } },
+        }),
+        this.prisma.order.aggregate({
+          where: { sellerId: userId, status: 'COMPLETED' },
+          _sum: { subtotal: true },
+        }),
+      ]);
+      todayRevenue = todayRevAgg._sum.subtotal || 0;
+      todayOrders = todayOrdCount;
+      todayNewOrders = todayNewCount;
+      totalAllTimeRevenue = allTimeRevAgg._sum.subtotal || 0;
+    } catch (e) { /* ignore */ }
+
+    // 7-day chart
+    try {
+      const weekOrders = await this.prisma.order.findMany({
+        where: { sellerId: userId, status: 'COMPLETED', createdAt: { gte: sevenDaysAgo } },
+        select: { subtotal: true, createdAt: true },
+      });
+      const dayMap: Record<string, { revenue: number; orders: number }> = {};
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        dayMap[d.toISOString().split('T')[0]] = { revenue: 0, orders: 0 };
+      }
+      weekOrders.forEach(o => {
+        const ds = o.createdAt.toISOString().split('T')[0];
+        if (dayMap[ds]) { dayMap[ds].revenue += o.subtotal; dayMap[ds].orders += 1; }
+      });
+      revenueChartData = Object.entries(dayMap).map(([date, d]) => ({ date, ...d }));
+    } catch (e) { /* ignore */ }
+
     return {
       store: {
         id: store.id,
@@ -1566,6 +1936,7 @@ export class SellerService {
         totalSales: store.totalSales,
         isVerified: store.isVerified,
         balance: store.user.balance,
+        walletBalance: store.user.balance,
       },
       stats: {
         products: {
@@ -1579,9 +1950,16 @@ export class SellerService {
           growth: Math.round(ordersGrowth * 100) / 100,
         },
         revenue: {
+          today: todayRevenue,
           thisMonth: revenueThisMonthValue,
           lastMonth: revenueLastMonthValue,
+          total: totalAllTimeRevenue,
           growth: Math.round(revenueGrowth * 100) / 100,
+        },
+        today: {
+          revenue: todayRevenue,
+          completedOrders: todayOrders,
+          newOrders: todayNewOrders,
         },
         complaints: {
           open: openComplaints,
@@ -1590,6 +1968,7 @@ export class SellerService {
           pending: pendingWithdrawals._sum.amount || 0,
         },
       },
+      revenueChart: revenueChartData,
       recentOrders,
       topProducts,
     };
@@ -1727,6 +2106,36 @@ export class SellerService {
   }
 
   /**
+   * Download all inventory data as text (for seller to review/export)
+   */
+  async downloadInventory(
+    userId: string,
+    productId: string,
+    params?: { status?: string; variantId?: string },
+  ): Promise<string> {
+    // Verify product belongs to seller
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, sellerId: userId },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Sản phẩm không tồn tại hoặc không thuộc về bạn');
+    }
+
+    const where: any = { productId };
+    if (params?.status) where.status = params.status;
+    if (params?.variantId) where.variantId = params.variantId;
+
+    const items = await this.prisma.productInventory.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      select: { accountData: true },
+    });
+
+    return items.map(item => item.accountData).join('\n');
+  }
+
+  /**
    * Upload multiple accounts from text (bulk upload)
    */
   async uploadInventory(
@@ -1735,6 +2144,9 @@ export class SellerService {
     accountData: string,
     variantId?: string,
   ) {
+    // Check seller profile completion
+    await this.checkSellerProfileCompletion(userId);
+
     // Verify product belongs to seller
     const product = await this.prisma.product.findFirst({
       where: { id: productId, sellerId: userId },
@@ -1784,8 +2196,8 @@ export class SellerService {
       try {
         // Check if already exists in this product (same product + variant combination)
         const existingInProduct = await this.prisma.productInventory.findFirst({
-          where: { 
-            productId, 
+          where: {
+            productId,
             hash,
             ...(variantId ? { variantId } : {}),
           },
@@ -1916,6 +2328,241 @@ export class SellerService {
   }
 
   /**
+   * Upload inventory files (ZIP containing account files)
+   * Each file inside the ZIP = 1 inventory item
+   * Files are stored individually and referenced via FILE: prefix in accountData
+   */
+  async uploadInventoryFiles(
+    userId: string,
+    productId: string,
+    zipPath: string,
+    originalZipName: string,
+    variantId?: string,
+  ) {
+    const AdmZip = require('adm-zip');
+    const crypto = require('crypto');
+    const fs = require('fs');
+    const path = require('path');
+
+    // Check seller profile completion
+    await this.checkSellerProfileCompletion(userId);
+
+    // Verify product belongs to seller
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, sellerId: userId },
+      include: { variants: true },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Sản phẩm không tồn tại hoặc không thuộc về bạn');
+    }
+
+    // If product has variants, variantId is required
+    if (product.hasVariants && product.variants.length > 0 && !variantId) {
+      throw new BadRequestException('Sản phẩm có phân loại, vui lòng chọn phân loại để thêm kho hàng');
+    }
+
+    // Verify variant belongs to product if provided
+    if (variantId) {
+      const variant = product.variants.find(v => v.id === variantId);
+      if (!variant) {
+        throw new BadRequestException('Phân loại không hợp lệ');
+      }
+    }
+
+    // Create product-specific inventory directory
+    const inventoryDir = path.join(process.cwd(), 'uploads', 'inventory', productId);
+    if (!fs.existsSync(inventoryDir)) {
+      fs.mkdirSync(inventoryDir, { recursive: true });
+    }
+
+    // Extract ZIP file
+    let zip: any;
+    try {
+      zip = new AdmZip(zipPath);
+    } catch (error: any) {
+      // Clean up uploaded ZIP
+      try { fs.unlinkSync(zipPath); } catch { }
+      throw new BadRequestException('File ZIP không hợp lệ hoặc bị hỏng');
+    }
+
+    const entries = zip.getEntries();
+
+    // Filter out directories and system files (like __MACOSX, .DS_Store)
+    const fileEntries = entries.filter((entry: any) => {
+      if (entry.isDirectory) return false;
+      const name = entry.entryName;
+      if (name.startsWith('__MACOSX/')) return false;
+      if (name.startsWith('.')) return false;
+      if (name.includes('/.')) return false;
+      if (name === 'Thumbs.db') return false;
+      return true;
+    });
+
+    if (fileEntries.length === 0) {
+      // Clean up uploaded ZIP
+      try { fs.unlinkSync(zipPath); } catch { }
+      throw new BadRequestException('File ZIP trống hoặc không chứa file hợp lệ');
+    }
+
+    const results = {
+      success: 0,
+      duplicates: 0,
+      blacklisted: 0,
+      errors: 0,
+      totalFiles: fileEntries.length,
+      details: [] as { fileName: string; status: string; message: string }[],
+    };
+
+    // Process each file in ZIP
+    for (const entry of fileEntries) {
+      const fileName = path.basename(entry.entryName);
+
+      try {
+        // Get file content as buffer
+        const fileBuffer = entry.getData();
+
+        // Generate hash from file content
+        const hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+
+        // Check if already exists in this product
+        const existingInProduct = await this.prisma.productInventory.findFirst({
+          where: {
+            productId,
+            hash,
+            ...(variantId ? { variantId } : {}),
+          },
+        });
+
+        if (existingInProduct) {
+          results.duplicates++;
+          results.details.push({
+            fileName,
+            status: 'duplicate',
+            message: 'File đã tồn tại trong sản phẩm này',
+          });
+          continue;
+        }
+
+        // Check if in global blacklist
+        const blacklisted = await this.prisma.accountBlacklist.findUnique({
+          where: { hash },
+        });
+
+        if (blacklisted) {
+          results.blacklisted++;
+          results.details.push({
+            fileName,
+            status: 'blacklisted',
+            message: `File trong blacklist: ${blacklisted.reason}`,
+          });
+          continue;
+        }
+
+        // Check if sold in another product
+        const soldElsewhere = await this.prisma.productInventory.findFirst({
+          where: { hash, status: 'SOLD' },
+        });
+
+        if (soldElsewhere) {
+          results.duplicates++;
+          results.details.push({
+            fileName,
+            status: 'duplicate_sold',
+            message: 'File này đã được bán trước đó',
+          });
+          continue;
+        }
+
+        // Save file individually to disk
+        const storedFileName = `${hash}${path.extname(fileName) || '.bin'}`;
+        const storedFilePath = path.join(inventoryDir, storedFileName);
+
+        // Write file to disk
+        fs.writeFileSync(storedFilePath, fileBuffer);
+
+        // Store relative path with FILE: prefix in accountData
+        const relativePath = `uploads/inventory/${productId}/${storedFileName}`;
+
+        // Create inventory item
+        await this.prisma.productInventory.create({
+          data: {
+            productId,
+            variantId: variantId || null,
+            accountData: `FILE:${relativePath}`,
+            hash,
+            status: 'AVAILABLE',
+          },
+        });
+
+        results.success++;
+        results.details.push({
+          fileName,
+          status: 'success',
+          message: 'Thêm thành công',
+        });
+      } catch (error: any) {
+        if (error.code === 'P2002' || error.message?.includes('Unique constraint')) {
+          results.duplicates++;
+          results.details.push({
+            fileName,
+            status: 'duplicate',
+            message: 'File đã tồn tại trong kho',
+          });
+        } else {
+          results.errors++;
+          results.details.push({
+            fileName,
+            status: 'error',
+            message: `Lỗi: ${error.message || 'Không xác định'}`,
+          });
+        }
+      }
+    }
+
+    // Clean up the original uploaded ZIP file
+    try { fs.unlinkSync(zipPath); } catch { }
+
+    // Update stock
+    if (variantId) {
+      const variantAvailableCount = await this.prisma.productInventory.count({
+        where: { productId, variantId, status: 'AVAILABLE' },
+      });
+      await this.prisma.productVariant.update({
+        where: { id: variantId },
+        data: { stock: variantAvailableCount },
+      });
+
+      const totalAvailableCount = await this.prisma.productInventory.count({
+        where: { productId, status: 'AVAILABLE' },
+      });
+      await this.prisma.product.update({
+        where: { id: productId },
+        data: { stock: totalAvailableCount },
+      });
+
+      return {
+        ...results,
+        newStock: variantAvailableCount,
+        totalProductStock: totalAvailableCount,
+      };
+    } else {
+      const availableCount = await this.prisma.productInventory.count({
+        where: { productId, status: 'AVAILABLE' },
+      });
+      await this.prisma.product.update({
+        where: { id: productId },
+        data: { stock: availableCount },
+      });
+
+      return {
+        ...results,
+        newStock: availableCount,
+      };
+    }
+  }
+
+  /**
    * Add single account to inventory
    */
   async addSingleInventory(
@@ -1925,7 +2572,7 @@ export class SellerService {
     variantId?: string,
   ) {
     const result = await this.uploadInventory(userId, productId, accountData, variantId);
-    
+
     if (result.success === 0) {
       const detail = result.details[0];
       throw new BadRequestException(detail?.message || 'Không thể thêm tài khoản');
@@ -1961,12 +2608,12 @@ export class SellerService {
     }
 
     const updateData: any = {};
-    
+
     if (data.accountData) {
       updateData.accountData = data.accountData;
       updateData.hash = this.generateAccountHash(data.accountData);
     }
-    
+
     if (data.status && ['AVAILABLE', 'DISABLED'].includes(data.status)) {
       updateData.status = data.status;
     }
@@ -2024,6 +2671,18 @@ export class SellerService {
       data: { stock: availableCount },
     });
 
+    // Update variant stock if applicable
+    if (inventory.variantId) {
+      const variantAvailableCount = await this.prisma.productInventory.count({
+        where: { productId: inventory.productId, variantId: inventory.variantId, status: 'AVAILABLE' },
+      });
+
+      await this.prisma.productVariant.update({
+        where: { id: inventory.variantId },
+        data: { stock: variantAvailableCount },
+      });
+    }
+
     return { message: 'Xóa thành công', newStock: availableCount };
   }
 
@@ -2062,6 +2721,89 @@ export class SellerService {
       where: { id: productId },
       data: { stock: availableCount },
     });
+
+    // Update all variants stock
+    const variants = await this.prisma.productVariant.findMany({
+      where: { productId },
+    });
+
+    // Use Promise.all for parallel updates
+    await Promise.all(variants.map(async (variant) => {
+      const variantStock = await this.prisma.productInventory.count({
+        where: { productId, variantId: variant.id, status: 'AVAILABLE' },
+      });
+      return this.prisma.productVariant.update({
+        where: { id: variant.id },
+        data: { stock: variantStock },
+      });
+    }));
+
+    return {
+      deleted: result.count,
+      newStock: availableCount,
+    };
+  }
+
+  /**
+   * Delete ALL inventory items by status filter (no IDs needed)
+   * Only allows deleting AVAILABLE or DISABLED items
+   */
+  async deleteAllInventoryByStatus(
+    userId: string,
+    productId: string,
+    status: string,
+    variantId?: string,
+  ) {
+    // Verify product belongs to seller
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, sellerId: userId },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Sản phẩm không tồn tại hoặc không thuộc về bạn');
+    }
+
+    // Only allow deleting AVAILABLE or DISABLED items
+    const allowedStatuses = ['AVAILABLE', 'DISABLED'];
+    if (!allowedStatuses.includes(status)) {
+      throw new BadRequestException('Chỉ có thể xóa tài khoản có trạng thái Sẵn sàng hoặc Vô hiệu');
+    }
+
+    const where: any = {
+      productId,
+      status,
+    };
+    if (variantId) {
+      where.variantId = variantId;
+    }
+
+    // Delete all matching items
+    const result = await this.prisma.productInventory.deleteMany({ where });
+
+    // Update product stock
+    const availableCount = await this.prisma.productInventory.count({
+      where: { productId, status: 'AVAILABLE' },
+    });
+
+    await this.prisma.product.update({
+      where: { id: productId },
+      data: { stock: availableCount },
+    });
+
+    // Update all variants stock
+    const variants = await this.prisma.productVariant.findMany({
+      where: { productId },
+    });
+
+    await Promise.all(variants.map(async (variant) => {
+      const variantStock = await this.prisma.productInventory.count({
+        where: { productId, variantId: variant.id, status: 'AVAILABLE' },
+      });
+      return this.prisma.productVariant.update({
+        where: { id: variant.id },
+        data: { stock: variantStock },
+      });
+    }));
 
     return {
       deleted: result.count,
@@ -2134,7 +2876,7 @@ export class SellerService {
 
     // Generate API key: bhmmo_ + 32 random chars
     const apiKey = 'bhmmo_' + randomBytes(24).toString('base64url');
-    
+
     // Generate secret: random hex string (this IS the secret used for HMAC)
     // We store this directly - client will use this same value to compute signatures
     const secretKey = randomBytes(32).toString('hex');
@@ -2234,6 +2976,552 @@ export class SellerService {
       apiKey: apiKey.apiKey,
       secret: secretKey, // ⚠️ Secret is shown only once!
       message: 'Đã tạo secret mới. Lưu ý: Secret chỉ hiển thị một lần duy nhất!',
+    };
+  }
+
+  // ==================== WITHDRAWAL PIN MANAGEMENT ====================
+
+  async setWithdrawalPin(userId: string, dto: SetWithdrawalPinDto) {
+    if (!dto.pin || dto.pin.length !== 6 || !/^\d{6}$/.test(dto.pin)) {
+      throw new BadRequestException('Mã PIN phải gồm 6 chữ số');
+    }
+
+    const store = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+      select: { withdrawalPin: true },
+    });
+
+    if (!store) {
+      throw new NotFoundException('Không tìm thấy cửa hàng');
+    }
+
+    if (store.withdrawalPin) {
+      throw new BadRequestException('Bạn đã có mã PIN. Vui lòng sử dụng chức năng đổi mã PIN.');
+    }
+
+    const pinHash = createHash('sha256').update(dto.pin).digest('hex');
+
+    await this.prisma.sellerProfile.update({
+      where: { userId },
+      data: { withdrawalPin: pinHash },
+    });
+
+    return { success: true, message: 'Đã tạo mã PIN rút tiền thành công' };
+  }
+
+  async changeWithdrawalPin(userId: string, dto: ChangeWithdrawalPinDto) {
+    if (!dto.newPin || dto.newPin.length !== 6 || !/^\d{6}$/.test(dto.newPin)) {
+      throw new BadRequestException('Mã PIN mới phải gồm 6 chữ số');
+    }
+
+    const store = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+      select: { withdrawalPin: true },
+    });
+
+    if (!store) {
+      throw new NotFoundException('Không tìm thấy cửa hàng');
+    }
+
+    if (!store.withdrawalPin) {
+      throw new BadRequestException('Bạn chưa có mã PIN. Vui lòng tạo mã PIN trước.');
+    }
+
+    const oldPinHash = createHash('sha256').update(dto.oldPin).digest('hex');
+    if (oldPinHash !== store.withdrawalPin) {
+      throw new BadRequestException('Mã PIN cũ không chính xác');
+    }
+
+    const newPinHash = createHash('sha256').update(dto.newPin).digest('hex');
+
+    await this.prisma.sellerProfile.update({
+      where: { userId },
+      data: { withdrawalPin: newPinHash },
+    });
+
+    return { success: true, message: 'Đã thay đổi mã PIN thành công' };
+  }
+
+  async hasWithdrawalPin(userId: string) {
+    const store = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+      select: { withdrawalPin: true },
+    });
+
+    return { hasPin: !!store?.withdrawalPin };
+  }
+
+  // ==================== INSURANCE FUND MANAGEMENT ====================
+
+  // Tier configuration
+  private readonly INSURANCE_TIERS: Record<string, {
+    level: number;
+    deposit: number;
+    maxCoverage: number;
+    annualFee: number;
+    label: string;
+  }> = {
+      BRONZE: { level: 1, deposit: 500000, maxCoverage: 200000, annualFee: 100000, label: 'Đồng' },
+      SILVER: { level: 2, deposit: 2000000, maxCoverage: 1000000, annualFee: 200000, label: 'Bạc' },
+      GOLD: { level: 3, deposit: 5000000, maxCoverage: 3000000, annualFee: 300000, label: 'Vàng' },
+      DIAMOND: { level: 4, deposit: 10000000, maxCoverage: 5000000, annualFee: 500000, label: 'Kim Cương' },
+      VIP: { level: 5, deposit: 20000000, maxCoverage: 10000000, annualFee: 1000000, label: 'VIP' },
+    };
+
+  private readonly INFO_UPDATE_FEE = 50000; // 50,000đ per info update
+
+  /**
+   * Get seller's insurance status
+   */
+  async getInsuranceStatus(userId: string) {
+    const profile = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+      select: {
+        insuranceTier: true,
+        insuranceLevel: true,
+        isVerified: true,
+        insuranceFund: true,
+      },
+    });
+
+    if (!profile) {
+      throw new NotFoundException('Không tìm thấy cửa hàng');
+    }
+
+    const fund = profile.insuranceFund;
+
+    return {
+      hasInsurance: !!fund && fund.status === 'ACTIVE',
+      tier: fund?.tier || null,
+      level: profile.insuranceLevel || 0,
+      tierLabel: fund?.tier ? this.INSURANCE_TIERS[fund.tier]?.label : null,
+      fund: fund ? {
+        id: fund.id,
+        depositAmount: fund.depositAmount,
+        currentBalance: fund.currentBalance,
+        maxCoverage: fund.maxCoverage,
+        annualFee: fund.annualFee,
+        status: fund.status,
+        activatedAt: fund.activatedAt,
+        nextRenewalAt: fund.nextRenewalAt,
+        canWithdrawFull: fund.canWithdrawFull,
+      } : null,
+      availableTiers: Object.entries(this.INSURANCE_TIERS).map(([key, config]) => ({
+        tier: key,
+        ...config,
+      })),
+    };
+  }
+
+  /**
+   * Register / activate insurance fund
+   * Deducts deposit from seller's wallet balance
+   */
+  async registerInsurance(userId: string, tier: string) {
+    const tierConfig = this.INSURANCE_TIERS[tier];
+    if (!tierConfig) {
+      throw new BadRequestException('Gói bảo hiểm không hợp lệ');
+    }
+
+    // Check seller profile exists
+    const profile = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+      include: { insuranceFund: true },
+    });
+
+    if (!profile) {
+      throw new NotFoundException('Không tìm thấy cửa hàng');
+    }
+
+    // Check if already has active insurance
+    if (profile.insuranceFund && profile.insuranceFund.status === 'ACTIVE') {
+      throw new BadRequestException('Bạn đã có gói bảo hiểm đang hoạt động. Hãy nâng cấp thay vì đăng ký mới.');
+    }
+
+    // Check wallet balance
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { balance: true },
+    });
+
+    if (!user || user.balance < tierConfig.deposit) {
+      throw new BadRequestException(
+        `Số dư không đủ. Cần ${tierConfig.deposit.toLocaleString('vi-VN')}đ, hiện có ${(user?.balance || 0).toLocaleString('vi-VN')}đ`
+      );
+    }
+
+    const nextRenewal = new Date();
+    nextRenewal.setFullYear(nextRenewal.getFullYear() + 1);
+
+    // Transaction: deduct balance + create fund + update profile
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Deduct from wallet
+      await tx.user.update({
+        where: { id: userId },
+        data: { balance: { decrement: tierConfig.deposit } },
+      });
+
+      // Create transaction record
+      await tx.transaction.create({
+        data: {
+          userId,
+          type: 'WITHDRAW',
+          amount: tierConfig.deposit,
+          status: 'COMPLETED',
+          description: `Đóng quỹ bảo hiểm gói ${tierConfig.label}`,
+        },
+      });
+
+      // Create or update insurance fund
+      let fund;
+      if (profile.insuranceFund) {
+        // Reactivate existing fund
+        fund = await tx.insuranceFund.update({
+          where: { id: profile.insuranceFund.id },
+          data: {
+            tier,
+            level: tierConfig.level,
+            depositAmount: tierConfig.deposit,
+            currentBalance: tierConfig.deposit,
+            maxCoverage: tierConfig.maxCoverage,
+            annualFee: tierConfig.annualFee,
+            status: 'ACTIVE',
+            activatedAt: new Date(),
+            nextRenewalAt: nextRenewal,
+            withdrawnAt: null,
+            revokedAt: null,
+            canWithdrawFull: false,
+          },
+        });
+      } else {
+        // Create new fund
+        fund = await tx.insuranceFund.create({
+          data: {
+            sellerId: userId,
+            tier,
+            level: tierConfig.level,
+            depositAmount: tierConfig.deposit,
+            currentBalance: tierConfig.deposit,
+            maxCoverage: tierConfig.maxCoverage,
+            annualFee: tierConfig.annualFee,
+            status: 'ACTIVE',
+            nextRenewalAt: nextRenewal,
+          },
+        });
+      }
+
+      // Create history record
+      await tx.insuranceFundHistory.create({
+        data: {
+          fundId: fund.id,
+          type: 'DEPOSIT',
+          amount: tierConfig.deposit,
+          balanceBefore: 0,
+          balanceAfter: tierConfig.deposit,
+          description: `Đăng ký gói bảo hiểm ${tierConfig.label} — Cọc ${tierConfig.deposit.toLocaleString('vi-VN')}đ`,
+        },
+      });
+
+      // Update seller profile
+      await tx.sellerProfile.update({
+        where: { userId },
+        data: {
+          insuranceTier: tier,
+          insuranceLevel: tierConfig.level,
+          isVerified: true,
+        },
+      });
+
+      return fund;
+    });
+
+    return {
+      success: true,
+      message: `Đã đăng ký gói bảo hiểm ${tierConfig.label} thành công`,
+      fund: result,
+    };
+  }
+
+  /**
+   * Upgrade insurance tier (pay difference)
+   */
+  async upgradeInsurance(userId: string, newTier: string) {
+    const newTierConfig = this.INSURANCE_TIERS[newTier];
+    if (!newTierConfig) {
+      throw new BadRequestException('Gói bảo hiểm không hợp lệ');
+    }
+
+    const profile = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+      include: { insuranceFund: true },
+    });
+
+    if (!profile || !profile.insuranceFund || profile.insuranceFund.status !== 'ACTIVE') {
+      throw new BadRequestException('Bạn chưa có gói bảo hiểm đang hoạt động');
+    }
+
+    const currentFund = profile.insuranceFund;
+    const currentTierConfig = this.INSURANCE_TIERS[currentFund.tier];
+
+    if (!currentTierConfig || newTierConfig.level <= currentTierConfig.level) {
+      throw new BadRequestException('Chỉ có thể nâng cấp lên gói cao hơn');
+    }
+
+    // Calculate difference to pay
+    const difference = newTierConfig.deposit - currentFund.currentBalance;
+
+    if (difference > 0) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { balance: true },
+      });
+
+      if (!user || user.balance < difference) {
+        throw new BadRequestException(
+          `Số dư không đủ. Cần thêm ${difference.toLocaleString('vi-VN')}đ, hiện có ${(user?.balance || 0).toLocaleString('vi-VN')}đ`
+        );
+      }
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Deduct difference from wallet
+      if (difference > 0) {
+        await tx.user.update({
+          where: { id: userId },
+          data: { balance: { decrement: difference } },
+        });
+
+        await tx.transaction.create({
+          data: {
+            userId,
+            type: 'WITHDRAW',
+            amount: difference,
+            status: 'COMPLETED',
+            description: `Nâng cấp BH từ ${currentTierConfig.label} → ${newTierConfig.label}`,
+          },
+        });
+      }
+
+      const oldBalance = currentFund.currentBalance;
+      const newBalance = newTierConfig.deposit;
+
+      // Update fund
+      const fund = await tx.insuranceFund.update({
+        where: { id: currentFund.id },
+        data: {
+          tier: newTier,
+          level: newTierConfig.level,
+          depositAmount: newTierConfig.deposit,
+          currentBalance: newBalance,
+          maxCoverage: newTierConfig.maxCoverage,
+          annualFee: newTierConfig.annualFee,
+        },
+      });
+
+      // History
+      await tx.insuranceFundHistory.create({
+        data: {
+          fundId: fund.id,
+          type: 'UPGRADE',
+          amount: difference,
+          balanceBefore: oldBalance,
+          balanceAfter: newBalance,
+          description: `Nâng cấp từ ${currentTierConfig.label} → ${newTierConfig.label}`,
+        },
+      });
+
+      // Update profile
+      await tx.sellerProfile.update({
+        where: { userId },
+        data: {
+          insuranceTier: newTier,
+          insuranceLevel: newTierConfig.level,
+        },
+      });
+
+      return fund;
+    });
+
+    return {
+      success: true,
+      message: `Đã nâng cấp lên gói ${newTierConfig.label}`,
+      fund: result,
+    };
+  }
+
+  /**
+   * Withdraw insurance fund
+   * Before 5 months: refund 50%
+   * After 5 months: refund 100%
+   */
+  async withdrawInsurance(userId: string) {
+    const profile = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+      include: { insuranceFund: true },
+    });
+
+    if (!profile || !profile.insuranceFund || profile.insuranceFund.status !== 'ACTIVE') {
+      throw new BadRequestException('Bạn không có gói bảo hiểm đang hoạt động');
+    }
+
+    const fund = profile.insuranceFund;
+    const monthsSinceActivation = Math.floor(
+      (Date.now() - new Date(fund.activatedAt).getTime()) / (1000 * 60 * 60 * 24 * 30)
+    );
+
+    const isEarlyWithdrawal = monthsSinceActivation < 5;
+    const refundRate = isEarlyWithdrawal ? 0.5 : 1.0;
+    const refundAmount = Math.floor(fund.currentBalance * refundRate);
+    const penaltyAmount = fund.currentBalance - refundAmount;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Refund to wallet
+      await tx.user.update({
+        where: { id: userId },
+        data: { balance: { increment: refundAmount } },
+      });
+
+      // Transaction record
+      await tx.transaction.create({
+        data: {
+          userId,
+          type: 'REFUND',
+          amount: refundAmount,
+          status: 'COMPLETED',
+          description: isEarlyWithdrawal
+            ? `Rút BH sớm (${monthsSinceActivation} tháng) — Hoàn 50%: ${refundAmount.toLocaleString('vi-VN')}đ`
+            : `Rút BH — Hoàn 100%: ${refundAmount.toLocaleString('vi-VN')}đ`,
+        },
+      });
+
+      // Update fund status
+      const updatedFund = await tx.insuranceFund.update({
+        where: { id: fund.id },
+        data: {
+          status: 'WITHDRAWN',
+          currentBalance: 0,
+          withdrawnAt: new Date(),
+        },
+      });
+
+      // History
+      await tx.insuranceFundHistory.create({
+        data: {
+          fundId: fund.id,
+          type: 'WITHDRAW',
+          amount: -fund.currentBalance,
+          balanceBefore: fund.currentBalance,
+          balanceAfter: 0,
+          description: isEarlyWithdrawal
+            ? `Rút BH sớm (${monthsSinceActivation}/5 tháng) — Hoàn ${refundAmount.toLocaleString('vi-VN')}đ, mất ${penaltyAmount.toLocaleString('vi-VN')}đ`
+            : `Rút BH đủ hạn — Hoàn ${refundAmount.toLocaleString('vi-VN')}đ`,
+          metadata: JSON.stringify({ monthsSinceActivation, refundRate, penaltyAmount }),
+        },
+      });
+
+      // Remove verification
+      await tx.sellerProfile.update({
+        where: { userId },
+        data: {
+          insuranceTier: null,
+          insuranceLevel: 0,
+          isVerified: false,
+        },
+      });
+
+      return updatedFund;
+    });
+
+    return {
+      success: true,
+      message: isEarlyWithdrawal
+        ? `Đã rút BH sớm. Hoàn ${refundAmount.toLocaleString('vi-VN')}đ (50%). Mất ${penaltyAmount.toLocaleString('vi-VN')}đ phí rút sớm.`
+        : `Đã rút BH. Hoàn ${refundAmount.toLocaleString('vi-VN')}đ (100%).`,
+      refundAmount,
+      penaltyAmount,
+      isEarlyWithdrawal,
+      monthsSinceActivation,
+    };
+  }
+
+  /**
+   * Get insurance history
+   */
+  async getInsuranceHistory(userId: string, limit: number, offset: number) {
+    const profile = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+      include: { insuranceFund: true },
+    });
+
+    if (!profile?.insuranceFund) {
+      return { history: [], total: 0 };
+    }
+
+    const [history, total] = await Promise.all([
+      this.prisma.insuranceFundHistory.findMany({
+        where: { fundId: profile.insuranceFund.id },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.insuranceFundHistory.count({
+        where: { fundId: profile.insuranceFund.id },
+      }),
+    ]);
+
+    return { history, total };
+  }
+
+  /**
+   * Update insurance info (costs 50,000đ per change)
+   */
+  async updateInsuranceInfo(userId: string) {
+    const profile = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+      include: { insuranceFund: true },
+    });
+
+    if (!profile?.insuranceFund || profile.insuranceFund.status !== 'ACTIVE') {
+      throw new BadRequestException('Bạn chưa có gói bảo hiểm đang hoạt động');
+    }
+
+    const fund = profile.insuranceFund;
+
+    if (fund.currentBalance < this.INFO_UPDATE_FEE) {
+      throw new BadRequestException(
+        `Quỹ BH không đủ phí cập nhật thông tin (${this.INFO_UPDATE_FEE.toLocaleString('vi-VN')}đ)`
+      );
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const oldBalance = fund.currentBalance;
+      const newBalance = oldBalance - this.INFO_UPDATE_FEE;
+
+      // Deduct from insurance fund
+      const updatedFund = await tx.insuranceFund.update({
+        where: { id: fund.id },
+        data: { currentBalance: newBalance },
+      });
+
+      // History
+      await tx.insuranceFundHistory.create({
+        data: {
+          fundId: fund.id,
+          type: 'INFO_CHANGE',
+          amount: -this.INFO_UPDATE_FEE,
+          balanceBefore: oldBalance,
+          balanceAfter: newBalance,
+          description: `Phí cập nhật thông tin hồ sơ BH: ${this.INFO_UPDATE_FEE.toLocaleString('vi-VN')}đ`,
+        },
+      });
+
+      return updatedFund;
+    });
+
+    return {
+      success: true,
+      message: `Đã trừ ${this.INFO_UPDATE_FEE.toLocaleString('vi-VN')}đ phí cập nhật thông tin`,
+      newBalance: result.currentBalance,
     };
   }
 }

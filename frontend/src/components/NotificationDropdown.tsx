@@ -2,23 +2,27 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
-import { 
-  Bell, 
-  Check, 
-  CheckCheck, 
-  Trash2, 
-  PartyPopper, 
-  Package, 
-  MessageSquare, 
+import {
+  Bell,
+  Check,
+  CheckCheck,
+  Trash2,
+  PartyPopper,
+  Package,
+  MessageSquare,
   MessageCircle,
-  Megaphone, 
+  Megaphone,
   Gavel,
   AlertCircle,
   Gift,
   Loader2,
   Wallet,
-  ShoppingBag
+  ShoppingBag,
+  XCircle,
+  RefreshCw,
+  DollarSign
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -45,6 +49,9 @@ const iconMap: Record<string, any> = {
   AlertCircle: AlertCircle,
   Wallet: Wallet,
   ShoppingBag: ShoppingBag,
+  XCircle: XCircle,
+  RefreshCw: RefreshCw,
+  DollarSign: DollarSign,
 };
 
 const typeColors: Record<string, string> = {
@@ -59,7 +66,25 @@ const typeColors: Record<string, string> = {
   MESSAGE: 'bg-indigo-100 text-indigo-600',
 };
 
+// Map notification links that point to non-existent routes to valid ones
+const fixNotificationLink = (link?: string): string | undefined => {
+  if (!link || typeof link !== 'string' || link.trim() === '') return undefined;
+
+  // Fix complaint links - /complaints/:id doesn't exist, redirect to orders
+  if (link.startsWith('/complaints/')) {
+    return '/orders';
+  }
+
+  // Fix seller order links - /seller/orders/:id doesn't have dynamic route
+  if (/^\/seller\/orders\/[a-zA-Z0-9-]+$/.test(link)) {
+    return '/seller/orders';
+  }
+
+  return link;
+};
+
 export function NotificationDropdown() {
+  const router = useRouter();
   const { token, isInitialized } = useAuthStore();
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -188,7 +213,7 @@ export function NotificationDropdown() {
   };
 
   const getIcon = (iconName?: string, type?: string) => {
-    const Icon = iconName ? iconMap[iconName] : iconMap[type || 'Bell'] || Bell;
+    const Icon = (iconName ? iconMap[iconName] : iconMap[type || 'Bell']) || Bell;
     return Icon;
   };
 
@@ -238,9 +263,8 @@ export function NotificationDropdown() {
                 return (
                   <div
                     key={notification.id}
-                    className={`relative px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${
-                      !notification.isRead ? 'bg-blue-50/50' : ''
-                    }`}
+                    className={`relative px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${!notification.isRead ? 'bg-blue-50/50' : ''
+                      }`}
                   >
                     <div className="flex gap-3">
                       {/* Icon */}
@@ -264,17 +288,23 @@ export function NotificationDropdown() {
 
                         {/* Actions */}
                         <div className="flex items-center gap-2 mt-2">
-                          {notification.link && (
-                            <Link
-                              href={notification.link}
+                          {fixNotificationLink(notification.link) && (
+                            <button
                               onClick={() => {
-                                if (!notification.isRead) markAsRead(notification.id);
-                                setIsOpen(false);
+                                try {
+                                  if (!notification.isRead) markAsRead(notification.id);
+                                  setIsOpen(false);
+                                  const safeLink = fixNotificationLink(notification.link);
+                                  if (safeLink) router.push(safeLink);
+                                } catch (err) {
+                                  console.error('Error navigating to notification link:', err);
+                                  setIsOpen(false);
+                                }
                               }}
                               className="text-xs text-blue-600 hover:text-blue-700 font-medium"
                             >
                               Xem chi tiết
-                            </Link>
+                            </button>
                           )}
                           {!notification.isRead && (
                             <button

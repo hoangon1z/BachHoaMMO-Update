@@ -8,1003 +8,278 @@ import { useAuthStore } from '@/store/authStore';
 import { useCartStore } from '@/store/cartStore';
 import { Button } from '@/components/ui/button';
 import { ProductReviews } from '@/components/ProductReviews';
-import { Star, ShoppingCart, Heart, MessageCircle, Shield, Zap, Check, Minus, Plus, ChevronRight, Store, Clock, Share2, BadgeCheck, TrendingUp, Package, ThumbsUp, ExternalLink, AlertCircle, X, Loader2, ArrowUpCircle, Mail, User, Key, Copy, Facebook, Send, CheckCircle } from 'lucide-react';
+import { Shield, Zap, Check, AlertCircle, CheckCircle, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
-import { VerifyBadge } from '@/components/VerifyBadge';
-
-interface ProductVariant {
-  id: string;
-  name: string;
-  price: number;
-  originalPrice?: number;
-  stock: number;
-}
-
-interface Product {
-  id: string;
-  title: string;
-  description: string;
-  price: number;
-  originalPrice?: number;
-  stock: number;
-  images: string[];
-  hasVariants?: boolean;
-  variants?: ProductVariant[];
-  autoDelivery?: boolean; // true = auto (need stock), false = manual (no stock needed)
-  productType?: 'STANDARD' | 'UPGRADE'; // UPGRADE = buyer provides their email for upgrade
-  requiredBuyerFields?: string[]; // Fields buyer needs to provide for UPGRADE products
-  category: { id: string; name: string; slug: string; };
-  seller: { id: string; name: string; avatar?: string; shopLogo?: string; rating: number; totalSales: number; joinDate: string; };
-  rating: number;
-  totalReviews: number;
-  totalSold: number;
-  views?: number;
-}
+import { Product, formatPrice } from './components/types';
+import { ProductGallery } from './components/ProductGallery';
+import { ProductInfo } from './components/ProductInfo';
+import { SellerCardMobile } from './components/SellerCard';
+import { ShareModal } from './components/ShareModal';
+import { RelatedProducts } from '@/components/RelatedProducts';
 
 interface ProductDetailClientProps {
   product: Product;
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  link: 'Link/URL', username: 'Tên tài khoản', email: 'Email',
+  password: 'Mật khẩu', quantity: 'Số lượng', note: 'Ghi chú',
+};
+function getFieldLabel(field: string): string {
+  return FIELD_LABELS[field] || field;
 }
 
 export default function ProductDetailClient({ product }: ProductDetailClientProps) {
   const router = useRouter();
   const { user, logout } = useAuthStore();
   const { addItem } = useCartStore();
+
   const [quantity, setQuantity] = useState(1);
   const [addedToCart, setAddedToCart] = useState(false);
-  const [isWishlisted, setIsWishlisted] = useState(false);
-  const [selectedImage, setSelectedImage] = useState(0);
   const [isStartingChat, setIsStartingChat] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
-  
-  // Error/Toast modal state
   const [toastMessage, setToastMessage] = useState<{ type: 'error' | 'warning' | 'info' | 'success'; text: string } | null>(null);
 
-  // Handle chat with seller
-  const handleChatWithSeller = async () => {
-    if (!user) {
-      router.push(`/login?redirect=/products/${product.id}`);
-      return;
-    }
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
+    product.hasVariants && product.variants?.length ? product.variants[0].id : null
+  );
+  const [buyerData, setBuyerData] = useState<Record<string, string>>({});
 
-    // Don't allow seller to chat with themselves
-    if (user.id === product.seller.id) {
-      setToastMessage({ type: 'warning', text: 'Bạn không thể chat với chính mình' });
-      return;
-    }
-
-    setIsStartingChat(true);
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/chat/start-with-seller', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          sellerId: product.seller.id,
-          productId: product.id,
-          message: `Xin chào! Tôi quan tâm đến sản phẩm: ${product.title}`,
-        }),
-      });
-
-      const data = await response.json();
-      console.log('[ProductDetail] Start chat response:', data);
-      
-      if (data.success && data.conversation) {
-        console.log('[ProductDetail] Redirecting to conversation:', data.conversation._id);
-        // Redirect to messages page with conversation ID
-        router.push(`/messages?id=${data.conversation._id}`);
-      } else {
-        console.error('Failed to start conversation:', data);
-        setToastMessage({ type: 'error', text: data.message || 'Không thể bắt đầu cuộc trò chuyện' });
+  // When buyer changes quantity in buyerData, sync with actual quantity
+  const handleBuyerDataChange = (data: Record<string, string>) => {
+    setBuyerData(data);
+    if (hasQuantityInBuyerFields && data.quantity) {
+      const qty = parseInt(data.quantity);
+      if (!isNaN(qty) && qty > 0) {
+        setQuantity(qty);
       }
-    } catch (error) {
-      console.error('Error starting chat:', error);
-      setToastMessage({ type: 'error', text: 'Có lỗi xảy ra, vui lòng thử lại' });
-    } finally {
-      setIsStartingChat(false);
     }
   };
-  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
-    product.hasVariants && product.variants && product.variants.length > 0
-      ? product.variants[0].id
-      : null
-  );
 
-  // Buyer provided data for UPGRADE products
-  const [buyerData, setBuyerData] = useState<Record<string, string>>({});
   const isUpgradeProduct = product.productType === 'UPGRADE';
-  const requiredFields = product.requiredBuyerFields || ['email'];
+  const isServiceProduct = product.productType === 'SERVICE';
+  const requiredFields = product.requiredBuyerFields || (isUpgradeProduct ? ['email'] : []);
+  const needsBuyerFields = (isUpgradeProduct || isServiceProduct) && requiredFields.length > 0;
+  // If 'quantity' is in buyer fields, buyer enters it there — hide the default quantity selector
+  const hasQuantityInBuyerFields = requiredFields.includes('quantity');
 
-  // Get selected variant
   const selectedVariant = useMemo(() => {
     if (!product.hasVariants || !product.variants || !selectedVariantId) return null;
     return product.variants.find(v => v.id === selectedVariantId) || null;
   }, [product.hasVariants, product.variants, selectedVariantId]);
 
-  // Get current price and stock based on variant selection
   const currentPrice = selectedVariant?.price ?? product.price;
   const currentSalePrice = selectedVariant?.originalPrice ?? product.originalPrice;
   const currentStock = selectedVariant?.stock ?? product.stock;
-  
-  // Check if product can be purchased
-  // If autoDelivery is false (manual delivery), allow purchase even with 0 stock
   const isManualDelivery = product.autoDelivery === false;
   const canPurchase = isManualDelivery || currentStock > 0;
+  const discount = currentSalePrice && currentSalePrice > currentPrice
+    ? Math.round(((currentSalePrice - currentPrice) / currentSalePrice) * 100)
+    : 0;
 
-  const handleLogout = () => {
-    logout();
-    router.push('/');
+  // ── Handlers ──
+  const handleChatWithSeller = async () => {
+    if (!user) { router.push(`/login?redirect=/products/${product.id}`); return; }
+    if (user.id === product.seller.id) { setToastMessage({ type: 'warning', text: 'Bạn không thể chat với chính mình' }); return; }
+    setIsStartingChat(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/chat/start-with-seller', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ sellerId: product.seller.id, productId: product.id, message: `Xin chào! Tôi quan tâm đến sản phẩm: ${product.title}` }),
+      });
+      const data = await response.json();
+      if (data.success && data.conversation) {
+        router.push(`/messages?id=${data.conversation._id}`);
+      } else {
+        setToastMessage({ type: 'error', text: data.message || 'Không thể bắt đầu cuộc trò chuyện' });
+      }
+    } catch { setToastMessage({ type: 'error', text: 'Có lỗi xảy ra, vui lòng thử lại' }); }
+    finally { setIsStartingChat(false); }
   };
 
   const handleAddToCart = () => {
-    if (!product) return;
-
-    // Validate variant selection
-    if (product.hasVariants && !selectedVariant) {
-      setToastMessage({ type: 'warning', text: 'Vui lòng chọn phân loại sản phẩm' });
-      return;
-    }
-
-    // Validate buyer data for UPGRADE products
-    if (isUpgradeProduct) {
+    if (product.hasVariants && !selectedVariant) { setToastMessage({ type: 'warning', text: 'Vui lòng chọn phân loại sản phẩm' }); return; }
+    if (needsBuyerFields) {
       for (const field of requiredFields) {
-        if (!buyerData[field] || buyerData[field].trim() === '') {
-          const fieldLabel = field === 'email' ? 'Email' : field === 'password' ? 'Mật khẩu' : 'Tên đăng nhập';
-          setToastMessage({ type: 'warning', text: `Vui lòng nhập ${fieldLabel} của bạn` });
-          return;
+        if (field === 'note') continue; // note is optional
+        if (!buyerData[field]?.trim()) {
+          const label = getFieldLabel(field);
+          setToastMessage({ type: 'warning', text: `Vui lòng nhập ${label}` }); return;
         }
-        // Validate email format
         if (field === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerData[field])) {
-          setToastMessage({ type: 'warning', text: 'Email không hợp lệ' });
-          return;
+          setToastMessage({ type: 'warning', text: 'Email không hợp lệ' }); return;
+        }
+        if (field === 'link' && !/^https?:\/\/.+/.test(buyerData[field])) {
+          setToastMessage({ type: 'warning', text: 'Link phải bắt đầu bằng http:// hoặc https://' }); return;
+        }
+        if (field === 'quantity' && (isNaN(Number(buyerData[field])) || Number(buyerData[field]) < 1)) {
+          setToastMessage({ type: 'warning', text: 'Số lượng phải là số hợp lệ' }); return;
         }
       }
     }
-
     addItem({
       id: selectedVariant ? `${product.id}-${selectedVariant.id}` : product.id,
-      productId: product.id,
-      variantId: selectedVariant?.id,
-      variantName: selectedVariant?.name,
+      productId: product.id, variantId: selectedVariant?.id, variantName: selectedVariant?.name,
       title: selectedVariant ? `${product.title} - ${selectedVariant.name}` : product.title,
-      price: currentPrice,
-      originalPrice: currentSalePrice,
-      image: product.images[0] || '',
-      stock: isUpgradeProduct ? 999 : currentStock, // UPGRADE products don't need stock limit
-      sellerId: product.seller.id,
-      sellerName: product.seller.name,
-      // Thêm thông tin cho UPGRADE products
-      productType: product.productType,
-      requiredBuyerFields: requiredFields,
-      buyerProvidedData: isUpgradeProduct ? buyerData : undefined,
+      price: currentPrice, originalPrice: currentSalePrice, image: product.images[0] || '',
+      stock: (isUpgradeProduct || isServiceProduct) ? 999999 : currentStock,
+      sellerId: product.seller.id, sellerName: product.seller.name,
+      productType: product.productType, requiredBuyerFields: requiredFields,
+      buyerProvidedData: needsBuyerFields ? buyerData : undefined,
+      initialQuantity: quantity,
     });
     setAddedToCart(true);
     setTimeout(() => setAddedToCart(false), 2000);
   };
 
   const handleBuyNow = () => {
-    if (product.hasVariants && !selectedVariant) {
-      setToastMessage({ type: 'warning', text: 'Vui lòng chọn phân loại sản phẩm' });
-      return;
-    }
-    
-    // Validate buyer data for UPGRADE products
-    if (isUpgradeProduct) {
+    if (product.hasVariants && !selectedVariant) { setToastMessage({ type: 'warning', text: 'Vui lòng chọn phân loại sản phẩm' }); return; }
+    if (needsBuyerFields) {
       for (const field of requiredFields) {
-        if (!buyerData[field] || buyerData[field].trim() === '') {
-          const fieldLabel = field === 'email' ? 'Email' : field === 'password' ? 'Mật khẩu' : 'Tên đăng nhập';
-          setToastMessage({ type: 'warning', text: `Vui lòng nhập ${fieldLabel} của bạn` });
-          return;
+        if (field === 'note') continue;
+        if (!buyerData[field]?.trim()) {
+          const label = getFieldLabel(field);
+          setToastMessage({ type: 'warning', text: `Vui lòng nhập ${label}` }); return;
         }
       }
     }
-    
     handleAddToCart();
     router.push('/cart');
   };
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('vi-VN').format(price) + 'đ';
+  const handleShare = async () => {
+    if (navigator.share) {
+      try { await navigator.share({ title: product.title, text: shareText, url: productUrl }); return; }
+      catch (err) { if ((err as Error).name !== 'AbortError') setShowShareMenu(true); }
+    } else { setShowShareMenu(true); }
   };
 
-  const discount = currentSalePrice
-    ? Math.round((1 - currentSalePrice / currentPrice) * 100)
-    : 0;
+  const handleLogout = () => { logout(); router.push('/'); };
+  const handleSearch = (query: string) => router.push(`/explore?q=${encodeURIComponent(query)}`);
 
-  const handleSearch = (query: string) => {
-    router.push(`/explore?q=${encodeURIComponent(query)}`);
-  };
-
-  // Share functionality
-  const productUrl = typeof window !== 'undefined' 
-    ? `${window.location.origin}/products/${product.id}` 
-    : `https://bachhoammo.store/products/${product.id}`;
-  
+  const productUrl = typeof window !== 'undefined' ? `${window.location.origin}/products/${product.id}` : `https://bachhoammo.store/products/${product.id}`;
   const shareText = `${product.title} - ${formatPrice(currentPrice)} | BachHoaMMO`;
 
-  const handleShare = async () => {
-    // Try native share API first (mobile)
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: product.title,
-          text: shareText,
-          url: productUrl,
-        });
-        return;
-      } catch (err) {
-        // User cancelled or error - show share menu
-        if ((err as Error).name !== 'AbortError') {
-          setShowShareMenu(true);
-        }
-      }
-    } else {
-      // Desktop - show share menu
-      setShowShareMenu(true);
-    }
-  };
-
-  const copyToClipboard = async () => {
-    try {
-      await navigator.clipboard.writeText(productUrl);
-      setToastMessage({ type: 'success', text: 'Đã sao chép link sản phẩm!' });
-      setShowShareMenu(false);
-    } catch (err) {
-      // Fallback for older browsers
-      const textArea = document.createElement('textarea');
-      textArea.value = productUrl;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-      setToastMessage({ type: 'success', text: 'Đã sao chép link sản phẩm!' });
-      setShowShareMenu(false);
-    }
-  };
-
-  const shareToFacebook = () => {
-    const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(productUrl)}`;
-    window.open(url, '_blank', 'width=600,height=400');
-    setShowShareMenu(false);
-  };
-
-  const shareToTwitter = () => {
-    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(productUrl)}`;
-    window.open(url, '_blank', 'width=600,height=400');
-    setShowShareMenu(false);
-  };
-
-  const shareToTelegram = () => {
-    const url = `https://t.me/share/url?url=${encodeURIComponent(productUrl)}&text=${encodeURIComponent(shareText)}`;
-    window.open(url, '_blank', 'width=600,height=400');
-    setShowShareMenu(false);
-  };
-
-  const shareToZalo = () => {
-    const url = `https://zalo.me/share?url=${encodeURIComponent(productUrl)}`;
-    window.open(url, '_blank', 'width=600,height=400');
-    setShowShareMenu(false);
-  };
-
-  const shareToMessenger = () => {
-    const url = `https://www.facebook.com/dialog/send?link=${encodeURIComponent(productUrl)}&app_id=291494419107518&redirect_uri=${encodeURIComponent(productUrl)}`;
-    window.open(url, '_blank', 'width=600,height=400');
-    setShowShareMenu(false);
-  };
-
   return (
-    <div className="min-h-screen bg-secondary">
+    <div className="min-h-screen bg-gray-50/80 flex flex-col">
       <Header user={user} onLogout={handleLogout} onSearch={handleSearch} />
 
-      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6">
-        {/* Breadcrumb */}
-        <nav className="flex items-center gap-2 text-sm mb-6 text-gray-500">
-          <Link href="/" className="hover:text-blue-600 transition-colors">Trang chủ</Link>
-          <ChevronRight className="w-4 h-4" />
-          <Link href="/explore" className="hover:text-blue-600 transition-colors">Sản phẩm</Link>
-          <ChevronRight className="w-4 h-4" />
-          <span className="text-gray-700 font-medium">{product.category.name}</span>
-        </nav>
+      <main className="flex-1">
+        <div className="page-wrapper py-4 sm:py-6">
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Breadcrumb */}
+          <nav className="flex items-center gap-1 text-[13px] text-gray-400 mb-4">
+            <Link href="/" className="hover:text-blue-600 transition-colors">Trang chủ</Link>
+            <ChevronRight className="w-3.5 h-3.5 text-gray-300" />
+            <Link href="/explore" className="hover:text-blue-600 transition-colors">Sản phẩm</Link>
+            <ChevronRight className="w-3.5 h-3.5 text-gray-300" />
+            <span className="text-gray-500">{product.category.name}</span>
+          </nav>
 
-          {/* LEFT COLUMN */}
-          <div className="lg:col-span-2 space-y-6">
-
-            {/* Product Main Card */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="grid grid-cols-1 md:grid-cols-2">
-
-                {/* Product Image */}
-                <div className="p-4 md:p-6">
-                  <div className="relative aspect-square rounded-xl overflow-hidden bg-gray-50 mb-4">
-                    <img
-                      src={product.images[selectedImage] || '/placeholder.png'}
-                      alt={product.title}
-                      className="w-full h-full object-contain"
-                    />
-                    {discount > 0 && (
-                      <div className="absolute top-3 left-3 px-2.5 py-1 bg-red-500 text-white text-xs font-bold rounded-lg shadow-md">
-                        -{discount}%
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Thumbnails */}
-                  {product.images.length > 1 && (
-                    <div className="flex gap-2">
-                      {product.images.map((img, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => setSelectedImage(idx)}
-                          className={`w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${selectedImage === idx
-                              ? 'border-blue-500 shadow-md'
-                              : 'border-gray-200 hover:border-gray-300'
-                            }`}
-                        >
-                          <img src={img} alt="" className="w-full h-full object-cover" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Product Info */}
-                <div className="p-4 md:p-6 md:border-l border-gray-100">
-                  {/* Title */}
-                  <h1 className="text-xl font-bold text-gray-900 mb-4 leading-snug">
-                    {product.title}
-                  </h1>
-
-                  {/* Stats */}
-                  <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
-                    <div className="flex items-center gap-1">
-                      <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                      <span className="text-sm font-medium text-gray-700">{product.rating.toFixed(1)}</span>
-                      <span className="text-sm text-gray-500">({product.totalReviews})</span>
-                    </div>
-                    <div className="w-px h-4 bg-gray-200"></div>
-                    <span className="text-sm text-gray-500">Đã bán {product.totalSold}</span>
-                  </div>
-
-                  {/* Variants Selection */}
-                  {product.hasVariants && product.variants && product.variants.length > 0 && (
-                    <div className="mb-4 pb-4 border-b border-gray-100">
-                      <label className="text-sm font-medium text-gray-700 mb-2 block">Phân loại</label>
-                      <div className="flex flex-wrap gap-2">
-                        {product.variants.map((variant) => (
-                          <button
-                            key={variant.id}
-                            onClick={() => {
-                              setSelectedVariantId(variant.id);
-                              setQuantity(1);
-                            }}
-                            disabled={variant.stock === 0}
-                            className={`px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all ${selectedVariantId === variant.id
-                                ? 'border-blue-500 bg-blue-50 text-blue-700'
-                                : variant.stock === 0
-                                  ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
-                                  : 'border-gray-200 hover:border-gray-300 text-gray-700'
-                              }`}
-                          >
-                            {variant.name}
-                            {variant.stock === 0 && ' (Hết)'}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Price: giá bán (currentPrice) chính, giá gốc (currentSalePrice) gạch ngang khi có giảm */}
-                  <div className="mb-4 pb-4 border-b border-gray-100">
-                    <div className="flex items-baseline gap-3">
-                      {currentSalePrice && currentSalePrice > currentPrice ? (
-                        <>
-                          <span className="text-2xl font-bold text-red-500">
-                            {formatPrice(currentPrice)}
-                          </span>
-                          <span className="text-base text-gray-400 line-through">
-                            {formatPrice(currentSalePrice)}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-2xl font-bold text-blue-600">
-                          {formatPrice(currentPrice)}
-                        </span>
-                      )}
-                    </div>
-                    {currentSalePrice && currentSalePrice > currentPrice && (
-                      <p className="text-sm text-green-600 mt-2">
-                        Tiết kiệm {formatPrice(currentSalePrice - currentPrice)}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Quantity */}
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">Số lượng</span>
-                      {isManualDelivery ? (
-                        <span className="text-sm text-orange-600">Giao thủ công</span>
-                      ) : (
-                        <span className="text-sm text-gray-500">{currentStock} có sẵn</span>
-                      )}
-                    </div>
-                    <div className="inline-flex items-center rounded-lg border border-gray-200 overflow-hidden">
-                      <button
-                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                        className="w-10 h-10 flex items-center justify-center hover:bg-gray-50 transition-colors"
-                        disabled={quantity <= 1}
-                      >
-                        <Minus className="w-4 h-4 text-gray-600" />
-                      </button>
-                      <span className="w-12 text-center font-semibold text-gray-900">{quantity}</span>
-                      <button
-                        onClick={() => setQuantity(Math.min(isManualDelivery ? 99 : currentStock, quantity + 1))}
-                        className="w-10 h-10 flex items-center justify-center hover:bg-gray-50 transition-colors"
-                        disabled={!isManualDelivery && quantity >= currentStock}
-                      >
-                        <Plus className="w-4 h-4 text-gray-600" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* UPGRADE Product - Buyer Info Input */}
-                  {isUpgradeProduct && (
-                    <div className="mb-4 p-4 bg-purple-50 rounded-xl border border-purple-200">
-                      <div className="flex items-center gap-2 mb-3">
-                        <ArrowUpCircle className="w-5 h-5 text-purple-600" />
-                        <h4 className="font-semibold text-purple-800">Thông tin tài khoản cần nâng cấp</h4>
-                      </div>
-                      <p className="text-sm text-purple-600 mb-3">
-                        Vui lòng nhập thông tin tài khoản của bạn để seller có thể nâng cấp
-                      </p>
-                      <div className="space-y-3">
-                        {requiredFields.map((field) => (
-                          <div key={field}>
-                            <label className="text-sm font-medium text-purple-700 mb-1 block flex items-center gap-1">
-                              {field === 'email' && <Mail className="w-4 h-4" />}
-                              {field === 'username' && <User className="w-4 h-4" />}
-                              {field === 'password' && <Key className="w-4 h-4" />}
-                              {field === 'email' ? 'Email' : field === 'password' ? 'Mật khẩu' : 'Tên đăng nhập'} *
-                            </label>
-                            <input
-                              type={field === 'password' ? 'password' : field === 'email' ? 'email' : 'text'}
-                              placeholder={
-                                field === 'email' ? 'example@gmail.com' :
-                                field === 'password' ? '••••••••' :
-                                'your_username'
-                              }
-                              value={buyerData[field] || ''}
-                              onChange={(e) => setBuyerData({ ...buyerData, [field]: e.target.value })}
-                              className="w-full px-3 py-2.5 border border-purple-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-3 p-2.5 bg-purple-100 rounded-lg">
-                        <p className="text-xs text-purple-700">
-                          <strong>Lưu ý bảo mật:</strong> Thông tin của bạn sẽ chỉ được chia sẻ với seller để thực hiện nâng cấp. 
-                          Hãy đảm bảo đây là tài khoản bạn muốn nâng cấp.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Action Buttons */}
-                  <div className="space-y-3">
-                    <div className="flex gap-3">
-                      <Button
-                        onClick={handleAddToCart}
-                        variant="outline"
-                        className="flex-1 h-12 rounded-xl border-2 border-blue-500 text-blue-600 hover:bg-blue-500 hover:text-white font-semibold transition-all"
-                        disabled={!canPurchase}
-                      >
-                        <ShoppingCart className="w-5 h-5 mr-2" />
-                        {addedToCart ? 'Đã thêm' : 'Thêm giỏ hàng'}
-                      </Button>
-                      <Button
-                        onClick={handleBuyNow}
-                        className={`flex-1 h-12 rounded-xl font-semibold transition-all ${
-                          isUpgradeProduct 
-                            ? 'bg-purple-600 hover:bg-purple-700 text-white' 
-                            : 'bg-blue-600 hover:bg-blue-700 text-white'
-                        }`}
-                        disabled={!canPurchase}
-                      >
-                        {isUpgradeProduct ? 'Nâng cấp ngay' : 'Mua ngay'}
-                      </Button>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setIsWishlisted(!isWishlisted)}
-                        className={`flex-1 h-10 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all ${isWishlisted
-                            ? 'bg-red-50 text-red-500 border border-red-200'
-                            : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
-                          }`}
-                      >
-                        <Heart className={`w-4 h-4 ${isWishlisted ? 'fill-current' : ''}`} />
-                        Yêu thích
-                      </button>
-                      <button 
-                        onClick={handleShare}
-                        className="flex-1 h-10 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200 flex items-center justify-center gap-2 text-sm font-medium transition-all"
-                      >
-                        <Share2 className="w-4 h-4" />
-                        Chia sẻ
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Out of stock message - only show for auto delivery products */}
-                  {!canPurchase && (
-                    <div className="mt-4 p-3 bg-red-50 rounded-lg border border-red-200 text-center">
-                      <span className="text-red-600 font-medium text-sm">Sản phẩm tạm hết hàng</span>
-                    </div>
-                  )}
-                  
-                  {/* Manual delivery info */}
-                  {isManualDelivery && currentStock === 0 && (
-                    <div className="mt-4 p-3 bg-orange-50 rounded-lg border border-orange-200">
-                      <div className="flex items-start gap-2">
-                        <Clock className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" />
-                        <p className="text-sm text-orange-700">
-                          <strong>Giao hàng thủ công:</strong> Seller sẽ gửi thông tin tài khoản sau khi bạn đặt hàng (trong vòng 24h).
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
+          {/* ──── Product Card ──── */}
+          <div className="bg-white rounded-2xl overflow-hidden border border-gray-100 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-5">
+              {/* Gallery — 2 cols */}
+              <div className="md:col-span-2">
+                <ProductGallery images={product.images} title={product.title} discount={discount} />
+              </div>
+              {/* Info — 3 cols */}
+              <div className="md:col-span-3 border-t md:border-t-0 md:border-l border-gray-50">
+                <ProductInfo
+                  title={product.title} rating={product.rating} totalReviews={product.totalReviews} totalSold={product.totalSold}
+                  hasVariants={product.hasVariants} variants={product.variants}
+                  selectedVariantId={selectedVariantId} onSelectVariant={setSelectedVariantId}
+                  currentPrice={currentPrice} currentSalePrice={currentSalePrice} discount={discount}
+                  currentStock={currentStock} isManualDelivery={isManualDelivery} canPurchase={canPurchase}
+                  quantity={quantity} onChangeQuantity={setQuantity}
+                  isUpgradeProduct={isUpgradeProduct} isServiceProduct={isServiceProduct}
+                  needsBuyerFields={needsBuyerFields} requiredFields={requiredFields}
+                  hasQuantityInBuyerFields={hasQuantityInBuyerFields}
+                  buyerData={buyerData} onChangeBuyerData={handleBuyerDataChange}
+                  onAddToCart={handleAddToCart} onBuyNow={handleBuyNow} onShare={handleShare} addedToCart={addedToCart}
+                />
               </div>
             </div>
+          </div>
 
-            {/* Features Card */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-              <h3 className="font-semibold text-gray-900 mb-4">Cam kết của chúng tôi</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0">
-                    <Shield className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">Trung gian giao dịch</p>
-                    <p className="text-xs text-gray-500">Đảm bảo quyền lợi khách hàng 100%</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <Zap className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">Giao dịch nhanh</p>
-                    <p className="text-xs text-gray-500">An toàn</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0">
-                    <Check className="w-5 h-5 text-purple-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">Hoàn trả</p>
-                    <p className="text-xs text-gray-500">Nếu sai sản phẩm hoặc lỗi</p>
-                  </div>
-                </div>
+          {/* ──── Commitments ──── */}
+          <div className="flex items-center justify-between bg-white rounded-2xl border border-gray-100 px-5 py-3 mb-4">
+            {[
+              { icon: <Shield className="w-4 h-4 text-emerald-500" />, text: 'Trung gian giao dịch' },
+              { icon: <Zap className="w-4 h-4 text-blue-500" />, text: 'Giao dịch nhanh & an toàn' },
+              { icon: <Check className="w-4 h-4 text-violet-500" />, text: 'Hoàn trả nếu lỗi' },
+            ].map((item, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[12.5px] text-gray-500">
+                {item.icon}
+                <span className="hidden sm:inline">{item.text}</span>
+                <span className="sm:hidden">{item.text.split(' ').slice(0, 2).join(' ')}</span>
               </div>
+            ))}
+          </div>
+
+          {/* ──── Seller ──── */}
+          <div className="mb-4">
+            <SellerCardMobile seller={product.seller} onChatWithSeller={handleChatWithSeller} isStartingChat={isStartingChat} />
+          </div>
+
+          {/* ──── Description ──── */}
+          <div className="bg-white rounded-2xl border border-gray-100 mb-4">
+            <div className="px-5 py-3.5 border-b border-gray-50">
+              <h3 className="text-[14px] font-semibold text-gray-800">Mô tả sản phẩm</h3>
             </div>
-
-            {/* Mobile Seller Card - Only shown on mobile, before description */}
-            <div className="lg:hidden bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-              {/* Shop Info Row */}
-              <div className="flex items-center gap-3 mb-4">
-                {/* Avatar */}
-                <Link href={`/shop/${product.seller.id}`} className="flex-shrink-0">
-                  <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center overflow-hidden border-2 border-gray-100">
-                    {(product.seller.shopLogo || product.seller.avatar) ? (
-                      <img 
-                        src={product.seller.shopLogo || product.seller.avatar} 
-                        alt={product.seller.name}
-                        className="w-full h-full object-cover" 
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-[#2563eb] flex items-center justify-center">
-                        <Store className="w-5 h-5 text-white" />
-                      </div>
-                    )}
-                  </div>
-                </Link>
-                
-                {/* Shop Name & Stats */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <Link href={`/shop/${product.seller.id}`} className="font-semibold text-gray-900 hover:text-blue-600 transition-colors truncate text-sm">
-                      {product.seller.name}
-                    </Link>
-                    <VerifyBadge size={20} />
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
-                    <span className="flex items-center gap-1">
-                      <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                      {product.seller.rating.toFixed(1)}
-                    </span>
-                    <span className="text-gray-300">|</span>
-                    <span>{product.seller.totalSales} đã bán</span>
-                    <span className="ml-auto flex items-center gap-1 text-green-600">
-                      <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-                      Online
-                    </span>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Action Buttons */}
-              <div className="flex gap-2">
-                <Link href={`/shop/${product.seller.id}`} className="flex-1">
-                  <Button className="w-full h-9 rounded-lg font-medium bg-[#2563eb] hover:bg-blue-700 text-white text-sm">
-                    <Store className="w-4 h-4 mr-1.5" />
-                    Xem Shop
-                  </Button>
-                </Link>
-                <Button 
-                  variant="outline" 
-                  className="flex-1 h-9 rounded-lg font-medium border-2 text-sm"
-                  onClick={handleChatWithSeller}
-                  disabled={isStartingChat}
-                >
-                  <MessageCircle className="w-4 h-4 mr-1.5" />
-                  Chat
-                </Button>
-              </div>
-            </div>
-
-            {/* Description Card */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-              <h3 className="font-semibold text-gray-900 mb-4 pb-3 border-b border-gray-100">
-                Mô tả sản phẩm
-              </h3>
-              <div 
-                className="text-gray-700 leading-relaxed prose prose-sm max-w-none prose-a:text-blue-600 prose-a:underline"
+            <div className="px-5 py-4">
+              <div
+                className="product-description text-gray-600 text-[14px] leading-relaxed prose prose-sm max-w-none
+                    prose-headings:font-semibold prose-headings:text-gray-900
+                    prose-p:my-1.5 prose-a:text-blue-600
+                    prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5
+                    prose-li:my-0.5
+                    prose-blockquote:border-l-2 prose-blockquote:border-blue-400 prose-blockquote:pl-3 prose-blockquote:italic
+                    prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-pre:rounded-lg prose-pre:p-3
+                    prose-code:bg-gray-100 prose-code:px-1 prose-code:rounded prose-code:text-[13px]
+                    prose-img:rounded-lg prose-img:my-3
+                    [&>div]:block [&>div]:my-1"
                 dangerouslySetInnerHTML={{ __html: product.description }}
               />
             </div>
-
-            {/* Reviews Card */}
-            <ProductReviews 
-              productId={product.id} 
-              rating={product.rating} 
-              totalReviews={product.totalReviews} 
-            />
           </div>
 
-          {/* RIGHT COLUMN - Seller (Desktop only) */}
-          <div className="hidden lg:block lg:col-span-1">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden sticky top-6">
-              
-              {/* Shop Header */}
-              <div className="relative bg-[#2563eb] p-4 h-20">
-                {/* Background Pattern */}
-                <div className="absolute inset-0 opacity-10 overflow-hidden">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-white rounded-full -translate-y-1/2 translate-x-1/2"></div>
-                  <div className="absolute bottom-0 left-0 w-24 h-24 bg-white rounded-full translate-y-1/2 -translate-x-1/2"></div>
-                </div>
-                
-                {/* Online Status */}
-                <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2 py-1 bg-green-500/90 backdrop-blur-sm rounded-full">
-                  <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                  <span className="text-xs font-medium text-white">Online</span>
-                </div>
+          {/* ──── Reviews ──── */}
+          <ProductReviews productId={product.id} rating={product.rating} totalReviews={product.totalReviews} />
 
-                {/* Verified Badge */}
-                {product.seller.rating >= 4 && (
-                  <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 bg-white/20 backdrop-blur-sm rounded-full">
-                    <BadgeCheck className="w-3.5 h-3.5 text-white" />
-                    <span className="text-xs font-medium text-white">Uy tín</span>
-                  </div>
-                )}
-              </div>
-              
-              {/* Shop Avatar & Info */}
-              <div className="relative px-4 -mt-8 pb-4">
-                {/* Avatar */}
-                <div className="flex justify-center mb-3">
-                  <Link href={`/shop/${product.seller.id}`} className="relative group">
-                    <div className="w-16 h-16 rounded-xl bg-white shadow-lg flex items-center justify-center overflow-hidden ring-4 ring-white">
-                      {(product.seller.shopLogo || product.seller.avatar) ? (
-                        <img 
-                          src={product.seller.shopLogo || product.seller.avatar} 
-                          alt={product.seller.name}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" 
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-[#2563eb] flex items-center justify-center">
-                          <Store className="w-7 h-7 text-white" />
-                        </div>
-                      )}
-                    </div>
-                    {/* Verified check */}
-                    <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
-                      <Check className="w-3 h-3 text-white" />
-                    </div>
-                  </Link>
-                </div>
-                
-                {/* Shop Name & Info - Centered */}
-                <div className="text-center">
-                  <div className="inline-flex items-center gap-1.5">
-                    <Link
-                      href={`/shop/${product.seller.id}`}
-                      className="font-bold text-gray-900 hover:text-blue-600 transition-colors text-lg"
-                    >
-                      {product.seller.name}
-                    </Link>
-                    <VerifyBadge size={20} />
-                  </div>
-                  <div className="flex items-center justify-center gap-1 text-xs text-gray-500 mt-1">
-                    <Clock className="w-3 h-3" />
-                    <span>Tham gia {product.seller.joinDate}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Shop Stats - Modern Cards */}
-              <div className="px-4 pb-4">
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="text-center p-3 bg-yellow-50 rounded-xl border border-yellow-100">
-                    <div className="flex items-center justify-center gap-1 mb-1">
-                      <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                      <span className="font-bold text-gray-900">{product.seller.rating.toFixed(1)}</span>
-                    </div>
-                    <span className="text-[10px] text-gray-500 uppercase tracking-wide">Đánh giá</span>
-                  </div>
-                  <div className="text-center p-3 bg-green-50 rounded-xl border border-green-100">
-                    <div className="flex items-center justify-center gap-1 mb-1">
-                      <Package className="w-4 h-4 text-green-500" />
-                      <span className="font-bold text-gray-900">
-                        {product.seller.totalSales >= 1000 
-                          ? `${(product.seller.totalSales / 1000).toFixed(1)}k` 
-                          : product.seller.totalSales}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-gray-500 uppercase tracking-wide">Đã bán</span>
-                  </div>
-                  <div className="text-center p-3 bg-blue-50 rounded-xl border border-blue-100">
-                    <div className="flex items-center justify-center gap-1 mb-1">
-                      <ThumbsUp className="w-4 h-4 text-blue-500" />
-                      <span className="font-bold text-gray-900">98%</span>
-                    </div>
-                    <span className="text-[10px] text-gray-500 uppercase tracking-wide">Hài lòng</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Quick Info */}
-              <div className="px-4 pb-4">
-                <div className="flex items-center justify-between py-2 border-t border-gray-100">
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <Zap className="w-4 h-4 text-orange-500" />
-                    <span>Phản hồi trong vài phút</span>
-                  </div>
-                  <span className="text-xs text-green-600 font-medium">Nhanh</span>
-                </div>
-                <div className="flex items-center justify-between py-2 border-t border-gray-100">
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <TrendingUp className="w-4 h-4 text-blue-500" />
-                    <span>Tỷ lệ giao hàng</span>
-                  </div>
-                  <span className="text-xs text-green-600 font-medium">99%</span>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="px-4 pb-4 space-y-2">
-                <Link href={`/shop/${product.seller.id}`} className="block">
-                  <Button className="w-full h-11 rounded-xl font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-200">
-                    <Store className="w-4 h-4 mr-2" />
-                    Xem cửa hàng
-                  </Button>
-                </Link>
-                <Button 
-                  variant="outline" 
-                  className="w-full h-11 rounded-xl font-semibold border-2 border-gray-200 hover:border-blue-500 hover:text-blue-600 transition-all"
-                  onClick={handleChatWithSeller}
-                  disabled={isStartingChat}
-                >
-                  {isStartingChat ? (
-                    <div className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <MessageCircle className="w-4 h-4 mr-2" />
-                  )}
-                  {isStartingChat ? 'Đang kết nối...' : 'Chat với Shop'}
-                </Button>
-              </div>
-
-              {/* Trust Badges */}
-              <div className="px-4 pb-4">
-                <div className="p-3 bg-green-50 rounded-xl border border-green-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm shadow-green-200">
-                      <Shield className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-green-800">Shop Uy Tín</p>
-                      <p className="text-xs text-green-600">Được xác minh bởi BachHoaMMO</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+          {/* ──── Related Products ──── */}
+          <div className="mt-4">
+            <RelatedProducts categoryId={product.category.id} currentProductId={product.id} />
           </div>
+
         </div>
       </main>
 
       <Footer />
 
-      {/* Share Modal */}
-      {showShareMenu && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowShareMenu(false)}
-          />
-          
-          {/* Modal */}
-          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md overflow-hidden animate-in slide-in-from-bottom sm:fade-in sm:zoom-in-95 duration-200">
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-900">Chia sẻ sản phẩm</h3>
-              <button 
-                onClick={() => setShowShareMenu(false)}
-                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
-              >
-                <X className="w-4 h-4 text-gray-600" />
-              </button>
-            </div>
-            
-            {/* Product Preview */}
-            <div className="p-4 bg-gray-50 border-b border-gray-100">
-              <div className="flex items-center gap-3">
-                <img 
-                  src={product.images[0] || '/placeholder.png'} 
-                  alt={product.title}
-                  className="w-14 h-14 rounded-lg object-cover"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{product.title}</p>
-                  <p className="text-sm text-blue-600 font-semibold">{formatPrice(currentPrice)}</p>
-                </div>
-              </div>
-            </div>
+      <ShareModal
+        isOpen={showShareMenu} onClose={() => setShowShareMenu(false)}
+        productTitle={product.title} productImage={product.images[0] || ''} productPrice={currentPrice}
+        productUrl={productUrl} shareText={shareText} onToast={setToastMessage}
+      />
 
-            {/* Share Options */}
-            <div className="p-4">
-              <p className="text-sm text-gray-500 mb-3">Chia sẻ qua</p>
-              <div className="grid grid-cols-5 gap-3 mb-4">
-                {/* Facebook */}
-                <button 
-                  onClick={shareToFacebook}
-                  className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-gray-50 transition-colors"
-                >
-                  <div className="w-12 h-12 rounded-full bg-[#1877F2] flex items-center justify-center">
-                    <Facebook className="w-6 h-6 text-white" />
-                  </div>
-                  <span className="text-xs text-gray-600">Facebook</span>
-                </button>
-
-                {/* Messenger */}
-                <button 
-                  onClick={shareToMessenger}
-                  className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-gray-50 transition-colors"
-                >
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#00B2FF] to-[#006AFF] flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.19 5.44 3.14 7.17.16.14.26.35.27.57l.05 1.78c.02.64.72 1.04 1.3.75l1.97-.87c.17-.07.36-.09.54-.05.9.23 1.84.35 2.73.35 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm6.03 7.55l-2.93 4.66a1.5 1.5 0 01-2.17.45l-2.33-1.75a.6.6 0 00-.72 0l-3.15 2.39c-.42.32-.97-.19-.69-.64l2.93-4.66a1.5 1.5 0 012.17-.45l2.33 1.75a.6.6 0 00.72 0l3.15-2.39c.42-.32.97.19.69.64z"/>
-                    </svg>
-                  </div>
-                  <span className="text-xs text-gray-600">Messenger</span>
-                </button>
-
-                {/* Zalo */}
-                <button 
-                  onClick={shareToZalo}
-                  className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-gray-50 transition-colors"
-                >
-                  <div className="w-12 h-12 rounded-full bg-[#0068FF] flex items-center justify-center">
-                    <span className="text-white font-bold text-sm">Zalo</span>
-                  </div>
-                  <span className="text-xs text-gray-600">Zalo</span>
-                </button>
-
-                {/* Telegram */}
-                <button 
-                  onClick={shareToTelegram}
-                  className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-gray-50 transition-colors"
-                >
-                  <div className="w-12 h-12 rounded-full bg-[#0088CC] flex items-center justify-center">
-                    <Send className="w-5 h-5 text-white" />
-                  </div>
-                  <span className="text-xs text-gray-600">Telegram</span>
-                </button>
-
-                {/* Twitter/X */}
-                <button 
-                  onClick={shareToTwitter}
-                  className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-gray-50 transition-colors"
-                >
-                  <div className="w-12 h-12 rounded-full bg-black flex items-center justify-center">
-                    <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-                    </svg>
-                  </div>
-                  <span className="text-xs text-gray-600">X</span>
-                </button>
-              </div>
-
-              {/* Copy Link */}
-              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-xl">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-600 truncate">{productUrl}</p>
-                </div>
-                <button 
-                  onClick={copyToClipboard}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex-shrink-0"
-                >
-                  <Copy className="w-4 h-4" />
-                  Sao chép
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Toast/Error Modal */}
+      {/* Toast */}
       {toastMessage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setToastMessage(null)}
-          />
-          
-          {/* Modal */}
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-6 text-center">
-              {/* Icon */}
-              <div className={`w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center ${
-                toastMessage.type === 'error' ? 'bg-red-100' :
-                toastMessage.type === 'warning' ? 'bg-amber-100' :
-                toastMessage.type === 'success' ? 'bg-green-100' :
-                'bg-blue-100'
-              }`}>
-                {toastMessage.type === 'success' ? (
-                  <CheckCircle className="w-8 h-8 text-green-600" />
-                ) : (
-                  <AlertCircle className={`w-8 h-8 ${
-                    toastMessage.type === 'error' ? 'text-red-600' :
-                    toastMessage.type === 'warning' ? 'text-amber-600' :
-                    'text-blue-600'
-                  }`} />
-                )}
-              </div>
-              
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                {toastMessage.type === 'error' ? 'Có lỗi xảy ra' :
-                 toastMessage.type === 'warning' ? 'Lưu ý' :
-                 toastMessage.type === 'success' ? 'Thành công' :
-                 'Thông báo'}
-              </h3>
-              <p className="text-gray-600 mb-6">{toastMessage.text}</p>
-              
-              <Button 
-                className="w-full"
-                onClick={() => setToastMessage(null)}
-              >
-                Đóng
-              </Button>
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" onClick={() => setToastMessage(null)} />
+          <div className="relative bg-white rounded-2xl w-full max-w-xs p-6 text-center border border-gray-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className={`w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center
+              ${toastMessage.type === 'success' ? 'bg-green-50' : toastMessage.type === 'warning' ? 'bg-amber-50' : toastMessage.type === 'error' ? 'bg-red-50' : 'bg-blue-50'}`}>
+              {toastMessage.type === 'success'
+                ? <CheckCircle className="w-6 h-6 text-green-500" />
+                : <AlertCircle className={`w-6 h-6 ${toastMessage.type === 'error' ? 'text-red-500' : toastMessage.type === 'warning' ? 'text-amber-500' : 'text-blue-500'}`} />}
             </div>
+            <p className="text-[14px] text-gray-600 mb-4 leading-relaxed">{toastMessage.text}</p>
+            <button onClick={() => setToastMessage(null)} className="w-full h-10 rounded-xl bg-gray-900 text-white text-[13px] font-medium hover:bg-gray-800 transition-colors">
+              Đóng
+            </button>
           </div>
         </div>
       )}

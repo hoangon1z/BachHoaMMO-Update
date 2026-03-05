@@ -41,6 +41,13 @@ model User {
   // Telegram Integration - Chat Bot (thông báo tin nhắn)
   telegramChatBotChatId    String?   // Chat ID for Chat Bot notifications
   telegramChatBotLinkedAt  DateTime? // When Chat Bot was linked
+  
+  // Chat Moderation - Auto detection system
+  isChatRestricted    Boolean   @default(false)  // User has restricted chat (stricter moderation)
+  chatRestrictedAt    DateTime?                  // When chat was restricted
+  isChatLocked        Boolean   @default(false)  // User cannot send chat messages
+  chatLockedAt        DateTime?                  // When chat was locked
+  chatLockReason      String?                    // Reason for chat lock
 
   // Relations
   products           Product[]
@@ -60,13 +67,21 @@ model User {
   notifications      Notification[]
   devices            UserDevice[]
   apiKeys            SellerApiKey[]
+  serviceOrdersAsBuyer  ServiceOrder[] @relation("BuyerServiceOrders")
+  serviceOrdersAsSeller ServiceOrder[] @relation("SellerServiceOrders")
   webhooks           SellerWebhook[]
+  discountCodes      DiscountCode[]     @relation("SellerDiscountCodes")
   
   // Blog relations
   blogPosts          BlogPost[]
   blogComments       BlogComment[]
   blogLikes          BlogLike[]
   blogBookmarks      BlogBookmark[]
+
+  // CheckUID relations
+  telegramCheckUidId String?   // Telegram ID for CheckUID bot linking
+  checkUidItems      CheckUidItem[]
+  checkUidSubs       CheckUidSubscription[]
 
   @@map("users")
 }
@@ -84,6 +99,17 @@ model SellerProfile {
   commission      Float    @default(10) // Phần trăm hoa hồng
   isVerified      Boolean  @default(false)
   
+  // Contact information (for admin to contact seller)
+  contactPhone    String?   // Số điện thoại liên lạc
+  contactTelegram String?   // Telegram username/link
+  
+  // Store status
+  storeStatus     String    @default("ONLINE") // ONLINE, OFFLINE, AWAY
+  statusMessage   String?   // Custom status message (e.g. "Đang bận, trả lời chậm")
+  
+  // Withdrawal PIN (hashed 6-digit PIN)
+  withdrawalPin   String?   // SHA256 hash of 6-digit PIN
+  
   // Bank information (can only be added once, cannot be edited)
   bankName        String?
   bankAccount     String?
@@ -91,10 +117,88 @@ model SellerProfile {
   bankBranch      String?
   bankInfoAddedAt DateTime? // When bank info was added (if set, cannot be edited)
   
+  // Insurance verification (new system - replaces old isVerified)
+  insuranceTier     String?   // BRONZE, SILVER, GOLD, DIAMOND, VIP
+  insuranceLevel    Int       @default(0)  // 0=none, 1=bronze, 2=silver, 3=gold, 4=diamond, 5=vip
+  
+  // Pinned products for homepage display (auction winner feature)
+  pinnedProductIds  String?   // JSON array of product IDs (max 4)
+  
+  // Auto-reply settings (tin nhắn tự động khi offline)
+  autoReplyEnabled    Boolean  @default(false)
+  autoReplyMessage    String?  // Nội dung tin nhắn tự động
+  autoReplyStartHour  Int?     // Giờ bắt đầu (0-23, VD: 22 = 10PM)
+  autoReplyEndHour    Int?     // Giờ kết thúc (0-23, VD: 8 = 8AM)
+  autoReplyCooldown   Int      @default(30)  // Cooldown phút giữa 2 lần gửi auto-reply cho cùng 1 người
+  
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  // Relations
+  insuranceFund   InsuranceFund?
+
   @@map("seller_profiles")
+}
+
+// ============================================
+// SELLER INSURANCE FUND SYSTEM
+// ============================================
+
+model InsuranceFund {
+  id              String    @id @default(uuid())
+  sellerId        String    @unique
+  sellerProfile   SellerProfile @relation(fields: [sellerId], references: [userId], onDelete: Cascade)
+  
+  // Tier: BRONZE, SILVER, GOLD, DIAMOND, VIP
+  tier            String    @default("BRONZE")
+  level           Int       @default(1)  // 1-5
+  
+  // Financial
+  depositAmount   Float     // Tiền cọc ban đầu
+  currentBalance  Float     // Số dư hiện tại (có thể bị trừ do tranh chấp)
+  maxCoverage     Float     // Hạn mức BH tối đa mỗi đơn
+  annualFee       Float     // Phí duy trì hàng năm
+  
+  // Status
+  status          String    @default("ACTIVE")  // ACTIVE, SUSPENDED, WITHDRAWN, REVOKED
+  
+  // Dates
+  activatedAt     DateTime  @default(now())     // Ngày kích hoạt
+  nextRenewalAt   DateTime                       // Ngày gia hạn tiếp theo
+  withdrawnAt     DateTime?                      // Ngày rút (nếu có)
+  revokedAt       DateTime?                      // Ngày bị thu hồi (nếu có)
+  
+  // Withdraw policy
+  canWithdrawFull Boolean   @default(false)      // true sau 6 tháng
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  history         InsuranceFundHistory[]
+
+  @@index([status])
+  @@map("insurance_funds")
+}
+
+// Lịch sử thay đổi quỹ BH
+model InsuranceFundHistory {
+  id              String    @id @default(uuid())
+  fundId          String
+  fund            InsuranceFund @relation(fields: [fundId], references: [id], onDelete: Cascade)
+  
+  type            String    // DEPOSIT, WITHDRAW, DEDUCTION, UPGRADE, RENEWAL, REVOKE, INFO_CHANGE
+  amount          Float     // Số tiền thay đổi (+/-)
+  balanceBefore   Float     // Số dư trước
+  balanceAfter    Float     // Số dư sau
+  description     String    // Mô tả
+  metadata        String?   // JSON data bổ sung
+  
+  createdAt       DateTime  @default(now())
+
+  @@index([fundId])
+  @@index([type])
+  @@map("insurance_fund_history")
 }
 
 model Category {
@@ -143,20 +247,35 @@ model Product {
   accountTemplate   AccountTemplate? @relation("ProductTemplate", fields: [accountTemplateId], references: [id])
   autoDelivery      Boolean          @default(true) // Tự động giao hàng khi mua
   
-  // Product type: STANDARD (bán tài khoản), UPGRADE (nâng cấp tài khoản của buyer)
-  productType       String           @default("STANDARD") // STANDARD, UPGRADE
+  // Product type: STANDARD (bán tài khoản), UPGRADE (nâng cấp tài khoản của buyer), SERVICE (dịch vụ buff like/sub)
+  productType       String           @default("STANDARD") // STANDARD, UPGRADE, SERVICE
   // Các trường buyer cần cung cấp khi mua sản phẩm UPGRADE (JSON array)
   // VD: ["email", "password"] hoặc ["email"]
   requiredBuyerFields String?
+
+  // ====== SERVICE-specific fields (chỉ dùng khi productType = SERVICE) ======
+  // Nền tảng: FACEBOOK, INSTAGRAM, TIKTOK, YOUTUBE, TELEGRAM, TWITTER, THREADS, SHOPEE, OTHER
+  servicePlatform     String?
+  // Loại dịch vụ: LIKE, FOLLOW, SUBSCRIBE, VIEW, COMMENT, SHARE, REACTION, REVIEW, OTHER
+  serviceType         String?
+  // Giá mỗi đơn vị (VD: 50đ/like) - price trở thành giá hiển thị min
+  pricePerUnit        Float?     // Giá mỗi đơn vị
+  minQuantity         Int?       @default(100)   // Số lượng tối thiểu
+  maxQuantity         Int?       @default(10000) // Số lượng tối đa
+  estimatedTime       String?    // Thời gian dự kiến: "1-6 giờ", "12-24 giờ"
+  warrantyDays        Int?       @default(0)     // Số ngày bảo hành (0 = không bảo hành)
+  serviceSpeed        String?    // SLOW, MEDIUM, FAST
+  serviceNote         String?    // Ghi chú thêm cho buyer (VD: "Tài khoản phải để công khai")
 
   // Product Variants
   hasVariants Boolean          @default(false) // Có phân loại hay không
   variants    ProductVariant[]
 
   // Relations
-  orderItems OrderItem[]
-  cartItems  CartItem[]
-  inventory  ProductInventory[]
+  orderItems    OrderItem[]
+  cartItems     CartItem[]
+  inventory     ProductInventory[]
+  serviceOrders ServiceOrder[]
 
   @@map("products")
 }
@@ -172,6 +291,8 @@ model ProductVariant {
   stock     Int      @default(0)
   position  Int      @default(0)  // Thứ tự hiển thị
   isActive    Boolean  @default(true)
+  // Loại phân loại: STANDARD (bán tài khoản, giao từ kho) hoặc UPGRADE (nâng cấp, buyer nhập email)
+  variantType String   @default("STANDARD") // STANDARD, UPGRADE
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -216,6 +337,9 @@ model Order {
   total           Float
   shippingAddress String?
   notes           String?
+  discountCodeId  String?
+  discountCode    DiscountCode? @relation(fields: [discountCodeId], references: [id])
+  discountAmount  Float?  @default(0) // Số tiền đã giảm
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -254,10 +378,15 @@ model OrderItem {
   // VD: {"email": "user@example.com"} - Email cần upgrade
   buyerProvidedData String?
   // Loại sản phẩm tại thời điểm mua (snapshot)
-  productType       String?  // STANDARD, UPGRADE
+  productType       String?  // STANDARD, UPGRADE, SERVICE
+
+  // SERVICE order fields (link dịch vụ)
+  serviceLink       String?  // Link/URL cần buff (VD: link bài viết FB, link profile IG)
+  serviceQuantity   Int?     // Số lượng đặt (VD: 1000 like)
 
   // Relations
-  deliveries OrderDelivery[]
+  deliveries    OrderDelivery[]
+  serviceOrder  ServiceOrder?
 
   @@map("order_items")
 }
@@ -376,6 +505,19 @@ model Banner {
   @@map("banners")
 }
 
+model CategoryShowcase {
+  id          String   @id @default(uuid())
+  title       String
+  image       String   // Image URL (568x296)
+  link        String   // Navigation link (e.g. /explore?category=xxx)
+  position    Int      @default(0) // Display order
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("category_showcases")
+}
+
 // ============================================
 // DIGITAL PRODUCT INVENTORY SYSTEM
 // ============================================
@@ -491,13 +633,14 @@ model SystemSettings {
 
 // Phiên đấu giá hàng tuần
 model Auction {
-  id          String   @id @default(uuid())
-  weekNumber  Int      // Số tuần trong năm
+  id          String    @id @default(uuid())
+  weekNumber  Int       // Số tuần trong năm
   year        Int
   startTime   DateTime
   endTime     DateTime
-  status      String   @default("ACTIVE") // ACTIVE, ENDED, CANCELLED
-  createdAt   DateTime @default(now())
+  lastBidAt   DateTime? // Thời điểm bid cuối cùng (cho dynamic end)
+  status      String    @default("ACTIVE") // ACTIVE, ENDED, CANCELLED
+  createdAt   DateTime  @default(now())
 
   bids        AuctionBid[]
 
@@ -820,4 +963,295 @@ model BlogBookmark {
   @@index([postId])
   @@index([userId])
   @@map("blog_bookmarks")
+}
+
+// ============================================
+// TELEGRAM DEPOSIT NOTIFICATION SYSTEM
+// ============================================
+
+// Lưu danh sách tài khoản Telegram nhận thông báo nạp tiền (tối đa 5)
+model TelegramDepositNotification {
+  id          String   @id @default(uuid())
+  telegramId  String   @unique  // Telegram User ID hoặc Chat ID
+  name        String?           // Tên hiển thị / Ghi chú
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("telegram_deposit_notifications")
+}
+
+// ============================================
+// CHAT MODERATION SYSTEM
+// ============================================
+
+// Lưu lịch sử vi phạm chat của users
+model ChatViolation {
+  id              String   @id @default(uuid())
+  userId          String
+  conversationId  String?  // MongoDB conversation ID (string reference)
+  messageId       String?  // MongoDB message ID (string reference)
+  
+  content         String   // Message content that violated (truncated)
+  violationType   String   // PHONE_NUMBER, EMAIL, SOCIAL_MEDIA, EXTERNAL_LINK, BANK_INFO, OFF_PLATFORM_TRANSACTION
+  severity        String   // LOW, MEDIUM, HIGH, CRITICAL
+  score           Int      // Violation score
+  matchedPatterns String   // JSON array of matched patterns
+  action          String   // WARN, BLOCK, BLOCK_AND_WARN, BLOCK_AND_RESTRICT, BLOCK_AND_LOCK
+  
+  // Admin review
+  isReviewed      Boolean  @default(false)
+  reviewedBy      String?  // Admin ID who reviewed
+  reviewNote      String?  // Admin note
+  reviewedAt      DateTime?
+  
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([severity])
+  @@map("chat_violations")
+}
+
+model Page {
+  id          String   @id @default(uuid())
+  slug        String   @unique  // e.g. "terms", "privacy", "refund-policy"
+  title       String
+  content     String   // HTML content
+  description String?  // Meta description
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("pages")
+}
+
+// ============================================
+// CheckUID - Facebook/TikTok Monitoring Tool
+// ============================================
+
+model CheckUidPlan {
+  id            String   @id @default(uuid())
+  name          String   // "1 tháng", "3 tháng", "6 tháng", "12 tháng"
+  durationDays  Int      // 30, 90, 180, 365
+  price         Float    // Giá VNĐ
+  originalPrice Float?   // Giá gốc (nếu có giảm giá)
+  description   String?
+  features      String?  // JSON string of features
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  subscriptions CheckUidSubscription[]
+
+  @@map("checkuid_plans")
+}
+
+model CheckUidSubscription {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId      String
+  plan        CheckUidPlan @relation(fields: [planId], references: [id])
+  startDate   DateTime @default(now())
+  endDate     DateTime
+  amount      Float    // Số tiền đã trả
+  status      String   @default("ACTIVE") // ACTIVE, EXPIRED, CANCELLED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("checkuid_subscriptions")
+}
+
+model CheckUidItem {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform      String   // "facebook" or "tiktok"
+  type          String   @default("profile") // profile, group, post (for facebook)
+  uid           String   // Facebook UID or TikTok username
+  link          String?  // Original URL
+  note          String?
+  price         Float    @default(0) // Giá trị tài khoản
+  status        String   @default("unknown") // live, die, unknown
+  previousStatus String? 
+  avatarUrl     String?
+  lastCheckedAt DateTime?
+  expiresAt     DateTime? // Tracking expiry
+  telegramBotId String?  // Link to bot DB record if synced from Telegram
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  history       CheckUidHistory[]
+
+  @@unique([userId, platform, uid])
+  @@map("checkuid_items")
+}
+
+model CheckUidHistory {
+  id          String   @id @default(uuid())
+  itemId      String
+  item        CheckUidItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  oldStatus   String
+  newStatus   String
+  checkedAt   DateTime @default(now())
+
+  @@map("checkuid_history")
+}
+
+// ============================================
+// DISCOUNT CODE SYSTEM
+// ============================================
+
+model DiscountCode {
+  id            String   @id @default(uuid())
+  code          String   @unique  // Mã giảm giá (VD: SALE10, BHOA2024)
+  sellerId      String            // Seller tạo mã (chỉ dùng cho sản phẩm của seller đó)
+  seller        User     @relation("SellerDiscountCodes", fields: [sellerId], references: [id], onDelete: Cascade)
+
+  // Loại giảm giá
+  type          String   @default("PERCENT") // PERCENT (%) hoặc FIXED (VNĐ cố định)
+  value         Float    // Giá trị giảm (10 = 10% hoặc 10000 = 10.000đ)
+  maxDiscount   Float?   // Số tiền giảm tối đa (chỉ áp dụng khi type=PERCENT)
+
+  // Điều kiện sử dụng
+  minOrderValue Float    @default(0)  // Đơn hàng tối thiểu
+  usageLimit    Int?     // Số lần sử dụng tối đa (null = không giới hạn)
+  usageCount    Int      @default(0)  // Số lần đã dùng
+
+  // Giới hạn per user
+  usageLimitPerUser Int? @default(1) // Mỗi user dùng tối đa bao nhiêu lần (null = không giới hạn)
+
+  // Giới hạn sản phẩm cụ thể (JSON array of productId strings, null = áp dụng tất cả)
+  productIds    String?  // JSON: ["id1","id2"] hoặc null = toàn gian hàng
+
+  // Mô tả (để seller ghi chú mục đích: bồi thường / khuyến mãi)
+  description   String?
+
+  // Thời hạn
+  startsAt      DateTime?  // Ngày bắt đầu (null = ngay lập tức)
+  expiresAt     DateTime?  // Ngày hết hạn (null = không hết hạn)
+
+  // Trạng thái
+  isActive      Boolean  @default(true)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  usages        DiscountCodeUsage[]
+  orders        Order[]
+
+  @@index([sellerId])
+  @@index([code])
+  @@index([isActive])
+  @@map("discount_codes")
+}
+
+// Lịch sử sử dụng mã giảm giá (để kiểm tra per-user limit)
+model DiscountCodeUsage {
+  id              String       @id @default(uuid())
+  discountCodeId  String
+  discountCode    DiscountCode @relation(fields: [discountCodeId], references: [id], onDelete: Cascade)
+  userId          String
+  orderId         String       @unique
+  discountAmount  Float        // Số tiền thực tế được giảm
+  createdAt       DateTime     @default(now())
+
+  @@unique([discountCodeId, userId, orderId])
+  @@index([discountCodeId])
+  @@index([userId])
+  @@map("discount_code_usages")
+}
+
+// ============================================
+// SERVICE ORDER SYSTEM (Buff Like/Sub MXH)
+// ============================================
+
+// Đơn dịch vụ - Theo dõi tiến độ buff like/sub
+model ServiceOrder {
+  id              String   @id @default(uuid())
+  
+  // Liên kết đơn hàng
+  orderItemId     String   @unique
+  orderItem       OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id])
+  buyerId         String
+  buyer           User     @relation("BuyerServiceOrders", fields: [buyerId], references: [id])
+  sellerId        String
+  seller          User     @relation("SellerServiceOrders", fields: [sellerId], references: [id])
+  
+  // Thông tin dịch vụ
+  serviceLink     String   // Link/URL cần buff
+  platform        String   // FACEBOOK, INSTAGRAM, TIKTOK, YOUTUBE...
+  serviceType     String   // LIKE, FOLLOW, VIEW, COMMENT...
+  
+  // Số lượng & tiến độ
+  quantity        Int      // Số lượng đã đặt (VD: 1000 like)
+  delivered       Int      @default(0)  // Số lượng đã giao (VD: 750/1000)
+  progress        Float    @default(0)  // Phần trăm tiến độ (0-100)
+  
+  // Trạng thái 
+  // PENDING: Mới tạo, chờ seller xử lý
+  // PROCESSING: Seller đang chạy dịch vụ
+  // COMPLETED: Hoàn thành đủ số lượng
+  // PARTIAL: Hoàn thành 1 phần (hoàn tiền phần còn lại)
+  // CANCELLED: Hủy đơn (hoàn tiền toàn bộ)
+  status          String   @default("PENDING")
+  
+  // Thời gian
+  startedAt       DateTime?   // Seller bắt đầu xử lý
+  completedAt     DateTime?   // Hoàn thành
+  
+  // Hoàn tiền partial
+  refundedAmount  Float?      // Số tiền hoàn trả (nếu partial)
+  
+  // Bảo hành
+  warrantyDays    Int      @default(0)    // Số ngày bảo hành
+  warrantyExpiry  DateTime?              // Hạn bảo hành
+  
+  // Ghi chú
+  sellerNote      String?  // Ghi chú của seller
+  cancelReason    String?  // Lý do hủy
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  warrantyRequests ServiceWarrantyRequest[]
+
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([productId])
+  @@map("service_orders")
+}
+
+// Yêu cầu bảo hành dịch vụ (khi like/sub bị tụt)
+model ServiceWarrantyRequest {
+  id              String   @id @default(uuid())
+  serviceOrderId  String
+  serviceOrder    ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  
+  // Thông tin yêu cầu
+  currentCount    Int      // Số lượng hiện tại (VD: đặt 1000 nhưng còn 800)
+  requestedCount  Int      // Số lượng cần bù (VD: 200)
+  evidence        String?  // Screenshot URL chứng minh bị tụt
+  buyerNote       String?  // Ghi chú của buyer
+  
+  // Trạng thái: PENDING, APPROVED, REJECTED, COMPLETED
+  status          String   @default("PENDING")
+  sellerNote      String?  // Ghi chú khi seller xử lý
+  
+  // Bù bảo hành
+  deliveredCount  Int      @default(0)  // Số lượng seller đã bù
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([serviceOrderId])
+  @@index([status])
+  @@map("service_warranty_requests")
 }

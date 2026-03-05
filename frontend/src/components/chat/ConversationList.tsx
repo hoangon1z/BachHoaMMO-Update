@@ -1,203 +1,215 @@
 'use client';
 
-import { useEffect } from 'react';
-import { MessageCircle, ShoppingBag, Shield, AlertTriangle, Check } from 'lucide-react';
-import { useChat, Conversation } from '@/hooks/useChat';
-import { useAuthStore } from '@/store/authStore';
+import { useState, useMemo } from 'react';
+import { Search, MessageSquare, ShieldCheck, Store, User, Clock, AlertTriangle, CheckCircle, Archive } from 'lucide-react';
+import { Conversation } from '@/hooks/useChat';
 import { API_BASE_URL } from '@/lib/config';
 
-// Helper to get full URL for avatars
-const getFullUrl = (url: string | undefined): string => {
+interface ConversationListProps {
+  conversations: Conversation[];
+  selectedId?: string;
+  onSelect: (conversation: Conversation) => void;
+  currentUserId?: string;
+  currentUserRole?: string;
+  isLoading?: boolean;
+}
+
+function getFullUrl(url: string): string {
   if (!url) return '';
   if (url.startsWith('http')) return url;
   return `${API_BASE_URL}${url}`;
-};
-
-interface ConversationListProps {
-  onSelectConversation: (conversation: Conversation) => void;
-  selectedId?: string;
-  filter?: {
-    status?: string;
-    type?: string;
-  };
-  chatHook: ReturnType<typeof useChat>;
 }
 
-export function ConversationList({ onSelectConversation, selectedId, filter, chatHook }: ConversationListProps) {
-  const { user } = useAuthStore();
-  const { conversations, isLoading, loadConversations } = chatHook;
+function formatTime(dateString: string): string {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMinutes = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
 
-  // Load conversations on mount and when filter changes
-  useEffect(() => {
-    console.log('[ConversationList] Loading conversations with filter:', filter);
-    loadConversations(filter);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter?.status, filter?.type, loadConversations]);
+  if (diffMinutes < 1) return 'Vừa xong';
+  if (diffMinutes < 60) return `${diffMinutes}p`;
+  if (diffHours < 24) return `${diffHours}h`;
+  if (diffDays < 7) return `${diffDays}d`;
+  return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+}
 
-  const formatTime = (dateString?: string) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+function getStatusConfig(status: string) {
+  switch (status) {
+    case 'ACTIVE': return { icon: MessageSquare, label: 'Đang hoạt động', color: 'text-green-500', bg: 'bg-green-50' };
+    case 'DISPUTED': return { icon: AlertTriangle, label: 'Tranh chấp', color: 'text-yellow-600', bg: 'bg-yellow-50' };
+    case 'RESOLVED': return { icon: CheckCircle, label: 'Đã giải quyết', color: 'text-blue-500', bg: 'bg-blue-50' };
+    case 'ARCHIVED': return { icon: Archive, label: 'Đã lưu trữ', color: 'text-gray-400', bg: 'bg-gray-50' };
+    default: return { icon: MessageSquare, label: status, color: 'text-gray-500', bg: 'bg-gray-50' };
+  }
+}
 
-    if (diffDays === 0) {
-      return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-    } else if (diffDays === 1) {
-      return 'Hôm qua';
-    } else if (diffDays < 7) {
-      return date.toLocaleDateString('vi-VN', { weekday: 'short' });
-    } else {
-      return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+function getRoleBadge(type: string, currentUserRole?: string) {
+  if (type === 'BUYER_ADMIN' || type === 'SELLER_ADMIN') {
+    return { label: 'Admin', icon: ShieldCheck, color: 'text-red-500 bg-red-50' };
+  }
+  if (type === 'BUYER_SELLER') {
+    // Show the OTHER role, not current user's role
+    if (currentUserRole === 'SELLER') {
+      return { label: 'Buyer', icon: User, color: 'text-blue-500 bg-blue-50' };
     }
-  };
+    return { label: 'Seller', icon: Store, color: 'text-emerald-500 bg-emerald-50' };
+  }
+  return null;
+}
 
-  const getConversationIcon = (type: string, status: string) => {
-    if (status === 'DISPUTED') {
-      return <AlertTriangle className="w-5 h-5 text-yellow-500" />;
-    }
-    if (status === 'RESOLVED') {
-      return <Check className="w-5 h-5 text-green-500" />;
-    }
-    switch (type) {
-      case 'BUYER_SELLER':
-        return <ShoppingBag className="w-5 h-5 text-blue-500" />;
-      case 'BUYER_ADMIN':
-      case 'SELLER_ADMIN':
-        return <Shield className="w-5 h-5 text-purple-500" />;
-      default:
-        return <MessageCircle className="w-5 h-5 text-gray-500" />;
-    }
-  };
+export function ConversationList({
+  conversations, selectedId, onSelect, currentUserId, currentUserRole, isLoading,
+}: ConversationListProps) {
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'DISPUTED':
-        return (
-          <span className="text-xs px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded">
-            Tranh chấp
-          </span>
-        );
-      case 'RESOLVED':
-        return (
-          <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
-            Đã xử lý
-          </span>
-        );
-      case 'ARCHIVED':
-        return (
-          <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
-            Lưu trữ
-          </span>
-        );
-      default:
-        return null;
-    }
-  };
+  const filteredConversations = useMemo(() => {
+    if (!searchQuery.trim()) return conversations;
+    const query = searchQuery.toLowerCase();
+    return conversations.filter(c =>
+      c.otherParticipant?.name?.toLowerCase().includes(query) ||
+      c.subject?.toLowerCase().includes(query) ||
+      c.lastMessagePreview?.toLowerCase().includes(query)
+    );
+  }, [conversations, searchQuery]);
 
   if (isLoading && conversations.length === 0) {
     return (
-      <div className="p-4 space-y-3">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="flex items-center gap-3 animate-pulse">
-            <div className="w-12 h-12 bg-gray-200 rounded-full" />
-            <div className="flex-1">
-              <div className="h-4 bg-gray-200 rounded w-3/4 mb-2" />
-              <div className="h-3 bg-gray-200 rounded w-1/2" />
+      <div className="space-y-0">
+        {[1, 2, 3, 4, 5].map(i => (
+          <div key={i} className="flex items-center gap-3 p-3 animate-pulse">
+            <div className="w-11 h-11 rounded-full bg-gray-200" />
+            <div className="flex-1 space-y-2">
+              <div className="h-3.5 bg-gray-200 rounded-full w-3/4" />
+              <div className="h-3 bg-gray-100 rounded-full w-1/2" />
             </div>
+            <div className="h-2.5 bg-gray-100 rounded-full w-10" />
           </div>
         ))}
       </div>
     );
   }
 
-  if (conversations.length === 0) {
-    return (
-      <div className="p-8 text-center text-muted-foreground">
-        <MessageCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />
-        <p>Chưa có cuộc trò chuyện nào</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="divide-y">
-      {conversations.map((conv) => (
-        <button
-          key={conv._id}
-          onClick={() => onSelectConversation(conv)}
-          className={`w-full p-4 flex items-start gap-3 hover:bg-gray-50 transition-colors text-left ${
-            selectedId === conv._id ? 'bg-blue-50' : ''
-          }`}
-        >
-          {/* Avatar */}
-          <div className="relative">
-            {conv.otherParticipant?.avatar ? (
-              <img
-                src={getFullUrl(conv.otherParticipant.avatar)}
-                alt=""
-                className="w-12 h-12 rounded-full object-cover"
-              />
-            ) : (
-              <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
-                {getConversationIcon(conv.type, conv.status)}
-              </div>
-            )}
-            {/* Online indicator */}
-            {(conv.otherParticipant as any)?.isOnline && (
-              <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
-            )}
-          </div>
+    <div className="flex flex-col h-full">
+      {/* Search bar */}
+      <div className="p-3 border-b">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Tìm kiếm cuộc trò chuyện..."
+            className="w-full h-9 pl-9 pr-3 text-sm bg-gray-50 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
+          />
+        </div>
+      </div>
 
-          {/* Content */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className="font-semibold truncate text-gray-900">
-                  {conv.otherParticipant?.name || conv.subject || 'Cuộc trò chuyện'}
-                </span>
-                {/* Role badge for conversation type */}
-                {conv.type === 'BUYER_ADMIN' && (
-                  <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium shrink-0">
-                    Admin
-                  </span>
-                )}
-                {conv.type === 'SELLER_ADMIN' && (
-                  <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium shrink-0">
-                    Admin
-                  </span>
-                )}
-                {conv.type === 'BUYER_SELLER' && conv.otherParticipant && (
-                  <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-medium shrink-0">
-                    Seller
-                  </span>
-                )}
-              </div>
-              <span className="text-xs text-gray-500 shrink-0 ml-2">
-                {formatTime(conv.lastMessageAt)}
-              </span>
+      {/* List */}
+      <div className="flex-1 overflow-y-auto">
+        {filteredConversations.length === 0 ? (
+          <div className="text-center py-12 px-4">
+            <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
+              <MessageSquare className="w-6 h-6 text-gray-300" />
             </div>
-            {/* Subject line if available */}
-            {conv.subject && conv.subject !== conv.otherParticipant?.name && (
-              <p className="text-xs text-gray-600 mb-1 truncate">
-                Vấn đề: {conv.subject}
-              </p>
-            )}
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-gray-500 truncate flex-1">
-                {conv.lastMessagePreview || 'Bắt đầu trò chuyện...'}
-              </p>
-              <div className="flex items-center gap-2 ml-2 shrink-0">
-                {getStatusBadge(conv.status)}
-                {conv.unreadCount && conv.unreadCount > 0 && (
-                  <span className="min-w-[20px] h-5 bg-primary text-white text-xs rounded-full flex items-center justify-center px-1.5">
-                    {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
-                  </span>
-                )}
-              </div>
-            </div>
+            <p className="text-sm text-gray-400">
+              {searchQuery ? 'Không tìm thấy cuộc trò chuyện' : 'Chưa có cuộc trò chuyện nào'}
+            </p>
           </div>
-        </button>
-      ))}
+        ) : (
+          filteredConversations.map((conv) => {
+            const isSelected = conv._id === selectedId;
+            const unread = conv.unreadCount || 0;
+            const role = getRoleBadge(conv.type, currentUserRole);
+            const statusCfg = getStatusConfig(conv.status);
+            const other = conv.otherParticipant;
+            const avatarUrl = other?.avatar ? getFullUrl(other.avatar) : '';
+
+            return (
+              <button
+                key={conv._id}
+                onClick={() => onSelect(conv)}
+                className={`w-full flex items-start gap-3 px-3 py-3 text-left transition-all border-b border-gray-50 ${isSelected
+                    ? 'bg-blue-50/80 border-l-2 border-l-blue-500'
+                    : 'hover:bg-gray-50/80 border-l-2 border-l-transparent'
+                  } ${unread > 0 ? 'bg-blue-50/30' : ''}`}
+              >
+                {/* Avatar */}
+                <div className="relative flex-shrink-0">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="" className="w-11 h-11 rounded-full object-cover ring-2 ring-gray-100" />
+                  ) : (
+                    <div className={`w-11 h-11 rounded-full bg-gradient-to-br ${getAvatarGradient(other?.name || conv.subject || '')} flex items-center justify-center ring-2 ring-white shadow-sm`}>
+                      <span className="text-sm font-bold text-white">{(other?.name || conv.subject)?.[0]?.toUpperCase() || '?'}</span>
+                    </div>
+                  )}
+                  {/* Online indicator */}
+                  {other?.isOnline && (
+                    <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-400 rounded-full border-2 border-white" />
+                  )}
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className={`text-[13px] font-semibold truncate ${unread > 0 ? 'text-gray-900' : 'text-gray-700'}`}>
+                      {other?.name || conv.subject || 'Cuộc trò chuyện'}
+                    </span>
+                    {role && (
+                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${role.color}`}>
+                        {role.label}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Status badge if not active */}
+                  {conv.status !== 'ACTIVE' && (
+                    <div className={`inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full mb-0.5 ${statusCfg.bg} ${statusCfg.color}`}>
+                      <statusCfg.icon className="w-2.5 h-2.5" />
+                      {statusCfg.label}
+                    </div>
+                  )}
+
+                  {/* Last message preview */}
+                  <p className={`text-[12px] truncate ${unread > 0 ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
+                    {conv.lastMessagePreview || 'Bắt đầu cuộc trò chuyện'}
+                  </p>
+                </div>
+
+                {/* Meta */}
+                <div className="flex flex-col items-end gap-1.5 flex-shrink-0 pt-0.5">
+                  <span className="text-[10px] text-gray-400">
+                    {conv.lastMessageAt ? formatTime(conv.lastMessageAt) : ''}
+                  </span>
+                  {unread > 0 && (
+                    <span className="min-w-[20px] h-5 px-1.5 bg-blue-500 text-white rounded-full text-[10px] font-bold flex items-center justify-center shadow-sm">
+                      {unread > 99 ? '99+' : unread}
+                    </span>
+                  )}
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
     </div>
   );
+}
+
+function getAvatarGradient(name: string) {
+  const gradients = [
+    'from-blue-400 to-indigo-500',
+    'from-pink-400 to-rose-500',
+    'from-green-400 to-emerald-500',
+    'from-amber-400 to-orange-500',
+    'from-purple-400 to-violet-500',
+    'from-cyan-400 to-teal-500',
+    'from-red-400 to-pink-500',
+    'from-teal-400 to-cyan-500',
+  ];
+  const charCode = name?.charCodeAt(0) || 0;
+  return gradients[charCode % gradients.length];
 }

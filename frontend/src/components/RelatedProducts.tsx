@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Star } from 'lucide-react';
+import { Star, Package } from 'lucide-react';
 
-interface Product {
+interface RelProduct {
   id: string;
   title: string;
   price: number;
   originalPrice?: number;
-  image: string;
+  images: string;
   rating: number;
-  sold: number;
+  sales: number;
 }
 
 interface RelatedProductsProps {
@@ -20,109 +20,111 @@ interface RelatedProductsProps {
 }
 
 export function RelatedProducts({ categoryId, currentProductId }: RelatedProductsProps) {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<RelProduct[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Mock related products
-    const mockProducts: Product[] = [
-      {
-        id: '2',
-        title: 'Spotify Premium 1 Tháng',
-        price: 50000,
-        originalPrice: 39000,
-        image: 'https://picsum.photos/seed/spotify/300/300',
-        rating: 4.7,
-        sold: 523,
-      },
-      {
-        id: '3',
-        title: 'YouTube Premium 1 Tháng',
-        price: 80000,
-        originalPrice: 69000,
-        image: 'https://picsum.photos/seed/youtube/300/300',
-        rating: 4.9,
-        sold: 892,
-      },
-      {
-        id: '4',
-        title: 'Disney+ Premium',
-        price: 90000,
-        image: 'https://picsum.photos/seed/disney/300/300',
-        rating: 4.6,
-        sold: 234,
-      },
-      {
-        id: '5',
-        title: 'Amazon Prime Video',
-        price: 70000,
-        originalPrice: 59000,
-        image: 'https://picsum.photos/seed/amazon/300/300',
-        rating: 4.5,
-        sold: 345,
-      },
-      {
-        id: '6',
-        title: 'Apple TV+',
-        price: 85000,
-        image: 'https://picsum.photos/seed/apple/300/300',
-        rating: 4.8,
-        sold: 456,
-      },
-    ];
+    const fetchRelated = async () => {
+      try {
+        const res = await fetch(`/api/products?categoryId=${categoryId}&take=12`);
+        if (res.ok) {
+          const data = await res.json();
+          const filtered = (data.products || [])
+            .filter((p: any) => p.id !== currentProductId)
+            .slice(0, 10);
+          setProducts(filtered);
+        }
+      } catch (err) {
+        console.error('Failed to load related products:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-    setProducts(mockProducts);
+    if (categoryId) fetchRelated();
   }, [categoryId, currentProductId]);
 
-  if (products.length === 0) {
-    return null;
+  if (isLoading) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100">
+        <div className="px-5 py-3.5 border-b border-gray-50">
+          <h3 className="text-[14px] font-semibold text-gray-800">Sản phẩm liên quan</h3>
+        </div>
+        <div className="p-5 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="animate-pulse">
+              <div className="aspect-square bg-gray-100 rounded-xl mb-2" />
+              <div className="h-3 bg-gray-100 rounded w-3/4 mb-1.5" />
+              <div className="h-3 bg-gray-100 rounded w-1/2" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
-  const discount = (price: number, originalPrice?: number) => {
-    if (!originalPrice || originalPrice <= price) return 0;
-    return Math.round(((originalPrice - price) / originalPrice) * 100);
-  };
+  if (products.length === 0) return null;
 
   return (
-    <>
-      {products.map((product) => (
-        <Link key={product.id} href={`/products/${product.id}`}>
-          <div className="group bg-card border rounded-lg overflow-hidden hover:shadow-lg transition-all">
-            <div className="relative aspect-square overflow-hidden bg-gray-100">
-              <img
-                src={product.image}
-                alt={product.title}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-              />
-              {product.originalPrice && (
-                <div className="absolute top-2 left-2 px-2 py-1 bg-red-600 text-white text-xs font-bold rounded">
-                  -{discount(product.price, product.originalPrice)}%
+    <div className="bg-white rounded-2xl border border-gray-100">
+      <div className="px-5 py-3.5 border-b border-gray-50">
+        <h3 className="text-[14px] font-semibold text-gray-800">Sản phẩm liên quan</h3>
+      </div>
+      <div className="p-4 sm:p-5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          {products.map((product) => {
+            let images: string[] = [];
+            try { images = JSON.parse(product.images); } catch { }
+            const img = images[0] || '';
+            const discount = product.originalPrice && product.originalPrice > product.price
+              ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
+              : 0;
+
+            return (
+              <Link key={product.id} href={`/products/${product.id}`} className="group block">
+                <div className="relative aspect-square overflow-hidden rounded-xl bg-gray-50 mb-2">
+                  {img ? (
+                    <img
+                      src={img}
+                      alt={product.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Package className="w-8 h-8 text-gray-200" />
+                    </div>
+                  )}
+                  {discount > 0 && (
+                    <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded">
+                      -{discount}%
+                    </span>
+                  )}
                 </div>
-              )}
-            </div>
-            <div className="p-3">
-              <h4 className="text-sm font-medium line-clamp-2 mb-2 group-hover:text-primary transition-colors">
-                {product.title}
-              </h4>
-              <div className="flex items-center gap-1 mb-2">
-                <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                <span className="text-xs text-muted-foreground">
-                  {product.rating} | Đã bán {product.sold}
-                </span>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-base font-bold text-red-600">
-                  {product.price.toLocaleString('vi-VN')}đ
-                </span>
-                {product.originalPrice && product.originalPrice > product.price && (
-                  <span className="text-xs text-muted-foreground line-through">
-                    {product.originalPrice.toLocaleString('vi-VN')}đ
+                <h4 className="text-[13px] font-medium text-gray-800 line-clamp-2 mb-1 group-hover:text-blue-600 transition-colors leading-snug">
+                  {product.title}
+                </h4>
+                <div className="flex items-center gap-1 mb-1">
+                  <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                  <span className="text-[11px] text-gray-400">
+                    {product.rating.toFixed(1)} | {product.sales} đã bán
                   </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </Link>
-      ))}
-    </>
+                </div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-[14px] font-bold text-[#ee4d2d]">
+                    {product.price.toLocaleString('vi-VN')}đ
+                  </span>
+                  {product.originalPrice && product.originalPrice > product.price && (
+                    <span className="text-[11px] text-gray-400 line-through">
+                      {product.originalPrice.toLocaleString('vi-VN')}đ
+                    </span>
+                  )}
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }

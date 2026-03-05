@@ -14,15 +14,15 @@ interface CartItem {
   stock: number;
   sellerId: string;
   sellerName: string;
-  // Thêm cho sản phẩm loại UPGRADE
-  productType?: 'STANDARD' | 'UPGRADE';
+  // Thêm cho sản phẩm loại UPGRADE / SERVICE
+  productType?: 'STANDARD' | 'UPGRADE' | 'SERVICE';
   requiredBuyerFields?: string[]; // Các trường buyer cần cung cấp (VD: ["email"])
   buyerProvidedData?: Record<string, string>; // Dữ liệu buyer cung cấp (VD: {email: "user@example.com"})
 }
 
 interface CartState {
   items: CartItem[];
-  addItem: (item: Omit<CartItem, 'quantity'>) => void;
+  addItem: (item: Omit<CartItem, 'quantity'> & { initialQuantity?: number }) => void;
   removeItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   updateBuyerData: (id: string, data: Record<string, string>) => void;
@@ -38,22 +38,24 @@ export const useCartStore = create<CartState>()(
 
       addItem: (item) => {
         const items = get().items;
+        const { initialQuantity, ...itemData } = item;
+        const qty = initialQuantity || 1;
         // Use id (which includes variantId if present) for matching
-        const existingItem = items.find((i) => i.id === item.id);
+        const existingItem = items.find((i) => i.id === itemData.id);
 
         if (existingItem) {
           // Update quantity if item already in cart
           set({
             items: items.map((i) =>
-              i.id === item.id
-                ? { ...i, quantity: Math.min(i.quantity + 1, i.stock) }
+              i.id === itemData.id
+                ? { ...i, quantity: Math.min(i.quantity + qty, i.stock), buyerProvidedData: itemData.buyerProvidedData || i.buyerProvidedData }
                 : i
             ),
           });
         } else {
           // Add new item to cart
           set({
-            items: [...items, { ...item, quantity: 1 }],
+            items: [...items, { ...itemData, quantity: qty }],
           });
         }
       },

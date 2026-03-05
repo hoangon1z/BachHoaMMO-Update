@@ -4,6 +4,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { WebhookService, WebhookEvent } from '../webhook/webhook.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { DiscountCodesService } from '../discount-codes/discount-codes.service';
 
 @Injectable()
 export class OrdersService {
@@ -13,7 +14,8 @@ export class OrdersService {
     private telegramService: TelegramService,
     private webhookService: WebhookService,
     private notificationsService: NotificationsService,
-  ) {}
+    private discountCodesService: DiscountCodesService,
+  ) { }
 
   /**
    * Create order with escrow and auto-delivery for digital products
@@ -26,8 +28,9 @@ export class OrdersService {
    */
   async createOrder(
     buyerId: string,
-    items: Array<{ productId: string; quantity: number; price: number; buyerProvidedData?: string }>,
+    items: Array<{ productId: string; quantity: number; price: number; variantId?: string; variantName?: string; buyerProvidedData?: string; serviceLink?: string; serviceQuantity?: number }>,
     total: number,
+    discountCodeStr?: string,
   ) {
     // Validate buyer has sufficient balance
     const buyer = await this.prisma.user.findUnique({
@@ -38,15 +41,11 @@ export class OrdersService {
       throw new NotFoundException('Buyer not found');
     }
 
-    if (buyer.balance < total) {
-      throw new BadRequestException('Insufficient balance');
-    }
-
     // Get all products and validate
     const productIds = items.map(item => item.productId);
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds } },
-      include: { 
+      include: {
         seller: true,
         accountTemplate: true,
         variants: true,
@@ -74,29 +73,105 @@ export class OrdersService {
 
     // For simplicity, assume single seller (in real app, split orders by seller)
     const sellerId = products[0].sellerId;
-    
+
     // Check if all products are from same seller
     const allSameSeller = products.every(p => p.sellerId === sellerId);
     if (!allSameSeller) {
       throw new BadRequestException('All products must be from the same seller for this order');
     }
 
-    // Check inventory availability for digital products with auto-delivery
-    // Skip check if product allows manual delivery (autoDelivery = false)
+    // Check inventory availability for digital products (skip SERVICE products)
+    // - autoDelivery = true: BẮT BUỘC phải có đủ hàng trong kho (throw lỗi nếu thiếu)
+    // - autoDelivery = false: Nếu có hàng trong kho sẽ tự động giao, nếu không đủ seller giao thủ công phần còn lại
     for (const item of items) {
       const product = products.find(p => p.id === item.productId);
-      // Chỉ check inventory nếu sản phẩm số VÀ bật auto-delivery
-      // Nếu autoDelivery = false, seller sẽ giao thủ công nên không cần có hàng trong kho
+      // SERVICE products don't need inventory
+      if (product?.productType === 'SERVICE') continue;
       if (product?.isDigital && product.autoDelivery) {
+        // Sản phẩm bật auto-delivery: BẮT BUỘC phải có đủ hàng
+        const inventoryWhere: any = { productId: item.productId, status: 'AVAILABLE' };
+        if (item.variantId) {
+          inventoryWhere.variantId = item.variantId;
+        }
         const availableCount = await this.prisma.productInventory.count({
-          where: { productId: item.productId, status: 'AVAILABLE' },
+          where: inventoryWhere,
         });
+        const variantLabel = item.variantName ? ` (${item.variantName})` : '';
         if (availableCount < item.quantity) {
           throw new BadRequestException(
-            `Sản phẩm "${product.title}" chỉ còn ${availableCount} trong kho`
+            `Sản phẩm "${product.title}"${variantLabel} chỉ còn ${availableCount} trong kho`
           );
         }
       }
+      // Nếu autoDelivery = false: không throw lỗi, hệ thống sẽ giao từ kho những gì có sẵn
+    }
+
+    // Validate and enrich SERVICE items
+    for (const item of items) {
+      const product = products.find(p => p.id === item.productId);
+      if (product?.productType === 'SERVICE') {
+        const requiredFields: string[] = product.requiredBuyerFields
+          ? (typeof product.requiredBuyerFields === 'string' ? JSON.parse(product.requiredBuyerFields) : product.requiredBuyerFields)
+          : [];
+
+        // Try to extract serviceLink/serviceQuantity from buyerProvidedData if not provided directly
+        if (!item.serviceLink && item.buyerProvidedData) {
+          try {
+            const bpd = typeof item.buyerProvidedData === 'string' ? JSON.parse(item.buyerProvidedData) : item.buyerProvidedData;
+            if (bpd.link) item.serviceLink = bpd.link;
+            if (bpd.quantity) item.serviceQuantity = parseInt(bpd.quantity);
+          } catch { }
+        }
+
+        // Only validate serviceLink if 'link' is in requiredBuyerFields
+        if (requiredFields.includes('link') && !item.serviceLink) {
+          throw new BadRequestException(`Vui lòng nhập link/URL cho dịch vụ "${product.title}"`);
+        }
+
+        // Only validate serviceQuantity if 'quantity' is in requiredBuyerFields
+        if (requiredFields.includes('quantity')) {
+          if (!item.serviceQuantity || item.serviceQuantity <= 0) {
+            throw new BadRequestException(`Số lượng dịch vụ không hợp lệ cho "${product.title}"`);
+          }
+          if (product.minQuantity && item.serviceQuantity < product.minQuantity) {
+            throw new BadRequestException(`Số lượng tối thiểu cho "${product.title}" là ${product.minQuantity}`);
+          }
+          if (product.maxQuantity && item.serviceQuantity > product.maxQuantity) {
+            throw new BadRequestException(`Số lượng tối đa cho "${product.title}" là ${product.maxQuantity}`);
+          }
+        }
+
+        // Fallback: if no serviceQuantity, use item.quantity
+        if (!item.serviceQuantity) {
+          item.serviceQuantity = item.quantity;
+        }
+        // Fallback: if no serviceLink, use empty string for DB
+        if (!item.serviceLink) {
+          item.serviceLink = '';
+        }
+      }
+    }
+
+    // Validate và tính discount code (nếu có)
+    let discountCodeObj: any = null;
+    let discountAmount = 0;
+    if (discountCodeStr && discountCodeStr.trim()) {
+      const result = await this.discountCodesService.validateAndCalculate(
+        discountCodeStr,
+        total,
+        sellerId,
+        buyerId,
+      );
+      discountCodeObj = result.discountCode;
+      discountAmount = result.discountAmount;
+    }
+
+    // Tổng tiền thực trả sau khi áp dụng mã giảm giá
+    const finalTotal = Math.max(0, total - discountAmount);
+
+    // Kiểm tra số dư đủ để thanh toán finalTotal
+    if (buyer.balance < finalTotal) {
+      throw new BadRequestException('Insufficient balance');
     }
 
     // Generate order number
@@ -114,7 +189,10 @@ export class OrdersService {
         commission += itemTotal * (PLATFORM_COMMISSION / 100);
       }
     }
-    const sellerAmount = total - commission;
+    // Commission tính trên finalTotal (sau giảm giá)
+    const commissionRatio = total > 0 ? commission / total : 0;
+    const finalCommission = Math.floor(finalTotal * commissionRatio);
+    const sellerAmount = finalTotal - finalCommission;
 
     // Calculate dispute deadline based on product type
     const disputeDeadline = new Date();
@@ -125,10 +203,10 @@ export class OrdersService {
 
     // Create order, deduct balance, and create escrow in transaction
     const result = await this.prisma.$transaction(async (tx) => {
-      // 1. Deduct money from buyer
+      // 1. Deduct money from buyer (finalTotal = total - discountAmount)
       await tx.user.update({
         where: { id: buyerId },
-        data: { balance: { decrement: total } },
+        data: { balance: { decrement: finalTotal } },
       });
 
       // 2. Create purchase transaction
@@ -136,9 +214,9 @@ export class OrdersService {
         data: {
           userId: buyerId,
           type: 'PURCHASE',
-          amount: total,
+          amount: finalTotal,
           status: 'COMPLETED',
-          description: `Thanh toán đơn hàng ${orderNumber}`,
+          description: `Thanh toán đơn hàng ${orderNumber}${discountAmount > 0 ? ` (giảm ${discountAmount.toLocaleString('vi-VN')}đ)` : ''}`,
         },
       });
 
@@ -150,11 +228,24 @@ export class OrdersService {
           sellerId,
           status: 'PROCESSING',
           subtotal: total,
-          commission,
-          total,
+          commission: finalCommission,
+          total: finalTotal,
+          discountCodeId: discountCodeObj?.id ?? null,
+          discountAmount: discountAmount > 0 ? discountAmount : 0,
           disputeDeadline,
         },
       });
+
+      // 3b. Ghi nhận sử dụng mã giảm giá (nếu có)
+      if (discountCodeObj) {
+        await this.discountCodesService.recordUsage(
+          tx,
+          discountCodeObj.id,
+          buyerId,
+          order.id,
+          discountAmount,
+        );
+      }
 
       // 4. Create order items and handle inventory
       const orderItems = [];
@@ -162,7 +253,7 @@ export class OrdersService {
 
       for (const item of items) {
         const product = products.find(p => p.id === item.productId);
-        
+
         // Create order item với buyerProvidedData (cho sản phẩm UPGRADE)
         const orderItem = await tx.orderItem.create({
           data: {
@@ -172,54 +263,82 @@ export class OrdersService {
             price: item.price,
             total: item.price * item.quantity,
             deliveredQuantity: 0,
+            // Lưu variant info (để seller biết khách mua loại nào)
+            variantId: item.variantId || null,
+            variantName: item.variantName || null,
             // Lưu thông tin buyer cung cấp (email để upgrade) nếu có
             buyerProvidedData: item.buyerProvidedData || null,
             // Lưu loại sản phẩm tại thời điểm mua
             productType: product?.productType || 'STANDARD',
+            // SERVICE fields
+            serviceLink: item.serviceLink || null,
+            serviceQuantity: item.serviceQuantity || null,
           },
         });
         orderItems.push(orderItem);
 
-        // Handle digital product delivery
-        if (product?.isDigital && product.autoDelivery) {
-          // Get available inventory items
+        // Handle digital product delivery - tự động giao từ kho nếu có hàng
+        // SERVICE products skip inventory delivery entirely
+        if (product?.productType === 'SERVICE') {
+          // Create ServiceOrder for SERVICE products
+          await tx.serviceOrder.create({
+            data: {
+              orderItemId: orderItem.id,
+              productId: item.productId,
+              buyerId,
+              sellerId,
+              serviceLink: item.serviceLink!,
+              platform: product.servicePlatform || 'OTHER',
+              serviceType: product.serviceType || 'OTHER',
+              quantity: item.serviceQuantity!,
+              status: 'PENDING',
+              warrantyDays: product.warrantyDays || 0,
+            },
+          });
+        } else if (product?.isDigital) {
+          // STANDARD/UPGRADE: giao từ kho nếu có hàng
+          const inventoryWhere: any = { productId: item.productId, status: 'AVAILABLE' };
+          if (item.variantId) {
+            inventoryWhere.variantId = item.variantId;
+          }
           const inventoryItems = await tx.productInventory.findMany({
-            where: { productId: item.productId, status: 'AVAILABLE' },
+            where: inventoryWhere,
             take: item.quantity,
             orderBy: { createdAt: 'asc' }, // FIFO - First In First Out
           });
 
-          // Mark inventory as SOLD and create deliveries
-          for (const inv of inventoryItems) {
-            // Update inventory status
-            await tx.productInventory.update({
-              where: { id: inv.id },
-              data: {
-                status: 'SOLD',
-                soldAt: new Date(),
-                soldToId: buyerId,
-                orderId: order.id,
-                orderItemId: orderItem.id,
-              },
-            });
+          if (inventoryItems.length > 0) {
+            // Mark inventory as SOLD and create deliveries
+            for (const inv of inventoryItems) {
+              await tx.productInventory.update({
+                where: { id: inv.id },
+                data: {
+                  status: 'SOLD',
+                  soldAt: new Date(),
+                  soldToId: buyerId,
+                  orderId: order.id,
+                  orderItemId: orderItem.id,
+                },
+              });
 
-            // Create delivery record
-            const delivery = await tx.orderDelivery.create({
-              data: {
-                orderId: order.id,
-                orderItemId: orderItem.id,
-                inventoryId: inv.id,
-                accountData: inv.accountData, // Copy data at time of delivery
-              },
+              const delivery = await tx.orderDelivery.create({
+                data: {
+                  orderId: order.id,
+                  orderItemId: orderItem.id,
+                  inventoryId: inv.id,
+                  accountData: inv.accountData,
+                },
+              });
+              deliveries.push(delivery);
+            }
+
+            // Update delivered quantity in DB AND in-memory object
+            await tx.orderItem.update({
+              where: { id: orderItem.id },
+              data: { deliveredQuantity: inventoryItems.length },
             });
-            deliveries.push(delivery);
+            orderItem.deliveredQuantity = inventoryItems.length;
           }
-
-          // Update delivered quantity
-          await tx.orderItem.update({
-            where: { id: orderItem.id },
-            data: { deliveredQuantity: inventoryItems.length },
-          });
         }
 
         // Update product sales count (stock already managed via inventory)
@@ -238,18 +357,41 @@ export class OrdersService {
           where: { id: item.productId },
           data: { stock: newStock },
         });
+
+        // Nếu có variant, cập nhật stock của variant đó
+        if (item.variantId) {
+          const variantStock = await tx.productInventory.count({
+            where: { productId: item.productId, variantId: item.variantId, status: 'AVAILABLE' },
+          });
+          await tx.productVariant.update({
+            where: { id: item.variantId },
+            data: { stock: variantStock },
+          });
+        }
       }
+
+      // Update seller's totalSales in SellerProfile
+      const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+      await tx.sellerProfile.updateMany({
+        where: { userId: sellerId },
+        data: {
+          totalSales: { increment: totalQuantity },
+        },
+      });
 
       // 5. Update order status and delivery time
       const allDelivered = orderItems.every((oi, idx) => {
         const item = items[idx];
+        const product = products.find(p => p.id === item.productId);
+        // SERVICE products: order stays PENDING until seller processes
+        if (product?.productType === 'SERVICE') return false;
         return oi.deliveredQuantity >= item.quantity;
       });
 
       await tx.order.update({
         where: { id: order.id },
         data: {
-          status: allDelivered ? 'PROCESSING' : 'PENDING',
+          status: allDelivered ? 'COMPLETED' : 'PENDING',
           deliveredAt: allDelivered ? new Date() : null,
         },
       });
@@ -352,7 +494,7 @@ export class OrdersService {
       // Check inventory levels and trigger inventory events
       for (const item of result.orderItems) {
         const product = result.products.find(p => p.id === item.productId);
-        if (product?.isDigital && product?.autoDelivery) {
+        if (product?.isDigital) {
           const availableCount = await this.prisma.productInventory.count({
             where: { productId: item.productId, status: 'AVAILABLE' },
           });
@@ -565,7 +707,7 @@ export class OrdersService {
 
     // Parse account data for buyer view
     const isBuyer = order.buyerId === userId;
-    
+
     // Format response with parsed account data
     const formattedOrder = {
       ...order,
@@ -735,6 +877,18 @@ export class OrdersService {
         data: { status: 'COMPLETED' },
       });
 
+      // 5. Notify seller about earnings
+      await tx.notification.create({
+        data: {
+          userId: escrow.sellerId,
+          type: 'ORDER',
+          title: 'Đã nhận tiền từ đơn hàng',
+          message: `Bạn đã nhận ${escrow.amount.toLocaleString('vi-VN')}đ từ đơn hàng #${escrow.order.orderNumber}. Tiền đã được cộng vào ví.`,
+          link: `/seller/orders`,
+          icon: 'Wallet',
+        },
+      });
+
       return updatedEscrow;
     });
 
@@ -746,7 +900,7 @@ export class OrdersService {
    */
   async getReleasableEscrows() {
     const now = new Date();
-    
+
     const escrows = await this.prisma.escrow.findMany({
       where: {
         status: 'HOLDING',
@@ -881,5 +1035,67 @@ export class OrdersService {
     });
 
     return review;
+  }
+
+  /**
+   * Get delivery data for file download
+   * Validates buyer ownership and returns delivery info
+   */
+  async getDeliveryForDownload(orderId: string, deliveryId: string, userId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (order.buyerId !== userId) {
+      throw new BadRequestException('Chỉ người mua mới có thể tải file');
+    }
+
+    const delivery = await this.prisma.orderDelivery.findUnique({
+      where: { id: deliveryId },
+      include: {
+        inventory: {
+          select: {
+            id: true,
+            accountData: true,
+          },
+        },
+      },
+    });
+
+    if (!delivery || delivery.orderId !== orderId) {
+      throw new NotFoundException('Delivery not found');
+    }
+
+    // Extract original file name from accountData metadata if it's a FILE type
+    let originalFileName: string | null = null;
+    if (delivery.accountData.startsWith('FILE:')) {
+      // The accountData format is FILE:path/to/file
+      // Try to get original filename from path
+      const filePath = delivery.accountData.replace('FILE:', '');
+      const parts = filePath.split('/');
+      originalFileName = parts[parts.length - 1];
+    }
+
+    // Update view tracking
+    if (!delivery.viewedAt) {
+      await this.prisma.orderDelivery.update({
+        where: { id: deliveryId },
+        data: { viewedAt: new Date(), viewCount: 1 },
+      });
+    } else {
+      await this.prisma.orderDelivery.update({
+        where: { id: deliveryId },
+        data: { viewCount: { increment: 1 } },
+      });
+    }
+
+    return {
+      accountData: delivery.accountData,
+      originalFileName,
+    };
   }
 }

@@ -17,6 +17,7 @@ import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { ChatService, CreateConversationDto, SendMessageDto } from './chat.service';
+import { ChatModerationService } from './chat-moderation.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ConversationStatus, ConversationType } from './schemas/conversation.schema';
 import { MessageType } from './schemas/message.schema';
@@ -27,19 +28,23 @@ if (!existsSync(uploadDir)) {
   mkdirSync(uploadDir, { recursive: true });
 }
 
-// Multer storage config
+// Multer storage config - uses crypto-random filenames to prevent URL guessing
+const crypto = require('crypto');
 const storage = diskStorage({
   destination: uploadDir,
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, `${uniqueSuffix}${extname(file.originalname)}`);
+    const randomId = crypto.randomUUID();
+    cb(null, `${randomId}${extname(file.originalname)}`);
   },
 });
 
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
 export class ChatController {
-  constructor(private chatService: ChatService) {}
+  constructor(
+    private chatService: ChatService,
+    private chatModerationService: ChatModerationService,
+  ) { }
 
   // ============================================
   // CONVERSATION ENDPOINTS
@@ -100,9 +105,9 @@ export class ChatController {
    */
   @Post('start-with-seller')
   async startWithSeller(
-    @Body() body: { 
-      sellerId: string; 
-      productId?: string; 
+    @Body() body: {
+      sellerId: string;
+      productId?: string;
       orderId?: string;
       message?: string;
       isComplaint?: boolean;
@@ -135,8 +140,8 @@ export class ChatController {
     @Body() body: { subject: string; message: string; orderId?: string },
     @Request() req,
   ) {
-    const type = req.user.role === 'SELLER' 
-      ? ConversationType.SELLER_ADMIN 
+    const type = req.user.role === 'SELLER'
+      ? ConversationType.SELLER_ADMIN
       : ConversationType.BUYER_ADMIN;
 
     const conversation = await this.chatService.createOrGetConversation(
@@ -206,6 +211,14 @@ export class ChatController {
   /**
    * Upload attachments
    * POST /chat/upload
+   * 
+   * Security measures:
+   * - JWT required (class-level guard)
+   * - Extension whitelist
+   * - Magic bytes validation (prevents extension spoofing)
+   * - Crypto-random filenames (prevents URL guessing)
+   * - Filename sanitization (prevents path traversal)
+   * - File size limit: 10MB per file, max 5 files
    */
   @Post('upload')
   @UseInterceptors(
@@ -218,19 +231,118 @@ export class ChatController {
         if (allowedTypes.test(ext)) {
           cb(null, true);
         } else {
-          cb(new BadRequestException('Invalid file type'), false);
+          cb(new BadRequestException('Loại file không được hỗ trợ. Chỉ chấp nhận: ảnh, pdf, doc, txt, zip'), false);
         }
       },
     }),
   )
   async uploadFiles(@UploadedFiles() files: any[]) {
-    const attachments = files.map((file) => ({
-      url: `/uploads/chat/${file.filename}`,
-      type: file.mimetype,
-      name: file.originalname,
-      size: file.size,
-    }));
-    return { success: true, attachments };
+    if (!files || files.length === 0) {
+      throw new BadRequestException('Không có file nào được upload');
+    }
+
+    const fs = require('fs');
+    const crypto = require('crypto');
+    const validatedAttachments: any[] = [];
+
+    for (const file of files) {
+      const ext = extname(file.originalname).toLowerCase();
+
+      // Validate magic bytes for binary formats to prevent extension spoofing
+      try {
+        const buffer = fs.readFileSync(file.path);
+        const isValid = this.validateFileContent(buffer, ext);
+        if (!isValid) {
+          // Remove invalid file
+          try { fs.unlinkSync(file.path); } catch { }
+          continue; // Skip this file silently
+        }
+      } catch (err) {
+        try { fs.unlinkSync(file.path); } catch { }
+        continue;
+      }
+
+      // Sanitize original filename (remove path traversal, special chars)
+      const sanitizedName = file.originalname
+        .replace(/[^\w\s\-\.]/gi, '_')  // Replace special chars
+        .replace(/\.{2,}/g, '.')        // Remove double dots (path traversal)
+        .replace(/^\.+/, '')            // Remove leading dots
+        .substring(0, 100);             // Limit length
+
+      validatedAttachments.push({
+        url: `/uploads/chat/${file.filename}`,
+        type: file.mimetype,
+        name: sanitizedName || `file${ext}`,
+        size: file.size,
+      });
+    }
+
+    if (validatedAttachments.length === 0) {
+      throw new BadRequestException('Không có file hợp lệ. Vui lòng kiểm tra định dạng file.');
+    }
+
+    return { success: true, attachments: validatedAttachments };
+  }
+
+  /**
+   * Validate file content by checking magic bytes
+   * Prevents attacks where malicious files are renamed with safe extensions
+   */
+  private validateFileContent(buffer: Buffer, ext: string): boolean {
+    // For text-based formats, verify they don't contain binary/executable content
+    const textExtensions = ['.txt', '.doc', '.docx'];
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+
+    if (imageExtensions.includes(ext)) {
+      // Check image magic bytes
+      const jpgMagic = buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF;
+      const pngMagic = buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47;
+      const gifMagic = buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46;
+      const webpMagic = buffer.length > 11 &&
+        buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+        buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50;
+
+      switch (ext) {
+        case '.jpg': case '.jpeg': return jpgMagic;
+        case '.png': return pngMagic;
+        case '.gif': return gifMagic;
+        case '.webp': return webpMagic;
+      }
+    }
+
+    if (ext === '.pdf') {
+      // PDF starts with %PDF
+      return buffer.length > 4 && buffer.toString('utf8', 0, 5) === '%PDF-';
+    }
+
+    if (ext === '.zip' || ext === '.docx') {
+      // ZIP/DOCX starts with PK (0x50, 0x4B)
+      return buffer.length > 1 && buffer[0] === 0x50 && buffer[1] === 0x4B;
+    }
+
+    if (ext === '.doc') {
+      // DOC starts with D0 CF 11 E0 (OLE2 compound document)
+      return buffer.length > 3 && buffer[0] === 0xD0 && buffer[1] === 0xCF && buffer[2] === 0x11 && buffer[3] === 0xE0;
+    }
+
+    if (ext === '.txt') {
+      // For .txt: ensure it's actually text content (no null bytes in first 8KB)
+      const checkLength = Math.min(buffer.length, 8192);
+      for (let i = 0; i < checkLength; i++) {
+        if (buffer[i] === 0x00) {
+          return false; // Contains null bytes = likely binary
+        }
+      }
+      // Also check for common executable signatures disguised as .txt
+      const header = buffer.toString('utf8', 0, Math.min(buffer.length, 20));
+      if (header.startsWith('MZ') || header.startsWith('\x7fELF')) {
+        return false; // Windows EXE or Linux ELF binary
+      }
+      return true;
+    }
+
+    // Default: allow (already passed extension check)
+    return true;
   }
 
   // ============================================
@@ -331,6 +443,26 @@ export class ChatController {
     };
   }
 
+  /**
+   * Get conversation stats
+   * GET /chat/stats
+   */
+  @Get('stats')
+  async getStats(@Request() req) {
+    const stats = await this.chatService.getConversationStats(req.user.id, req.user.role);
+    return { success: true, ...stats };
+  }
+
+  /**
+   * Get pinned message in conversation
+   * GET /chat/conversations/:id/pinned
+   */
+  @Get('conversations/:id/pinned')
+  async getPinnedMessage(@Param('id') conversationId: string) {
+    const message = await this.chatService.getPinnedMessage(conversationId);
+    return { success: true, message };
+  }
+
   // ============================================
   // ADMIN ENDPOINTS
   // ============================================
@@ -409,5 +541,70 @@ export class ChatController {
       limit: limit ? parseInt(limit) : 20,
     });
     return { success: true, ...result };
+  }
+
+  // ============================================
+  // CHAT MODERATION ENDPOINTS (ADMIN)
+  // ============================================
+
+  /**
+   * Get chat violations (admin only)
+   * GET /chat/admin/violations
+   */
+  @Get('admin/violations')
+  async getViolations(
+    @Request() req,
+    @Query('userId') userId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (req.user.role !== 'ADMIN') {
+      throw new BadRequestException('Admin only');
+    }
+    const result = await this.chatModerationService.getViolations({
+      userId,
+      page: page ? parseInt(page) : 1,
+      limit: limit ? parseInt(limit) : 20,
+    });
+    return { success: true, ...result };
+  }
+
+  /**
+   * Get user violation stats (admin only)
+   * GET /chat/admin/violations/user/:userId
+   */
+  @Get('admin/violations/user/:userId')
+  async getUserViolationStats(@Param('userId') userId: string, @Request() req) {
+    if (req.user.role !== 'ADMIN') {
+      throw new BadRequestException('Admin only');
+    }
+    const stats = await this.chatModerationService.getUserViolationStats(userId);
+    return { success: true, stats };
+  }
+
+  /**
+   * Unlock user chat (admin only)
+   * POST /chat/admin/unlock/:userId
+   */
+  @Post('admin/unlock/:userId')
+  async unlockUserChat(@Param('userId') userId: string, @Request() req) {
+    if (req.user.role !== 'ADMIN') {
+      throw new BadRequestException('Admin only');
+    }
+    await this.chatModerationService.unlockUserChat(userId, req.user.id);
+    return { success: true, message: 'User chat unlocked successfully' };
+  }
+
+  /**
+   * Analyze message for violations (testing endpoint, admin only)
+   * POST /chat/admin/analyze-message
+   */
+  @Post('admin/analyze-message')
+  async analyzeMessage(@Body() body: { content: string }, @Request() req) {
+    if (req.user.role !== 'ADMIN') {
+      throw new BadRequestException('Admin only');
+    }
+    const result = this.chatModerationService.analyzeMessage(body.content);
+    return { success: true, result };
   }
 }

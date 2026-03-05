@@ -5,7 +5,27 @@ import { Public } from '../security/decorators/security.decorators';
 @Controller('shop')
 @Public() // All shop endpoints are public
 export class PublicSellerController {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
+
+  /**
+   * Get all shops (for sitemap)
+   * GET /shop/all
+   * Must be BEFORE :id route to avoid conflict
+   */
+  @Get('all')
+  async getAllShops() {
+    const shops = await this.prisma.sellerProfile.findMany({
+      where: {
+        user: { isBanned: false },
+      },
+      select: {
+        userId: true,
+        shopName: true,
+        updatedAt: true,
+      },
+    });
+    return shops;
+  }
 
   /**
    * Get public shop/seller profile
@@ -21,6 +41,7 @@ export class PublicSellerController {
         name: true,
         email: true,
         avatar: true,
+        isBanned: true,
         createdAt: true,
         sellerProfile: {
           select: {
@@ -31,6 +52,12 @@ export class PublicSellerController {
             rating: true,
             totalSales: true,
             isVerified: true,
+            insuranceLevel: true,
+            insuranceTier: true,
+            contactPhone: true,
+            contactTelegram: true,
+            withdrawalPin: true,
+            storeStatus: true,
             createdAt: true,
           },
         },
@@ -51,15 +78,27 @@ export class PublicSellerController {
       return { error: 'Shop not found', statusCode: 404 };
     }
 
+    // Hide shop if seller is banned
+    if (seller.isBanned) {
+      return { error: 'Shop not found', statusCode: 404 };
+    }
+
+    const sp = seller.sellerProfile;
+    const isProfileComplete = !!(sp && (sp.contactPhone || sp.contactTelegram) && sp.withdrawalPin);
+
     return {
       id: seller.id,
-      name: seller.sellerProfile?.shopName || seller.name || 'Shop',
-      description: seller.sellerProfile?.shopDescription || '',
-      logo: seller.sellerProfile?.shopLogo || seller.avatar,
-      rating: seller.sellerProfile?.rating || 0,
-      totalSales: seller.sellerProfile?.totalSales || seller._count.sales || 0,
+      name: sp?.shopName || seller.name || 'Shop',
+      description: sp?.shopDescription || '',
+      logo: sp?.shopLogo || seller.avatar,
+      rating: sp?.rating || 0,
+      totalSales: sp?.totalSales || seller._count.sales || 0,
       totalProducts: seller._count.products || 0,
-      isVerified: seller.sellerProfile?.isVerified || false,
+      isVerified: sp?.isVerified || false,
+      insuranceLevel: sp?.insuranceLevel || 0,
+      insuranceTier: sp?.insuranceTier || null,
+      isProfileComplete,
+      storeStatus: sp?.storeStatus || 'ONLINE',
       joinDate: seller.createdAt,
     };
   }
@@ -78,6 +117,15 @@ export class PublicSellerController {
     const pageNum = parseInt(page || '1');
     const limitNum = parseInt(limit || '12');
     const skip = (pageNum - 1) * limitNum;
+
+    // Check if seller is banned
+    const seller = await this.prisma.user.findUnique({
+      where: { id },
+      select: { isBanned: true },
+    });
+    if (!seller || seller.isBanned) {
+      return { products: [], pagination: { page: 1, limit: limitNum, total: 0, totalPages: 0 } };
+    }
 
     // Determine sort order
     let orderBy: any = { createdAt: 'desc' };
@@ -151,6 +199,15 @@ export class PublicSellerController {
    */
   @Get(':id/categories')
   async getShopCategories(@Param('id') id: string) {
+    // Check if seller is banned
+    const seller = await this.prisma.user.findUnique({
+      where: { id },
+      select: { isBanned: true },
+    });
+    if (!seller || seller.isBanned) {
+      return [];
+    }
+
     const categories = await this.prisma.category.findMany({
       where: {
         products: {

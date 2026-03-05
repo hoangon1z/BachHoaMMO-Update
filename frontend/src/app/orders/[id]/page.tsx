@@ -29,6 +29,9 @@ import {
   AlertCircle,
   Star,
   ExternalLink,
+  Download,
+  FileText,
+  File,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -113,7 +116,7 @@ export default function OrderDetailPage() {
   const [visibleAccounts, setVisibleAccounts] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
-  
+
   // Complaint state
   const [showComplaintModal, setShowComplaintModal] = useState(false);
   const [selectedReason, setSelectedReason] = useState('');
@@ -123,7 +126,7 @@ export default function OrderDetailPage() {
   const [successConversationId, setSuccessConversationId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  
+
   // Confirm order dialog state
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmSuccessModal, setConfirmSuccessModal] = useState(false);
@@ -267,6 +270,46 @@ export default function OrderDetailPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  // Handle download delivery file
+  const handleDownloadDelivery = async (deliveryId: string) => {
+    if (!order) return;
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/orders/${order.id}/deliveries/${deliveryId}/download`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Download failed');
+      }
+
+      // Get filename from Content-Disposition header
+      const disposition = response.headers.get('Content-Disposition');
+      let fileName = `account-${deliveryId.slice(0, 8)}.txt`;
+      if (disposition) {
+        const match = disposition.match(/filename="?([^"]+)"?/);
+        if (match) {
+          fileName = decodeURIComponent(match[1]);
+        }
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (error) {
+      console.error('Download failed:', error);
+      alert('Tải file thất bại, vui lòng thử lại');
+    }
+  };
+
   const handleLogout = () => {
     logout();
     router.push('/');
@@ -279,7 +322,7 @@ export default function OrderDetailPage() {
   // Handle contact seller
   const handleContactSeller = async () => {
     if (!order?.seller?.id) return;
-    
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch('/api/chat/start-with-seller', {
@@ -288,13 +331,13 @@ export default function OrderDetailPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           sellerId: order.seller.id,
           orderId: order.id,
           message: `Xin chào! Tôi muốn hỏi về đơn hàng ${order.orderNumber}`
         }),
       });
-      
+
       const data = await response.json();
       if (data.success && data.conversation?._id) {
         // Redirect to messages page with conversation ID
@@ -314,16 +357,16 @@ export default function OrderDetailPage() {
       setErrorMessage('Vui lòng chọn lý do khiếu nại');
       return;
     }
-    
+
     if (!order?.seller?.id) return;
-    
+
     setIsSubmittingComplaint(true);
     setErrorMessage(null);
-    
+
     try {
       const token = localStorage.getItem('token');
       const reasonLabel = COMPLAINT_REASONS.find(r => r.id === selectedReason)?.label || selectedReason;
-      
+
       // Build complaint message
       let complaintMessage = `🚨 **KHIẾU NẠI ĐƠN HÀNG** 🚨\n\n`;
       complaintMessage += `📋 **Mã đơn hàng:** ${order.orderNumber}\n`;
@@ -334,7 +377,7 @@ export default function OrderDetailPage() {
         complaintMessage += `\n📝 **Chi tiết:** ${complaintDetails.trim()}\n`;
       }
       complaintMessage += `\n---\nKhách hàng yêu cầu được hỗ trợ giải quyết vấn đề này.`;
-      
+
       // Start conversation with seller and send complaint message
       const response = await fetch('/api/chat/start-with-seller', {
         method: 'POST',
@@ -342,14 +385,14 @@ export default function OrderDetailPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           sellerId: order.seller.id,
           orderId: order.id,
           message: complaintMessage,
           isComplaint: true, // Flag this as a complaint
         }),
       });
-      
+
       const data = await response.json();
       if (data.success && data.conversation?._id) {
         setShowComplaintModal(false);
@@ -395,7 +438,7 @@ export default function OrderDetailPage() {
       try {
         const labels = JSON.parse(fieldLabels);
         return labels[field] || field;
-      } catch {}
+      } catch { }
     }
     const defaultLabels: Record<string, string> = {
       username: 'Tên đăng nhập',
@@ -476,7 +519,7 @@ export default function OrderDetailPage() {
                   <Store className="w-4 h-4" />
                   {order.seller?.sellerProfile?.shopName || order.seller?.name}
                 </span>
-                <Link 
+                <Link
                   href={`/shop/${order.seller?.id}`}
                   className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium"
                 >
@@ -496,26 +539,30 @@ export default function OrderDetailPage() {
                   {isConfirming ? 'Đang xử lý...' : 'Xác nhận nhận hàng'}
                 </Button>
               )}
-              
+
               {/* Complaint button - show when order has been delivered or completed */}
-              {(order.deliveredAt || order.status === 'COMPLETED' || order.status === 'PROCESSING') && 
-               order.status !== 'CANCELLED' && 
-               order.status !== 'REFUNDED' && (
-                <Button 
-                  variant="outline"
-                  onClick={() => setShowComplaintModal(true)}
-                  className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-                >
-                  <Flag className="w-4 h-4 mr-2" />
-                  Khiếu nại
-                </Button>
-              )}
-              
-              <Button variant="outline" onClick={handleContactSeller}>
+              {(order.deliveredAt || order.status === 'COMPLETED' || order.status === 'PROCESSING') &&
+                order.status !== 'CANCELLED' &&
+                order.status !== 'REFUNDED' && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowComplaintModal(true)}
+                    className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                  >
+                    <Flag className="w-4 h-4 mr-2" />
+                    Khiếu nại
+                  </Button>
+                )}
+
+              <Button
+                variant="outline"
+                onClick={handleContactSeller}
+                className="border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+              >
                 <MessageSquare className="w-4 h-4 mr-2" />
                 Liên hệ shop
               </Button>
-              
+
               {/* Review button - show when COMPLETED and not yet reviewed */}
               {order.status === 'COMPLETED' && !orderReview && (
                 <Button
@@ -526,7 +573,7 @@ export default function OrderDetailPage() {
                   Đánh giá
                 </Button>
               )}
-              
+
               {/* Show review badge if already reviewed */}
               {orderReview && (
                 <div className="flex items-center gap-1 px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-full text-sm font-medium">
@@ -544,7 +591,7 @@ export default function OrderDetailPage() {
               <div className="text-sm">
                 <p className="font-medium text-yellow-800">Hạn khiếu nại</p>
                 <p className="text-yellow-700">
-                  Bạn có thể khiếu nại đến {new Date(order.disputeDeadline).toLocaleString('vi-VN')}. 
+                  Bạn có thể khiếu nại đến {new Date(order.disputeDeadline).toLocaleString('vi-VN')}.
                   Sau thời gian này, đơn hàng sẽ tự động hoàn tất.
                 </p>
               </div>
@@ -558,14 +605,14 @@ export default function OrderDetailPage() {
             let images: string[] = [];
             try {
               images = JSON.parse(item.product?.images || '[]');
-            } catch {}
+            } catch { }
 
             return (
               <div key={item.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 {/* Product Header */}
                 <div className="p-5 border-b border-gray-100">
                   <div className="flex items-center gap-4">
-                    <Link 
+                    <Link
                       href={`/products/${item.productId}`}
                       className="w-20 h-20 rounded-xl bg-gray-100 overflow-hidden flex-shrink-0 hover:opacity-80 transition-opacity"
                     >
@@ -578,7 +625,7 @@ export default function OrderDetailPage() {
                       )}
                     </Link>
                     <div className="flex-1">
-                      <Link 
+                      <Link
                         href={`/products/${item.productId}`}
                         className="font-semibold text-gray-900 hover:text-blue-600 transition-colors"
                       >
@@ -593,7 +640,7 @@ export default function OrderDetailPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-lg font-bold text-gray-900">{formatPrice(item.total)}</p>
-                      <Link 
+                      <Link
                         href={`/products/${item.productId}`}
                         className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 justify-end mt-1"
                       >
@@ -614,57 +661,103 @@ export default function OrderDetailPage() {
                     <div className="space-y-4">
                       {item.deliveries.map((delivery, idx) => {
                         const isVisible = visibleAccounts.has(delivery.id);
+                        const isFileDelivery = delivery.accountData.startsWith('FILE:');
                         const parsedData = delivery.parsedData || { data: delivery.accountData };
 
                         return (
                           <div key={delivery.id} className="bg-white rounded-xl border border-gray-200 p-4">
                             <div className="flex items-center justify-between mb-3">
-                              <span className="font-medium text-gray-700">Tài khoản #{idx + 1}</span>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => toggleAccountVisibility(delivery.id)}
-                                  className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                                >
-                                  {isVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                  {isVisible ? 'Ẩn' : 'Hiện'}
-                                </button>
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-2">
-                              {Object.entries(parsedData).map(([field, value]) => (
-                                <div key={field} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
-                                  <span className="text-sm text-gray-500">
-                                    {getFieldLabel(field, item.product?.accountTemplate?.fieldLabels)}
+                              <span className="font-medium text-gray-700">
+                                {isFileDelivery ? (
+                                  <span className="flex items-center gap-1.5">
+                                    <File className="w-4 h-4 text-blue-600" />
+                                    File #{idx + 1}
                                   </span>
-                                  <div className="flex items-center gap-2">
-                                    <code className="text-sm bg-gray-100 px-3 py-1 rounded font-mono">
-                                      {isVisible ? value : '••••••••'}
-                                    </code>
-                                    {isVisible && (
-                                      <button
-                                        onClick={() => copyToClipboard(value, `${delivery.id}-${field}`)}
-                                        className="p-1 hover:bg-gray-100 rounded"
-                                        title="Copy"
-                                      >
-                                        <Copy className={`w-4 h-4 ${copiedId === `${delivery.id}-${field}` ? 'text-green-600' : 'text-gray-400'}`} />
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
+                                ) : (
+                                  <>Tài khoản #{idx + 1}</>
+                                )}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                {/* Download button - always show */}
+                                <button
+                                  onClick={() => handleDownloadDelivery(delivery.id)}
+                                  className="text-sm text-green-600 hover:text-green-700 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-green-50 transition-colors"
+                                >
+                                  <Download className="w-4 h-4" />
+                                  Tải xuống
+                                </button>
+                                {/* Show/hide toggle for text accounts only */}
+                                {!isFileDelivery && (
+                                  <button
+                                    onClick={() => toggleAccountVisibility(delivery.id)}
+                                    className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                                  >
+                                    {isVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                    {isVisible ? 'Ẩn' : 'Hiện'}
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
-                            {isVisible && (
-                              <div className="mt-3 pt-3 border-t border-gray-100">
+                            {isFileDelivery ? (
+                              /* File-based delivery */
+                              <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                                <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                                  <FileText className="w-5 h-5 text-blue-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-gray-900 truncate">
+                                    {delivery.accountData.replace('FILE:', '').split('/').pop()}
+                                  </p>
+                                  <p className="text-xs text-gray-500">Nhấn &quot;Tải xuống&quot; để download file</p>
+                                </div>
                                 <button
-                                  onClick={() => copyToClipboard(delivery.accountData, delivery.id)}
-                                  className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                                  onClick={() => handleDownloadDelivery(delivery.id)}
+                                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-1.5"
                                 >
-                                  <Copy className={`w-4 h-4 ${copiedId === delivery.id ? 'text-green-600' : ''}`} />
-                                  {copiedId === delivery.id ? 'Đã copy!' : 'Copy tất cả'}
+                                  <Download className="w-4 h-4" />
+                                  Download
                                 </button>
                               </div>
+                            ) : (
+                              /* Text-based delivery */
+                              <>
+                                <div className="space-y-2">
+                                  {Object.entries(parsedData).map(([field, value]) => (
+                                    <div key={field} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                                      <span className="text-sm text-gray-500">
+                                        {getFieldLabel(field, item.product?.accountTemplate?.fieldLabels)}
+                                      </span>
+                                      <div className="flex items-center gap-2">
+                                        <code className="text-sm bg-gray-100 px-3 py-1 rounded font-mono">
+                                          {isVisible ? value : '••••••••'}
+                                        </code>
+                                        {isVisible && (
+                                          <button
+                                            onClick={() => copyToClipboard(value, `${delivery.id}-${field}`)}
+                                            className="p-1 hover:bg-gray-100 rounded"
+                                            title="Copy"
+                                          >
+                                            <Copy className={`w-4 h-4 ${copiedId === `${delivery.id}-${field}` ? 'text-green-600' : 'text-gray-400'}`} />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {isVisible && (
+                                  <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-3">
+                                    <button
+                                      onClick={() => copyToClipboard(delivery.accountData, delivery.id)}
+                                      className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                                    >
+                                      <Copy className={`w-4 h-4 ${copiedId === delivery.id ? 'text-green-600' : ''}`} />
+                                      {copiedId === delivery.id ? 'Đã copy!' : 'Copy tất cả'}
+                                    </button>
+                                  </div>
+                                )}
+                              </>
                             )}
                           </div>
                         );
@@ -716,11 +809,11 @@ export default function OrderDetailPage() {
       {showComplaintModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}
-          <div 
+          <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => !isSubmittingComplaint && setShowComplaintModal(false)}
           />
-          
+
           {/* Modal */}
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             {/* Header */}
@@ -734,7 +827,7 @@ export default function OrderDetailPage() {
                   <p className="text-sm text-gray-500">Đơn hàng: {order.orderNumber}</p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => !isSubmittingComplaint && setShowComplaintModal(false)}
                 disabled={isSubmittingComplaint}
                 className="p-2 hover:bg-gray-100 rounded-full transition-colors disabled:opacity-50"
@@ -742,16 +835,16 @@ export default function OrderDetailPage() {
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
-            
+
             {/* Body */}
             <div className="p-5 space-y-5 max-h-[60vh] overflow-y-auto">
               {/* Order info */}
               <div className="p-4 bg-gray-50 rounded-xl">
                 <div className="flex items-center gap-3">
                   {order.items[0]?.product?.images && (
-                    <img 
-                      src={JSON.parse(order.items[0].product.images)[0]} 
-                      alt="" 
+                    <img
+                      src={JSON.parse(order.items[0].product.images)[0]}
+                      alt=""
                       className="w-12 h-12 rounded-lg object-cover"
                     />
                   )}
@@ -765,7 +858,7 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               </div>
-              
+
               {/* Reason selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3">
@@ -773,13 +866,12 @@ export default function OrderDetailPage() {
                 </label>
                 <div className="space-y-2">
                   {COMPLAINT_REASONS.map((reason) => (
-                    <label 
+                    <label
                       key={reason.id}
-                      className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                        selectedReason === reason.id 
-                          ? 'border-red-500 bg-red-50' 
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                      }`}
+                      className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${selectedReason === reason.id
+                        ? 'border-red-500 bg-red-50'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        }`}
                     >
                       <input
                         type="radio"
@@ -796,7 +888,7 @@ export default function OrderDetailPage() {
                   ))}
                 </div>
               </div>
-              
+
               {/* Additional details */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -814,7 +906,7 @@ export default function OrderDetailPage() {
                   Vui lòng mô tả rõ ràng để shop có thể hỗ trợ bạn tốt hơn
                 </p>
               </div>
-              
+
               {/* Info notice */}
               <div className="p-4 bg-blue-50 rounded-xl">
                 <div className="flex items-start gap-3">
@@ -830,14 +922,14 @@ export default function OrderDetailPage() {
                 </div>
               </div>
             </div>
-            
+
             {/* Footer */}
             {/* Error message */}
             {errorMessage && (
               <div className="mx-5 mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
                 <p className="text-sm text-red-700">{errorMessage}</p>
-                <button 
+                <button
                   onClick={() => setErrorMessage(null)}
                   className="ml-auto p-1 hover:bg-red-100 rounded"
                 >
@@ -847,8 +939,8 @@ export default function OrderDetailPage() {
             )}
 
             <div className="flex gap-3 p-5 border-t border-gray-100 bg-gray-50">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="flex-1"
                 onClick={() => {
                   setShowComplaintModal(false);
@@ -858,7 +950,7 @@ export default function OrderDetailPage() {
               >
                 Hủy
               </Button>
-              <Button 
+              <Button
                 className="flex-1 bg-red-600 hover:bg-red-700"
                 onClick={handleSubmitComplaint}
                 disabled={!selectedReason || isSubmittingComplaint}
@@ -884,11 +976,11 @@ export default function OrderDetailPage() {
       {showConfirmDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}
-          <div 
+          <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setShowConfirmDialog(false)}
           />
-          
+
           {/* Modal */}
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6">
@@ -902,7 +994,7 @@ export default function OrderDetailPage() {
                   <p className="text-sm text-gray-500">Hành động này không thể hoàn tác</p>
                 </div>
               </div>
-              
+
               {/* Content */}
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
                 <div className="flex gap-3">
@@ -917,21 +1009,21 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               </div>
-              
+
               <p className="text-gray-700 text-center mb-6">
                 Bạn xác nhận đã nhận được tài khoản và <strong>hài lòng</strong> với đơn hàng này?
               </p>
-              
+
               {/* Actions */}
               <div className="flex gap-3">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="flex-1 h-11"
                   onClick={() => setShowConfirmDialog(false)}
                 >
                   Hủy
                 </Button>
-                <Button 
+                <Button
                   className="flex-1 h-11 bg-green-600 hover:bg-green-700"
                   onClick={handleConfirmOrder}
                   disabled={isConfirming}
@@ -959,7 +1051,7 @@ export default function OrderDetailPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          
+
           {/* Modal */}
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-8 text-center">
@@ -967,14 +1059,14 @@ export default function OrderDetailPage() {
               <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-green-100 flex items-center justify-center">
                 <CheckCircle2 className="w-10 h-10 text-green-600" />
               </div>
-              
+
               <h2 className="text-xl font-bold text-gray-900 mb-2">
                 Xác nhận thành công!
               </h2>
               <p className="text-gray-600 mb-6">
                 Cảm ơn bạn đã xác nhận đơn hàng. Tiền sẽ được chuyển cho người bán.
               </p>
-              
+
               {/* Info box */}
               <div className="p-4 bg-green-50 border border-green-200 rounded-xl mb-6 text-left">
                 <div className="flex items-start gap-3">
@@ -987,16 +1079,16 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="flex gap-3">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="flex-1"
                   onClick={() => setConfirmSuccessModal(false)}
                 >
                   Đóng
                 </Button>
-                <Button 
+                <Button
                   className="flex-1 bg-blue-600 hover:bg-blue-700"
                   onClick={() => router.push('/orders')}
                 >
@@ -1013,11 +1105,11 @@ export default function OrderDetailPage() {
       {confirmErrorModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}
-          <div 
+          <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setConfirmErrorModal(null)}
           />
-          
+
           {/* Modal */}
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 text-center">
@@ -1025,11 +1117,11 @@ export default function OrderDetailPage() {
               <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
                 <AlertCircle className="w-8 h-8 text-red-600" />
               </div>
-              
+
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Không thể xác nhận</h3>
               <p className="text-gray-600 mb-6">{confirmErrorModal}</p>
-              
-              <Button 
+
+              <Button
                 className="w-full"
                 onClick={() => setConfirmErrorModal(null)}
               >
@@ -1045,7 +1137,7 @@ export default function OrderDetailPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          
+
           {/* Modal */}
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-8 text-center">
@@ -1053,14 +1145,14 @@ export default function OrderDetailPage() {
               <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-green-100 flex items-center justify-center">
                 <CheckCircle2 className="w-10 h-10 text-green-600" />
               </div>
-              
+
               <h2 className="text-xl font-bold text-gray-900 mb-2">
                 Gửi khiếu nại thành công!
               </h2>
               <p className="text-gray-600 mb-6">
                 Khiếu nại của bạn đã được gửi đến shop. Bạn có thể theo dõi và trao đổi trực tiếp với shop qua tin nhắn.
               </p>
-              
+
               {/* Info box */}
               <div className="p-4 bg-blue-50 rounded-xl mb-6 text-left">
                 <div className="flex items-start gap-3">
@@ -1075,16 +1167,16 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="flex gap-3">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="flex-1"
                   onClick={() => setShowSuccessModal(false)}
                 >
                   Đóng
                 </Button>
-                <Button 
+                <Button
                   className="flex-1 bg-blue-600 hover:bg-blue-700"
                   onClick={handleGoToConversation}
                 >
@@ -1101,11 +1193,11 @@ export default function OrderDetailPage() {
       {errorMessage && !showComplaintModal && !showReviewModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}
-          <div 
+          <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setErrorMessage(null)}
           />
-          
+
           {/* Modal */}
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 text-center">
@@ -1113,11 +1205,11 @@ export default function OrderDetailPage() {
               <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
                 <AlertCircle className="w-8 h-8 text-red-600" />
               </div>
-              
+
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Có lỗi xảy ra</h3>
               <p className="text-gray-600 mb-6">{errorMessage}</p>
-              
-              <Button 
+
+              <Button
                 className="w-full"
                 onClick={() => setErrorMessage(null)}
               >
@@ -1132,11 +1224,11 @@ export default function OrderDetailPage() {
       {showReviewModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}
-          <div 
+          <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => !isSubmittingReview && setShowReviewModal(false)}
           />
-          
+
           {/* Modal */}
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             {/* Header */}
@@ -1150,7 +1242,7 @@ export default function OrderDetailPage() {
                   <p className="text-sm text-gray-500">{order.orderNumber}</p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => !isSubmittingReview && setShowReviewModal(false)}
                 disabled={isSubmittingReview}
                 className="p-2 hover:bg-gray-100 rounded-full transition-colors disabled:opacity-50"
@@ -1158,16 +1250,16 @@ export default function OrderDetailPage() {
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
-            
+
             {/* Body */}
             <div className="p-5 space-y-5 max-h-[60vh] overflow-y-auto">
               {/* Order info */}
               <div className="p-4 bg-gray-50 rounded-xl">
                 <div className="flex items-center gap-3">
                   {order.items[0]?.product?.images && (
-                    <img 
-                      src={JSON.parse(order.items[0].product.images)[0]} 
-                      alt="" 
+                    <img
+                      src={JSON.parse(order.items[0].product.images)[0]}
+                      alt=""
                       className="w-12 h-12 rounded-lg object-cover"
                     />
                   )}
@@ -1181,7 +1273,7 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               </div>
-              
+
               {/* Star Rating */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3 text-center">
@@ -1198,11 +1290,10 @@ export default function OrderDetailPage() {
                       className="p-1 transition-transform hover:scale-110"
                     >
                       <Star
-                        className={`w-10 h-10 transition-colors ${
-                          star <= (reviewHoverRating || reviewRating)
-                            ? 'fill-yellow-400 text-yellow-400'
-                            : 'text-gray-300'
-                        }`}
+                        className={`w-10 h-10 transition-colors ${star <= (reviewHoverRating || reviewRating)
+                          ? 'fill-yellow-400 text-yellow-400'
+                          : 'text-gray-300'
+                          }`}
                       />
                     </button>
                   ))}
@@ -1216,7 +1307,7 @@ export default function OrderDetailPage() {
                   {reviewRating === 5 && 'Rất hài lòng'}
                 </p>
               </div>
-              
+
               {/* Comment */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1230,7 +1321,7 @@ export default function OrderDetailPage() {
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl resize-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-500/20 transition-all text-sm"
                 />
               </div>
-              
+
               {/* Info notice */}
               <div className="p-4 bg-blue-50 rounded-xl">
                 <div className="flex items-start gap-3">
@@ -1241,13 +1332,13 @@ export default function OrderDetailPage() {
                 </div>
               </div>
             </div>
-            
+
             {/* Error message in modal */}
             {errorMessage && showReviewModal && (
               <div className="mx-5 mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
                 <p className="text-sm text-red-700">{errorMessage}</p>
-                <button 
+                <button
                   onClick={() => setErrorMessage(null)}
                   className="ml-auto p-1 hover:bg-red-100 rounded"
                 >
@@ -1258,8 +1349,8 @@ export default function OrderDetailPage() {
 
             {/* Footer */}
             <div className="flex gap-3 p-5 border-t border-gray-100 bg-gray-50">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="flex-1"
                 onClick={() => {
                   setShowReviewModal(false);
@@ -1271,7 +1362,7 @@ export default function OrderDetailPage() {
               >
                 Hủy
               </Button>
-              <Button 
+              <Button
                 className="flex-1 bg-yellow-500 hover:bg-yellow-600"
                 onClick={handleSubmitReview}
                 disabled={reviewRating === 0 || isSubmittingReview}
@@ -1298,7 +1389,7 @@ export default function OrderDetailPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          
+
           {/* Modal */}
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-8 text-center">
@@ -1306,36 +1397,35 @@ export default function OrderDetailPage() {
               <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-yellow-100 flex items-center justify-center">
                 <Star className="w-10 h-10 text-yellow-500 fill-yellow-500" />
               </div>
-              
+
               <h2 className="text-xl font-bold text-gray-900 mb-2">
                 Cảm ơn bạn đã đánh giá!
               </h2>
               <p className="text-gray-600 mb-6">
                 Đánh giá của bạn sẽ giúp những người mua khác có thêm thông tin hữu ích.
               </p>
-              
+
               {/* Rating display */}
               <div className="flex items-center justify-center gap-1 mb-6">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <Star
                     key={star}
-                    className={`w-8 h-8 ${
-                      star <= (orderReview?.rating || 0)
-                        ? 'fill-yellow-400 text-yellow-400'
-                        : 'text-gray-300'
-                    }`}
+                    className={`w-8 h-8 ${star <= (orderReview?.rating || 0)
+                      ? 'fill-yellow-400 text-yellow-400'
+                      : 'text-gray-300'
+                      }`}
                   />
                 ))}
               </div>
-              
+
               <div className="flex gap-3">
-                <Button 
+                <Button
                   className="flex-1 bg-blue-600 hover:bg-blue-700"
                   onClick={() => setReviewSuccessModal(false)}
                 >
                   Đóng
                 </Button>
-                <Button 
+                <Button
                   variant="outline"
                   className="flex-1"
                   onClick={() => {
